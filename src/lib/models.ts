@@ -17,6 +17,7 @@ export interface IWorkspace {
   name: string;
   businessTypes: string[];
   ownerId: Types.ObjectId;
+  domain?: string; // email domain that auto-joins this workspace (e.g. "magickvoice.com")
   createdAt: Date;
   updatedAt: Date;
 }
@@ -98,6 +99,12 @@ export interface IInvoice {
   dueAt?: Date;
   amount: number;
   status: (typeof INVOICE_STATUSES)[number];
+  // Externally-generated invoice document persisted in S3.
+  fileKey?: string;
+  fileName?: string;
+  fileType?: string;
+  fileSize?: number;
+  fileUploadedAt?: Date;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -137,6 +144,7 @@ const WorkspaceSchema = new Schema<IWorkspace>(
     name: { type: String, required: true },
     businessTypes: { type: [String], default: [] },
     ownerId: { type: Schema.Types.ObjectId, ref: "User" },
+    domain: { type: String, index: true },
   },
   opts,
 );
@@ -219,6 +227,11 @@ const InvoiceSchema = new Schema<IInvoice>(
     dueAt: Date,
     amount: { type: Number, required: true },
     status: { type: String, enum: INVOICE_STATUSES, default: "draft", index: true },
+    fileKey: String,
+    fileName: String,
+    fileType: String,
+    fileSize: Number,
+    fileUploadedAt: Date,
   },
   opts,
 );

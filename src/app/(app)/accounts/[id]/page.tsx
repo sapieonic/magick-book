@@ -1,5 +1,5 @@
 "use client";
-import { use, useState, useMemo } from "react";
+import { use, useState, useMemo, useRef } from "react";
 import Link from "next/link";
 import {
   Building2,
@@ -10,10 +10,12 @@ import {
   ArrowRight,
   Receipt,
   Wallet,
+  Eye,
+  Upload,
 } from "lucide-react";
 import { PageHeader } from "@/components/layout/Sidebar";
 import { ActivityTimeline } from "@/components/ActivityTimeline";
-import { AddContactModal, NewInvoiceModal, LogExpenseModal } from "@/components/accounts/AccountModals";
+import { AddContactModal, NewInvoiceModal, LogExpenseModal, uploadInvoiceFile } from "@/components/accounts/AccountModals";
 import { Avatar } from "@/components/ui/Avatar";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -272,9 +274,11 @@ function Contacts({ contacts, loading, onAdd }: { contacts: ContactDTO[]; loadin
 
 /* ---------------------------------------------------------------- Invoices */
 
-function Invoices({ accountId, invoices, finance, loading, onNew, onChanged }: { accountId: string; invoices: InvoiceDTO[]; finance: AccountFinance; loading: boolean; onNew: () => void; onChanged: () => void }) {
+function Invoices({ invoices, finance, loading, onNew, onChanged }: { accountId: string; invoices: InvoiceDTO[]; finance: AccountFinance; loading: boolean; onNew: () => void; onChanged: () => void }) {
   const { toast } = useToast();
   const [busyId, setBusyId] = useState<string | null>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
+  const uploadTarget = useRef<string | null>(null);
 
   async function act(inv: InvoiceDTO, action: "remind" | "paid") {
     setBusyId(inv.id);
@@ -294,6 +298,32 @@ function Invoices({ accountId, invoices, finance, loading, onNew, onChanged }: {
     }
   }
 
+  function pickFile(invId: string) {
+    uploadTarget.current = invId;
+    fileInput.current?.click();
+  }
+
+  async function onFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    const invId = uploadTarget.current;
+    e.target.value = ""; // allow re-picking the same file later
+    if (!file || !invId) return;
+    setBusyId(invId);
+    try {
+      await uploadInvoiceFile(invId, file);
+      toast("Invoice file stored.", "success");
+      onChanged();
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Upload failed", "error");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  function viewDoc(invId: string) {
+    window.open(`/api/invoices/${invId}/document`, "_blank", "noopener");
+  }
+
   return (
     <div>
       <div className="mb-4 flex flex-wrap items-center gap-2">
@@ -306,6 +336,7 @@ function Invoices({ accountId, invoices, finance, loading, onNew, onChanged }: {
         <EmptyState icon={<Receipt className="size-6" />} title="No invoices" description="Bill this account to start tracking revenue." action={<Button variant="primary" onClick={onNew}><Plus className="size-4" /> New invoice</Button>} />
       ) : (
         <Card className="overflow-hidden">
+          <input ref={fileInput} type="file" accept="application/pdf,image/png,image/jpeg" className="hidden" onChange={onFile} />
           <table className="w-full">
             <thead>
               <tr className="border-b border-line bg-canvas/60 text-left text-[11.5px] font-semibold uppercase tracking-wide text-muted">
@@ -314,6 +345,7 @@ function Invoices({ accountId, invoices, finance, loading, onNew, onChanged }: {
                 <th className="px-5 py-3 text-right">Amount</th>
                 <th className="px-5 py-3">Due</th>
                 <th className="px-5 py-3">Status</th>
+                <th className="px-5 py-3">Document</th>
                 <th className="px-5 py-3 text-right">Action</th>
               </tr>
             </thead>
@@ -325,6 +357,20 @@ function Invoices({ accountId, invoices, finance, loading, onNew, onChanged }: {
                   <td className="px-5 py-3.5 text-right font-mono font-semibold text-ink tnum">{formatINR(inv.amount)}</td>
                   <td className="px-5 py-3.5 text-muted">{inv.dueAt ? format(new Date(inv.dueAt), "MMM dd") : "—"}</td>
                   <td className="px-5 py-3.5"><Badge tint={INVOICE_STATUS_META[inv.status].tint}>{INVOICE_STATUS_META[inv.status].label}</Badge></td>
+                  <td className="px-5 py-3.5">
+                    {inv.hasFile ? (
+                      <div className="flex items-center gap-2.5">
+                        <button onClick={() => viewDoc(inv.id)} className="inline-flex items-center gap-1.5 text-[12.5px] font-semibold text-violet-600 hover:underline">
+                          <Eye className="size-3.5" /> View
+                        </button>
+                        <button disabled={busyId === inv.id} onClick={() => pickFile(inv.id)} className="text-[12px] text-faint hover:text-ink disabled:opacity-50" title="Replace file">replace</button>
+                      </div>
+                    ) : (
+                      <button disabled={busyId === inv.id} onClick={() => pickFile(inv.id)} className="inline-flex items-center gap-1.5 text-[12.5px] font-semibold text-violet-600 hover:underline disabled:opacity-50">
+                        <Upload className="size-3.5" /> Upload
+                      </button>
+                    )}
+                  </td>
                   <td className="px-5 py-3.5 text-right">
                     {inv.status === "overdue" ? (
                       <button disabled={busyId === inv.id} onClick={() => act(inv, "remind")} className="text-[12.5px] font-semibold text-violet-600 hover:underline disabled:opacity-50">remind</button>

@@ -1,0 +1,77 @@
+# ─────────────────────────────────────────────────────────────────────────
+# MagickBook — storage stack (Serverless Framework v4)
+#
+# Provisions the private S3 bucket that holds uploaded invoice documents. The
+# Next.js app reads/writes it via the AWS SDK (see src/lib/s3.ts).
+#
+# One-time setup (v4 requires a free Serverless account to authenticate):
+#   npx serverless login                # or: export SERVERLESS_ACCESS_KEY=...
+# Deploy / remove:
+#   npx serverless deploy --stage dev --region ap-south-1
+#   npx serverless remove --stage dev --region ap-south-1
+#
+# After deploying, copy the printed bucket name into the app env as
+# INVOICES_BUCKET (and set AWS_REGION to match).
+# ─────────────────────────────────────────────────────────────────────────
+
+service: magickbook-storage
+frameworkVersion: "4"
+
+provider:
+  name: aws
+  region: ${opt:region, env:AWS_REGION, "ap-south-1"}
+  stage: ${opt:stage, "dev"}
+
+custom:
+  # Bucket name = <base>-<stage>; the stage is always postfixed so each
+  # environment gets its own bucket (e.g. magickbook-invoices-dev,
+  # magickbook-invoices-staging, magickbook-invoices-prod). Override the base
+  # with INVOICES_BUCKET_BASE if the default name is already taken (S3 bucket
+  # names are globally unique).
+  bucketBase: ${env:INVOICES_BUCKET_BASE, "magickbook-invoices"}
+  invoicesBucket: ${self:custom.bucketBase}-${self:provider.stage}
+  # Origin allowed to load presigned objects in the browser (the app URL).
+  appOrigin: ${env:APP_ORIGIN, "http://localhost:3000"}
+
+resources:
+  Resources:
+    InvoicesBucket:
+      Type: AWS::S3::Bucket
+      DeletionPolicy: Retain
+      Properties:
+        BucketName: ${self:custom.invoicesBucket}
+        # Objects are private — only reached through time-limited presigned URLs.
+        PublicAccessBlockConfiguration:
+          BlockPublicAcls: true
+          BlockPublicPolicy: true
+          IgnorePublicAcls: true
+          RestrictPublicBuckets: true
+        BucketEncryption:
+          ServerSideEncryptionConfiguration:
+            - ServerSideEncryptionByDefault:
+                SSEAlgorithm: AES256
+        OwnershipControls:
+          Rules:
+            - ObjectOwnership: BucketOwnerEnforced
+        # Allow the app origin to fetch presigned objects (inline PDF viewing).
+        CorsConfiguration:
+          CorsRules:
+            - AllowedMethods: [GET]
+              AllowedOrigins:
+                - ${self:custom.appOrigin}
+              AllowedHeaders: ["*"]
+              MaxAge: 3000
+        LifecycleConfiguration:
+          Rules:
+            # Tidy up incomplete multipart uploads.
+            - Id: abort-incomplete-multipart
+              Status: Enabled
+              AbortIncompleteMultipartUpload:
+                DaysAfterInitiation: 7
+
+  Outputs:
+    InvoicesBucketName:
+      Description: Bucket holding invoice PDFs — set as INVOICES_BUCKET in the app.
+      Value: !Ref InvoicesBucket
+      Export:
+        Name: ${self:service}-${self:provider.stage}-invoices-bucket

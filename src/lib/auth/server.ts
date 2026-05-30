@@ -1,5 +1,6 @@
 import "server-only";
 import { cookies } from "next/headers";
+import { Types } from "mongoose";
 import { connectDB } from "../db";
 import { User, Workspace, type IUser } from "../models";
 import type { SessionUser } from "../types";
@@ -92,13 +93,21 @@ export async function upsertUserFromIdentity(identity: {
   const email = identity.email.toLowerCase();
   const existing = await User.findOne({ email });
   if (!existing) {
+    // Shared-workspace-per-domain: if a workspace already exists for this email
+    // domain, auto-join it as a Standard member. Otherwise this is the first
+    // person from the domain — they'll create & own the workspace in onboarding.
+    // TODO(approval): gate new domain-joiners behind admin approval (status
+    // "pending", no data access until approved). See TODO.md.
+    const domain = email.split("@")[1] ?? "";
+    const ws = domain ? await Workspace.findOne({ domain }).select("_id").lean<{ _id: Types.ObjectId }>() : null;
     const created = await User.create({
       name: identity.name?.trim() || email.split("@")[0],
       email,
       authProvider: identity.provider,
       firebaseUid: identity.firebaseUid,
-      role: "admin",
+      role: ws ? "standard" : "admin",
       status: "active",
+      workspaceId: ws?._id,
     });
     return created.toObject();
   }

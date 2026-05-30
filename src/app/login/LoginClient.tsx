@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Phone, MessageCircle, Mail, MessageSquare, Eye, EyeOff, ArrowRight, Sparkles, Workflow, Receipt } from "lucide-react";
+import { Phone, MessageCircle, Mail, MessageSquare, Eye, EyeOff, ArrowRight, Sparkles, Workflow, Receipt, Lock } from "lucide-react";
 import { Logo } from "@/components/ui/Misc";
 import { Button } from "@/components/ui/Button";
 import { Input, Field } from "@/components/ui/Field";
@@ -12,6 +12,7 @@ interface AuthConfig {
   firebase: boolean;
   demo: boolean;
   firebaseConfig: Record<string, string> | null;
+  allowedDomains: string | null;
 }
 
 const HIGHLIGHTS = [
@@ -28,13 +29,13 @@ export function LoginClient() {
 
   const [config, setConfig] = useState<AuthConfig | null>(null);
   const [tab, setTab] = useState<"signin" | "signup">("signin");
-  const [email, setEmail] = useState("riya@acme.in");
-  const [password, setPassword] = useState("demo-pass");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [showPass, setShowPass] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
 
   useEffect(() => {
-    api.get<AuthConfig>("/api/auth/config").then(setConfig).catch(() => setConfig({ firebase: false, demo: true, firebaseConfig: null }));
+    api.get<AuthConfig>("/api/auth/config").then(setConfig).catch(() => setConfig({ firebase: false, demo: true, firebaseConfig: null, allowedDomains: null }));
   }, []);
 
   async function finish() {
@@ -48,9 +49,14 @@ export function LoginClient() {
     setBusy("email");
     try {
       if (config?.firebase) {
-        const { firebaseSignInWithEmail } = await import("@/lib/auth/firebase-client");
-        const idToken = await firebaseSignInWithEmail(email.trim(), password, tab === "signup");
-        await api.post("/api/auth/session", { idToken });
+        const fb = await import("@/lib/auth/firebase-client");
+        const idToken = await fb.firebaseSignInWithEmail(email.trim(), password, tab === "signup");
+        try {
+          await api.post("/api/auth/session", { idToken });
+        } catch (sessionErr) {
+          await fb.firebaseSignOut(); // server rejected (e.g. domain not allowed)
+          throw sessionErr;
+        }
       } else {
         // Demo mode — passwordless. The email picks which seeded user you are.
         await api.post("/api/auth/demo", { email: email.trim() });
@@ -63,28 +69,20 @@ export function LoginClient() {
   }
 
   async function handleProvider(provider: "google" | "microsoft") {
+    if (!config?.firebase) {
+      toast("Google sign-in needs Firebase configured. Enter your email below to continue.", "info");
+      return;
+    }
     setBusy(provider);
     try {
-      if (config?.firebase) {
-        const { firebaseSignInWithProvider } = await import("@/lib/auth/firebase-client");
-        const idToken = await firebaseSignInWithProvider(provider);
+      const fb = await import("@/lib/auth/firebase-client");
+      const idToken = await fb.firebaseSignInWithProvider(provider);
+      try {
         await api.post("/api/auth/session", { idToken });
-        await finish();
-      } else {
-        toast("Firebase isn't configured — using demo mode instead.", "info");
-        await api.post("/api/auth/demo", {});
-        await finish();
+      } catch (sessionErr) {
+        await fb.firebaseSignOut(); // server rejected (e.g. domain not allowed)
+        throw sessionErr;
       }
-    } catch (err) {
-      toast(err instanceof Error ? err.message : "Sign-in failed", "error");
-      setBusy(null);
-    }
-  }
-
-  async function handleDemo() {
-    setBusy("demo");
-    try {
-      await api.post("/api/auth/demo", {});
       await finish();
     } catch (err) {
       toast(err instanceof Error ? err.message : "Sign-in failed", "error");
@@ -168,13 +166,10 @@ export function LoginClient() {
             ))}
           </div>
 
-          {/* OAuth */}
+          {/* OAuth — Google only for now */}
           <div className="mt-5 space-y-2.5">
             <Button variant="secondary" size="lg" className="w-full" loading={busy === "google"} onClick={() => handleProvider("google")}>
               <GoogleMark /> Continue with Google
-            </Button>
-            <Button variant="secondary" size="lg" className="w-full" loading={busy === "microsoft"} onClick={() => handleProvider("microsoft")}>
-              <MicrosoftMark /> Continue with Microsoft
             </Button>
           </div>
 
@@ -185,7 +180,7 @@ export function LoginClient() {
           {/* Email form */}
           <form onSubmit={handleEmail} className="space-y-3.5">
             <Field label="Work email" required>
-              <Input type="email" autoComplete="email" placeholder="riya@acme.in" value={email} onChange={(e) => setEmail(e.target.value)} />
+              <Input type="email" autoComplete="email" placeholder="you@company.com" value={email} onChange={(e) => setEmail(e.target.value)} />
             </Field>
             {config?.firebase && (
               <Field label="Password" required hint={<button type="button" onClick={() => setShowPass((s) => !s)} className="inline-flex items-center gap-1 hover:text-ink">{showPass ? <EyeOff className="size-3" /> : <Eye className="size-3" />} {showPass ? "hide" : "show"}</button>}>
@@ -197,12 +192,18 @@ export function LoginClient() {
             </Button>
           </form>
 
+          {config?.allowedDomains && (
+            <p className="mt-4 flex items-center justify-center gap-1.5 text-center text-[12px] text-muted">
+              <Lock className="size-3.5 text-faint" />
+              Only <span className="font-semibold text-ink-soft">{config.allowedDomains}</span> emails can sign in.
+            </p>
+          )}
+
           {config && !config.firebase && (
             <div className="mt-5 rounded-[var(--radius-md)] border border-dashed border-violet-200 bg-violet-50/60 p-3.5 text-[12.5px] leading-relaxed text-violet-800">
               <p className="font-semibold">Demo mode is on.</p>
               <p className="mt-0.5 text-violet-700/80">
-                Firebase isn&apos;t configured, so any email signs you in. Use <code className="rounded bg-white/70 px-1 font-mono text-[11px]">riya@acme.in</code> to enter the seeded workspace, or{" "}
-                <button onClick={handleDemo} className="font-semibold underline underline-offset-2">jump straight in →</button>
+                Firebase isn&apos;t configured, so signing in is passwordless — enter any allowed email above to continue.
               </p>
             </div>
           )}
@@ -223,17 +224,6 @@ function GoogleMark() {
       <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.99.66-2.26 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84A11 11 0 0 0 12 23Z" />
       <path fill="#FBBC05" d="M5.84 14.1a6.6 6.6 0 0 1 0-4.2V7.06H2.18a11 11 0 0 0 0 9.88l3.66-2.84Z" />
       <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84C6.71 7.31 9.14 5.38 12 5.38Z" />
-    </svg>
-  );
-}
-
-function MicrosoftMark() {
-  return (
-    <svg className="size-[15px]" viewBox="0 0 23 23" aria-hidden>
-      <path fill="#F25022" d="M1 1h10v10H1z" />
-      <path fill="#7FBA00" d="M12 1h10v10H12z" />
-      <path fill="#00A4EF" d="M1 12h10v10H1z" />
-      <path fill="#FFB900" d="M12 12h10v10H12z" />
     </svg>
   );
 }

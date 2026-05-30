@@ -88,6 +88,8 @@ export interface InvoiceDTO {
   dueAt: string | null;
   amount: number;
   status: InvoiceStatus;
+  hasFile: boolean;
+  fileName: string | null;
 }
 
 export interface ExpenseDTO {

@@ -5,6 +5,7 @@ import { User, type IUser } from "@/lib/models";
 import { requireUser } from "@/lib/auth/server";
 import { isAdmin } from "@/lib/rbac";
 import { ROLES } from "@/lib/constants";
+import { isEmailAllowed, notAllowedMessage } from "@/lib/auth/whitelist";
 
 // GET /api/members — team list (Settings → Team & roles).
 export const GET = route(async () => {
@@ -32,6 +33,7 @@ export const POST = route(async (req: NextRequest) => {
   const b = await req.json().catch(() => ({}));
   const email = (b.email || "").toLowerCase().trim();
   if (!email || !email.includes("@")) return fail("A valid work email is required");
+  if (!isEmailAllowed(email)) return fail(notAllowedMessage(), 403);
   const role = ROLES.includes(b.role) ? b.role : "standard";
 
   const existing = await User.findOne({ email }).lean<IUser>();

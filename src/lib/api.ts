@@ -130,6 +130,8 @@ export function serializeInvoice(i: IInvoice, accountName?: string): InvoiceDTO 
     dueAt: iso(i.dueAt),
     amount: i.amount,
     status: i.status as InvoiceStatus,
+    hasFile: Boolean(i.fileKey),
+    fileName: i.fileName ?? null,
   };
 }
 

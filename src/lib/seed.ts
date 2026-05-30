@@ -73,6 +73,7 @@ export async function seedDatabase({ force = false }: { force?: boolean } = {}):
     name: "Acme & Co",
     businessTypes: ["Sales calls", "Collections"],
     ownerId: riya._id,
+    domain: "acme.in",
   });
 
   // ---- Accounts + contacts --------------------------------------------

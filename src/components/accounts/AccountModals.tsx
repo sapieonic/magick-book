@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import { Paperclip } from "lucide-react";
 import { Modal } from "@/components/ui/Overlay";
 import { Button } from "@/components/ui/Button";
 import { Input, Textarea, Select, Field } from "@/components/ui/Field";
@@ -125,8 +126,16 @@ export function NewInvoiceModal({ accountId, open, onClose, onCreated }: { accou
   const [amount, setAmount] = useState("");
   const [status, setStatus] = useState("sent");
   const [dueAt, setDueAt] = useState("");
+  const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   if (!open) return null;
+
+  function reset() {
+    setAmount("");
+    setDueAt("");
+    setFile(null);
+    setStatus("sent");
+  }
 
   async function submit() {
     const amt = Number(String(amount).replace(/[^\d.]/g, ""));
@@ -134,10 +143,22 @@ export function NewInvoiceModal({ accountId, open, onClose, onCreated }: { accou
     setBusy(true);
     try {
       const { invoice } = await api.post<{ invoice: InvoiceDTO }>(`/api/accounts/${accountId}/invoices`, { amount: amt, status, dueAt: dueAt || undefined });
-      toast(`Invoice #${invoice.number} created.`, "success");
+
+      // Persist the externally-generated invoice file to S3, if one was attached.
+      if (file) {
+        try {
+          await uploadInvoiceFile(invoice.id, file);
+          toast(`Invoice #${invoice.number} created & file stored.`, "success");
+        } catch (uploadErr) {
+          toast(`Invoice #${invoice.number} created, but the file didn't upload: ${uploadErr instanceof Error ? uploadErr.message : "error"}`, "error");
+        }
+      } else {
+        toast(`Invoice #${invoice.number} created.`, "success");
+      }
+
       onCreated(invoice);
       onClose();
-      setAmount("");
+      reset();
     } catch (e) {
       toast(e instanceof Error ? e.message : "Could not create", "error");
     } finally {
@@ -164,12 +185,43 @@ export function NewInvoiceModal({ accountId, open, onClose, onCreated }: { accou
             <Input type="date" value={dueAt} onChange={(e) => setDueAt(e.target.value)} />
           </Field>
         </div>
+        <Field label="Invoice file" hint="PDF/PNG/JPEG · optional">
+          <FileDrop file={file} onPick={setFile} />
+        </Field>
         <div className="flex gap-3 pt-1">
           <Button variant="primary" onClick={submit} loading={busy}>Create invoice</Button>
           <Button variant="ghost" onClick={onClose}>Cancel</Button>
         </div>
       </div>
     </Modal>
+  );
+}
+
+/** Upload an externally-generated invoice file to S3 via the API. */
+export async function uploadInvoiceFile(invoiceId: string, file: File): Promise<InvoiceDTO> {
+  const fd = new FormData();
+  fd.append("file", file);
+  const res = await fetch(`/api/invoices/${invoiceId}/document`, { method: "POST", body: fd });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.error || "Upload failed");
+  return data.invoice as InvoiceDTO;
+}
+
+function FileDrop({ file, onPick }: { file: File | null; onPick: (f: File | null) => void }) {
+  return (
+    <label className="flex cursor-pointer items-center gap-3 rounded-[var(--radius-md)] border border-dashed border-line-strong bg-canvas/50 px-3.5 py-3 transition-colors hover:border-violet-400">
+      <input
+        type="file"
+        accept="application/pdf,image/png,image/jpeg"
+        className="hidden"
+        onChange={(e) => onPick(e.target.files?.[0] ?? null)}
+      />
+      <Paperclip className="size-4 shrink-0 text-muted" />
+      <span className="truncate text-[13px] text-ink-soft">
+        {file ? file.name : "Attach the generated invoice (PDF)"}
+      </span>
+      {file && <span className="ml-auto text-[11.5px] text-faint">{(file.size / 1024).toFixed(0)} KB</span>}
+    </label>
   );
 }
 

@@ -3,6 +3,7 @@ import { ok, fail, route } from "@/lib/api";
 import { verifyFirebaseIdToken } from "@/lib/auth/firebase-admin";
 import { isFirebaseAdminConfigured } from "@/lib/auth/config";
 import { setSessionCookie, upsertUserFromIdentity, getSessionUser } from "@/lib/auth/server";
+import { isEmailAllowed, notAllowedMessage } from "@/lib/auth/whitelist";
 
 // Exchange a Firebase ID token for a MagickBook session cookie.
 export const POST = route(async (req: NextRequest) => {
@@ -19,6 +20,8 @@ export const POST = route(async (req: NextRequest) => {
 
   const decoded = await verifyFirebaseIdToken(idToken);
   if (!decoded?.email) return fail("Could not verify token", 401);
+
+  if (!isEmailAllowed(decoded.email)) return fail(notAllowedMessage(), 403);
 
   const provider = decoded.firebase?.sign_in_provider?.includes("microsoft")
     ? "microsoft"

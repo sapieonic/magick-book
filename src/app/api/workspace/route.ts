@@ -14,12 +14,21 @@ export const POST = route(async (req: NextRequest) => {
   const businessTypes: string[] = Array.isArray(body.businessTypes) ? body.businessTypes.slice(0, 8) : [];
 
   await connectDB();
+  const domain = user.email.toLowerCase().split("@")[1] ?? "";
 
   if (user.workspaceId) {
     await Workspace.updateOne({ _id: user.workspaceId }, { name, businessTypes });
   } else {
-    const ws = await Workspace.create({ name, businessTypes, ownerId: user._id });
-    await User.updateOne({ _id: user._id }, { workspaceId: ws._id, role: "admin", status: "active" });
+    // Race guard: if someone from this domain already created the workspace
+    // while this user was onboarding, join theirs as Standard instead of
+    // creating a duplicate.
+    const existingWs = domain ? await Workspace.findOne({ domain }).select("_id").lean<{ _id: unknown }>() : null;
+    if (existingWs) {
+      await User.updateOne({ _id: user._id }, { workspaceId: existingWs._id, role: "standard", status: "active" });
+    } else {
+      const ws = await Workspace.create({ name, businessTypes, ownerId: user._id, domain });
+      await User.updateOne({ _id: user._id }, { workspaceId: ws._id, role: "admin", status: "active" });
+    }
   }
 
   const sessionUser = await getSessionUser();

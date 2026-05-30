@@ -7,6 +7,7 @@ import {
   signInWithPopup,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
+  signOut,
   type Auth,
 } from "firebase/auth";
 import { firebaseClientConfig, isFirebaseClientConfigured } from "./config";
@@ -38,4 +39,10 @@ export async function firebaseSignInWithEmail(email: string, password: string, i
     ? await createUserWithEmailAndPassword(auth, email, password)
     : await signInWithEmailAndPassword(auth, email, password);
   return cred.user.getIdToken();
+}
+
+/** Sign out of the Firebase client (e.g. after the server rejects the session). */
+export async function firebaseSignOut(): Promise<void> {
+  const auth = getClientAuth();
+  if (auth) await signOut(auth).catch(() => {});
 }

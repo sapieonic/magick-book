@@ -97,6 +97,60 @@ Also set a strong session secret in any non-local environment:
 SESSION_SECRET="$(node -e "console.log(require('crypto').randomBytes(48).toString('hex'))")"
 ```
 
+### Restricting who can sign in (domain allow-list)
+
+Gate sign-in to one or more email domains with `DOMAIN_WHITELIST` (unset = anyone):
+
+```bash
+DOMAIN_WHITELIST=@magickvoice.com            # single domain
+DOMAIN_WHITELIST=@magickvoice.com, @acme.in  # several, comma-separated
+```
+
+It's enforced server-side on **Firebase sign-in**, **demo sign-in**, and **teammate invites** —
+a blocked user gets a clear "Only @magickvoice.com email addresses can sign in" message, and
+the login screen shows the allowed domain as a hint. Implemented in `src/lib/auth/whitelist.ts`.
+
+## 🧾 Invoice file storage (S3)
+
+Invoice **records** live in MongoDB; the generated invoice **document** (PDF, produced
+by an external system) is persisted in **S3**.
+
+1. Provision the bucket (CloudFormation via the **Serverless Framework v4**):
+   ```bash
+   # one-time: v4 requires a free Serverless account to authenticate
+   npx serverless login                     # or: export SERVERLESS_ACCESS_KEY=<key>
+   # make sure your AWS creds are available (env vars, profile, or SSO), then:
+   npx serverless deploy --stage dev --region ap-south-1
+   ```
+   It's defined in [`serverless.yaml`](./serverless.yaml) — a private, encrypted bucket
+   with public access blocked; files are only reached through short-lived presigned URLs.
+
+   > Prefer a license-free / offline tool? The same `serverless.yaml` deploys with the
+   > community fork: `npx osls deploy --stage dev` (no login required).
+
+   The bucket name is **`<base>-<stage>`** — the stage is always postfixed, so each
+   environment gets its own bucket:
+
+   | Deploy command | Bucket created |
+   | --- | --- |
+   | `serverless deploy --stage dev` | `magickbook-invoices-dev` |
+   | `serverless deploy --stage staging` | `magickbook-invoices-staging` |
+   | `serverless deploy --stage prod` | `magickbook-invoices-prod` |
+
+   S3 bucket names are globally unique — if `magickbook-invoices` is taken, override the
+   base: `INVOICES_BUCKET_BASE=acme-magickbook-invoices serverless deploy --stage dev`.
+
+2. Set the app env to the **deployed bucket name for that stage** (+ AWS creds / region) — see `.env.example`:
+   ```bash
+   INVOICES_BUCKET="magickbook-invoices-dev"   # must match the stage you deployed
+   AWS_REGION="ap-south-1"
+   ```
+
+**Flow:** attach a file in the *New invoice* modal (or the *Upload* action on an invoice
+row) → `POST /api/invoices/:id/document` streams it to S3 → `GET /api/invoices/:id/document`
+redirects to a presigned URL to view/download. Without `INVOICES_BUCKET` set, uploads are
+disabled gracefully (the rest of the app is unaffected). Implemented in `src/lib/s3.ts`.
+
 ## 🗂️ Project structure
 
 ```
