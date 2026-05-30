@@ -26,6 +26,12 @@ jobs:
           node-version: 20
           cache: npm
 
+      # Node 20 bundles npm 10, but package-lock.json is authored by npm 11.
+      # npm 10's `npm ci` reports an npm-11 lock as out-of-sync, so pin npm to
+      # match the lockfile (keep this in step with the team's local npm).
+      - name: Pin npm
+        run: npm install -g npm@11
+
       # mongodb-memory-server downloads a MongoDB binary at runtime; cache it
       # across runs so the suite starts fast.
       - name: Cache MongoDB binaries
