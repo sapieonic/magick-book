@@ -1,26 +1,178 @@
 @import "tailwindcss";
 
+/*
+  MagickBook CRM — design system
+  Clean modern SaaS. Warm paper canvas, sharp violet accent (echoing the
+  brand mark's blue→violet gradient), tabular mono for data.
+*/
+
+@theme {
+  /* Brand / accent */
+  --color-violet-50: #f1effe;
+  --color-violet-100: #e6e2fd;
+  --color-violet-200: #cfc7fb;
+  --color-violet-300: #b0a3f8;
+  --color-violet-400: #8d78f3;
+  --color-violet-500: #6d5cf5;
+  --color-violet-600: #5b49e8;
+  --color-violet-700: #4a39c9;
+  --color-violet-800: #3d309f;
+  --color-violet-900: #342b7e;
+
+  /* Brand gradient endpoints (from the logo) */
+  --color-brand-from: #2f9ae8;
+  --color-brand-to: #7b3ff2;
+
+  /* Neutrals — warm paper */
+  --color-canvas: #faf8f5;
+  --color-paper: #ffffff;
+  --color-ink: #1b1a1f;
+  --color-ink-soft: #4a4854;
+  --color-muted: #8b8893;
+  --color-faint: #b7b4bd;
+  --color-line: #ece9e3;
+  --color-line-strong: #ddd9d0;
+
+  /* Status */
+  --color-success: #15a05a;
+  --color-success-bg: #e4f6ec;
+  --color-warn: #c8810a;
+  --color-warn-bg: #fbf0d8;
+  --color-danger: #d6483f;
+  --color-danger-bg: #fbe6e3;
+  --color-info: #2f7fe0;
+  --color-info-bg: #e3eefb;
+
+  /* Fonts (wired via next/font CSS variables) */
+  --font-sans: var(--font-hanken), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-bricolage), var(--font-hanken), sans-serif;
+  --font-mono: var(--font-jetbrains), ui-monospace, monospace;
+
+  /* Radius scale */
+  --radius-xs: 6px;
+  --radius-sm: 9px;
+  --radius-md: 13px;
+  --radius-lg: 18px;
+  --radius-xl: 24px;
+
+  /* Shadows — soft, low, layered */
+  --shadow-card: 0 1px 2px rgba(27, 26, 31, 0.04), 0 4px 16px rgba(27, 26, 31, 0.05);
+  --shadow-pop: 0 8px 30px rgba(27, 26, 31, 0.12), 0 2px 8px rgba(27, 26, 31, 0.06);
+  --shadow-violet: 0 6px 20px rgba(109, 92, 245, 0.28);
+}
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  color-scheme: light;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+* {
+  border-color: var(--color-line);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
+html,
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Subtle paper grain on the canvas for warmth */
+body {
+  background-image: radial-gradient(
+    circle at 1px 1px,
+    rgba(27, 26, 31, 0.018) 1px,
+    transparent 0
+  );
+  background-size: 22px 22px;
+}
+
+::selection {
+  background: var(--color-violet-200);
+  color: var(--color-violet-900);
+}
+
+/* Numerals should be tabular for clean column alignment */
+.tnum {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+/* Thin, tasteful scrollbars */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-line-strong) transparent;
+}
+*::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--color-line-strong);
+  border-radius: 99px;
+  border: 2px solid var(--color-canvas);
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--color-faint);
+}
+
+@keyframes mb-fade-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes mb-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes mb-scale-in {
+  from { opacity: 0; transform: scale(0.96) translateY(6px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+@keyframes mb-slide-in {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+@keyframes mb-shimmer {
+  100% { transform: translateX(100%); }
+}
+
+.animate-fade-up { animation: mb-fade-up 0.5s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.animate-fade { animation: mb-fade 0.4s ease both; }
+.animate-scale-in { animation: mb-scale-in 0.28s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.animate-slide-in { animation: mb-slide-in 0.34s cubic-bezier(0.22, 1, 0.36, 1) both; }
+
+/* Staggered list reveals */
+.stagger > * { animation: mb-fade-up 0.5s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.stagger > *:nth-child(1) { animation-delay: 0.02s; }
+.stagger > *:nth-child(2) { animation-delay: 0.06s; }
+.stagger > *:nth-child(3) { animation-delay: 0.10s; }
+.stagger > *:nth-child(4) { animation-delay: 0.14s; }
+.stagger > *:nth-child(5) { animation-delay: 0.18s; }
+.stagger > *:nth-child(6) { animation-delay: 0.22s; }
+.stagger > *:nth-child(7) { animation-delay: 0.26s; }
+.stagger > *:nth-child(8) { animation-delay: 0.30s; }
+
+.brand-gradient {
+  background-image: linear-gradient(135deg, var(--color-brand-from), var(--color-brand-to));
+}
+.brand-text {
+  background-image: linear-gradient(120deg, var(--color-brand-from), var(--color-brand-to));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.skeleton {
+  position: relative;
+  overflow: hidden;
+  background: var(--color-line);
+}
+.skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.6), transparent);
+  animation: mb-shimmer 1.4s infinite;
 }
