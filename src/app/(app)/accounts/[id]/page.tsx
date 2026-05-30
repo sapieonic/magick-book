@@ -74,8 +74,8 @@ export default function AccountDetailPage({ params }: { params: Promise<{ id: st
       </PageHeader>
 
       {/* Tabs */}
-      <div className="sticky top-[68px] z-10 border-b border-line bg-canvas/85 px-6 backdrop-blur-md lg:px-8">
-        <div className="flex gap-1">
+      <div className="sticky top-[68px] z-10 border-b border-line bg-canvas/85 px-4 backdrop-blur-md sm:px-6 lg:px-8">
+        <div className="flex gap-1 overflow-x-auto">
           {TABS.map((t) => (
             <button
               key={t}
@@ -337,7 +337,8 @@ function Invoices({ invoices, finance, loading, onNew, onChanged }: { accountId:
       ) : (
         <Card className="overflow-hidden">
           <input ref={fileInput} type="file" accept="application/pdf,image/png,image/jpeg" className="hidden" onChange={onFile} />
-          <table className="w-full">
+          <div className="overflow-x-auto">
+          <table className="w-full min-w-[760px]">
             <thead>
               <tr className="border-b border-line bg-canvas/60 text-left text-[11.5px] font-semibold uppercase tracking-wide text-muted">
                 <th className="px-5 py-3">Invoice</th>
@@ -384,6 +385,7 @@ function Invoices({ invoices, finance, loading, onNew, onChanged }: { accountId:
               ))}
             </tbody>
           </table>
+          </div>
         </Card>
       )}
     </div>
@@ -412,7 +414,8 @@ function Expenses({ expenses, finance, loading, onNew }: { expenses: ExpenseDTO[
         <EmptyState icon={<Wallet className="size-6" />} title="No expenses" description="Log costs to see true margin on this account." action={<Button variant="primary" onClick={onNew}><Plus className="size-4" /> Log expense</Button>} />
       ) : (
         <Card className="overflow-hidden">
-          <table className="w-full">
+          <div className="overflow-x-auto">
+          <table className="w-full min-w-[620px]">
             <thead>
               <tr className="border-b border-line bg-canvas/60 text-left text-[11.5px] font-semibold uppercase tracking-wide text-muted">
                 <th className="px-5 py-3">Date</th>
@@ -436,6 +439,7 @@ function Expenses({ expenses, finance, loading, onNew }: { expenses: ExpenseDTO[
               ))}
             </tbody>
           </table>
+          </div>
         </Card>
       )}
     </div>

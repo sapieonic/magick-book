@@ -9,9 +9,9 @@ import type { LeadDTO } from "@/lib/types";
 export function LeadTable({ leads }: { leads: LeadDTO[] }) {
   const router = useRouter();
   return (
-    <div className="px-6 pb-6 lg:px-8">
-      <div className="overflow-hidden rounded-[var(--radius-lg)] border border-line bg-paper shadow-[var(--shadow-card)]">
-        <table className="w-full">
+    <div className="px-4 pb-6 sm:px-6 lg:px-8">
+      <div className="overflow-x-auto rounded-[var(--radius-lg)] border border-line bg-paper shadow-[var(--shadow-card)]">
+        <table className="w-full min-w-[760px]">
           <thead>
             <tr className="border-b border-line bg-canvas/60 text-left text-[11.5px] font-semibold uppercase tracking-wide text-muted">
               <th className="px-5 py-3">Lead</th>

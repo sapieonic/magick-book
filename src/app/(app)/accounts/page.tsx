@@ -88,7 +88,8 @@ export default function AccountsPage() {
           />
         ) : (
           <Card className="overflow-hidden">
-            <table className="w-full">
+            <div className="overflow-x-auto">
+            <table className="w-full min-w-[720px]">
               <thead>
                 <tr className="border-b border-line bg-canvas/60 text-left text-[11.5px] font-semibold uppercase tracking-wide text-muted">
                   <th className="px-5 py-3">Account</th>
@@ -131,6 +132,7 @@ export default function AccountsPage() {
                 })}
               </tbody>
             </table>
+            </div>
           </Card>
         )}
       </div>
