@@ -47,6 +47,7 @@ export function ActivityTimeline({ activities }: { activities: ActivityDTO[] }) 
       {activities.map((a, i) => {
         const Icon = ICONS[a.kind] ?? StickyNote;
         const last = i === activities.length - 1;
+        const isNote = a.kind === "note";
         return (
           <li key={a.id} className="relative flex gap-3.5 pb-5">
             {!last && <span className="absolute left-[15px] top-9 h-[calc(100%-1rem)] w-px bg-line" />}
@@ -55,11 +56,24 @@ export function ActivityTimeline({ activities }: { activities: ActivityDTO[] }) 
             </span>
             <div className="min-w-0 flex-1 pt-0.5">
               <div className="flex items-baseline justify-between gap-3">
-                <p className="text-[13.5px] font-semibold text-ink">{a.title}</p>
+                <p className="text-[13.5px] font-semibold text-ink">
+                  {isNote ? "Note" : a.title}
+                  {isNote && a.actorName && <span className="font-normal text-muted"> · {a.actorName}</span>}
+                </p>
                 <span className="shrink-0 text-[11.5px] text-faint">{relativeTime(a.createdAt)}</span>
               </div>
-              {a.detail && <p className="mt-0.5 text-[12.5px] leading-relaxed text-muted">{a.detail}</p>}
-              {a.actorName && <p className="mt-0.5 text-[11px] text-faint">by {a.actorName}</p>}
+              {isNote ? (
+                a.detail && (
+                  <p className="mt-1.5 whitespace-pre-wrap rounded-[var(--radius-sm)] border border-line bg-canvas/60 px-3 py-2 text-[13px] leading-relaxed text-ink-soft">
+                    {a.detail}
+                  </p>
+                )
+              ) : (
+                <>
+                  {a.detail && <p className="mt-0.5 text-[12.5px] leading-relaxed text-muted">{a.detail}</p>}
+                  {a.actorName && <p className="mt-0.5 text-[11px] text-faint">by {a.actorName}</p>}
+                </>
+              )}
             </div>
           </li>
         );

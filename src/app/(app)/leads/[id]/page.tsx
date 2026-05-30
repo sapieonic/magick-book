@@ -13,8 +13,10 @@ import {
   Ban,
   Building2,
   ChevronRight,
+  Plus,
 } from "lucide-react";
 import { PageHeader } from "@/components/layout/Sidebar";
+import { useSession } from "@/components/layout/SessionContext";
 import { ActivityTimeline } from "@/components/ActivityTimeline";
 import { AddLeadDrawer } from "@/components/leads/AddLeadDrawer";
 import { ConvertModal } from "@/components/leads/ConvertModal";
@@ -170,6 +172,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
             {/* Right: timeline */}
             <Card className="p-6">
               <h2 className="mb-4 font-display text-[16px] font-bold text-ink">Lifecycle &amp; activity</h2>
+              <NoteComposer leadId={id} onAdded={refresh} />
               {lead.notes && (
                 <div className="mb-5 rounded-[var(--radius-md)] border border-line bg-canvas/60 p-3.5 text-[13px] leading-relaxed text-ink-soft">
                   {lead.notes}
@@ -215,6 +218,55 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
 }
 
 // (helper components below)
+
+function NoteComposer({ leadId, onAdded }: { leadId: string; onAdded: () => void }) {
+  const me = useSession();
+  const { toast } = useToast();
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function add() {
+    const text = note.trim();
+    if (!text) return;
+    setBusy(true);
+    try {
+      await api.post(`/api/leads/${leadId}/activities`, { kind: "note", detail: text });
+      setNote("");
+      onAdded();
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Couldn't add note", "error");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="mb-5 flex gap-3">
+      <Avatar name={me.name} size={32} className="mt-0.5" />
+      <div className="flex-1">
+        <Textarea
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          onKeyDown={(e) => {
+            if ((e.metaKey || e.ctrlKey) && e.key === "Enter") add();
+          }}
+          placeholder="Add a progress note… (⌘/Ctrl + Enter to post)"
+          className="min-h-[56px] text-[13px]"
+        />
+        <div className="mt-2 flex items-center justify-end gap-2">
+          {note.trim() && (
+            <button type="button" onClick={() => setNote("")} className="text-[12.5px] font-medium text-muted hover:text-ink">
+              Clear
+            </button>
+          )}
+          <Button size="sm" variant="primary" onClick={add} loading={busy} disabled={!note.trim()}>
+            <Plus className="size-3.5" /> Add note
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function Row({ icon, label, value, bold }: { icon?: React.ReactNode; label?: string; value: React.ReactNode; bold?: boolean }) {
   return (
