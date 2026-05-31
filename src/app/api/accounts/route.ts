@@ -4,7 +4,7 @@ import { connectDB } from "@/lib/db";
 import { Account, Contact, type IAccount, type IContact } from "@/lib/models";
 import { requireUser } from "@/lib/auth/server";
 import { accountScope } from "@/lib/rbac";
-import { ownerNameMap } from "@/lib/services";
+import { ownerNameMap, audit } from "@/lib/services";
 import { ACCOUNT_STATUSES } from "@/lib/constants";
 import { Types } from "mongoose";
 
@@ -15,8 +15,9 @@ export const GET = route(async (req: NextRequest) => {
   const sp = req.nextUrl.searchParams;
   const status = sp.get("status");
   const q = sp.get("q")?.trim();
+  const archived = sp.get("archived") === "1";
 
-  const filter: Record<string, unknown> = accountScope(user);
+  const filter: Record<string, unknown> = accountScope(user, { archived });
   if (status && ACCOUNT_STATUSES.includes(status as never)) filter.status = status;
   if (q) filter.name = { $regex: q, $options: "i" };
 
@@ -27,9 +28,9 @@ export const GET = route(async (req: NextRequest) => {
     .filter((x): x is NonNullable<typeof x> => Boolean(x));
 
   const [primaryContacts, counts, names] = await Promise.all([
-    Contact.find({ _id: { $in: primaryIds } }).lean<IContact[]>(),
+    Contact.find({ _id: { $in: primaryIds }, deletedAt: null }).lean<IContact[]>(),
     Contact.aggregate<{ _id: Types.ObjectId; n: number }>([
-      { $match: { accountId: { $in: accIds } } },
+      { $match: { accountId: { $in: accIds }, deletedAt: null } },
       { $group: { _id: "$accountId", n: { $sum: 1 } } },
     ]),
     ownerNameMap(accounts.map((a) => a.ownerId)),
@@ -38,13 +39,14 @@ export const GET = route(async (req: NextRequest) => {
   const pcMap = new Map(primaryContacts.map((c) => [String(c._id), c]));
   const countMap = new Map(counts.map((c) => [String(c._id), c.n]));
 
-  // Tab counts for the filter chips (always over the full visible set).
-  const allForCounts = status ? await Account.find(accountScope(user)).select("status").lean<{ status: string }[]>() : accounts;
+  // Tab counts for the status chips — always over the full LIVE set.
+  const allForCounts = await Account.find(accountScope(user)).select("status").lean<{ status: string }[]>();
   const tabCounts = {
     all: allForCounts.length,
     active: allForCounts.filter((a) => a.status === "active").length,
     at_risk: allForCounts.filter((a) => a.status === "at_risk").length,
     churned: allForCounts.filter((a) => a.status === "churned").length,
+    archived: await Account.countDocuments(accountScope(user, { archived: true })),
   };
 
   return ok({
@@ -95,6 +97,8 @@ export const POST = route(async (req: NextRequest) => {
     primaryContactId,
     lastActivityAt: new Date(),
   });
+
+  await audit({ entity: "account", entityId: account._id, entityLabel: account.name, action: "create", actor: user, accountId: account._id });
 
   const primary = primaryContactId ? await Contact.findById(primaryContactId).lean<IContact>() : null;
   return ok(

@@ -1,21 +1,22 @@
 "use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Search, Plus, Building2 } from "lucide-react";
+import { Search, Plus, Building2, RotateCcw } from "lucide-react";
 import { PageHeader } from "@/components/layout/Sidebar";
 import { NewAccountModal } from "@/components/accounts/AccountModals";
 import { Avatar } from "@/components/ui/Avatar";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card, PageLoader, ErrorState, EmptyState } from "@/components/ui/Misc";
-import { useApi } from "@/lib/client";
+import { useToast } from "@/components/ui/Toast";
+import { api, useApi } from "@/lib/client";
 import { ACCOUNT_STATUS_META } from "@/lib/constants";
 import { formatINRCompact, relativeTime, cn } from "@/lib/utils";
 import type { AccountDTO } from "@/lib/types";
 
 interface AccountsResponse {
   accounts: AccountDTO[];
-  tabCounts: { all: number; active: number; at_risk: number; churned: number };
+  tabCounts: { all: number; active: number; at_risk: number; churned: number; archived: number };
 }
 
 const TABS = [
@@ -23,20 +24,38 @@ const TABS = [
   { key: "active", label: "Active", countKey: "active" },
   { key: "at_risk", label: "At risk", countKey: "at_risk" },
   { key: "churned", label: "Churned", countKey: "churned" },
+  { key: "archived", label: "Archived", countKey: "archived" },
 ] as const;
 
 export default function AccountsPage() {
   const router = useRouter();
+  const { toast } = useToast();
   const [status, setStatus] = useState("");
   const [q, setQ] = useState("");
   const [creating, setCreating] = useState(false);
+  const [restoringId, setRestoringId] = useState<string | null>(null);
 
+  const archivedView = status === "archived";
   const params = new URLSearchParams();
-  if (status) params.set("status", status);
+  if (archivedView) params.set("archived", "1");
+  else if (status) params.set("status", status);
   if (q.trim()) params.set("q", q.trim());
   const url = `/api/accounts${params.toString() ? `?${params}` : ""}`;
   const { data, loading, error, refresh } = useApi<AccountsResponse>(url);
   const accounts = data?.accounts ?? [];
+
+  async function restore(id: string, name: string) {
+    setRestoringId(id);
+    try {
+      await api.patch(`/api/accounts/${id}`, { action: "restore" });
+      toast(`${name} restored.`, "success");
+      refresh();
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Could not restore", "error");
+    } finally {
+      setRestoringId(null);
+    }
+  }
 
   return (
     <>
@@ -82,9 +101,9 @@ export default function AccountsPage() {
         ) : accounts.length === 0 ? (
           <EmptyState
             icon={<Building2 className="size-6" />}
-            title={q || status ? "No matching accounts" : "No accounts yet"}
-            description={q || status ? "Try a different filter." : "Convert a won lead, or create an account directly."}
-            action={<Button variant="primary" onClick={() => setCreating(true)}><Plus className="size-4" /> New account</Button>}
+            title={archivedView ? "Nothing archived" : q || status ? "No matching accounts" : "No accounts yet"}
+            description={archivedView ? "Accounts you archive will show up here and can be restored." : q || status ? "Try a different filter." : "Convert a won lead, or create an account directly."}
+            action={!archivedView && <Button variant="primary" onClick={() => setCreating(true)}><Plus className="size-4" /> New account</Button>}
           />
         ) : (
           <Card className="overflow-hidden">
@@ -97,14 +116,18 @@ export default function AccountsPage() {
                   <th className="px-5 py-3 text-center">Contacts</th>
                   <th className="px-5 py-3 text-right">Value / MRR</th>
                   <th className="px-5 py-3">Status</th>
-                  <th className="px-5 py-3 text-right">Last activity</th>
+                  <th className="px-5 py-3 text-right">{archivedView ? "" : "Last activity"}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-line">
                 {accounts.map((a) => {
                   const meta = ACCOUNT_STATUS_META[a.status];
                   return (
-                    <tr key={a.id} onClick={() => router.push(`/accounts/${a.id}`)} className="cursor-pointer transition-colors hover:bg-violet-50/40">
+                    <tr
+                      key={a.id}
+                      onClick={() => !archivedView && router.push(`/accounts/${a.id}`)}
+                      className={cn("transition-colors", archivedView ? "" : "cursor-pointer hover:bg-violet-50/40")}
+                    >
                       <td className="px-5 py-3.5">
                         <div className="flex items-center gap-3">
                           <span className="flex size-8 items-center justify-center rounded-[var(--radius-sm)] bg-violet-50 text-violet-600">
@@ -126,7 +149,20 @@ export default function AccountsPage() {
                       <td className="px-5 py-3.5 text-center font-mono text-[13px] text-ink-soft tnum">{a.contactCount}</td>
                       <td className="px-5 py-3.5 text-right font-mono text-[13px] font-semibold text-ink tnum">{a.value > 0 ? `${formatINRCompact(a.value)}/mo` : "—"}</td>
                       <td className="px-5 py-3.5"><Badge tint={meta.tint}>{meta.label}</Badge></td>
-                      <td className="px-5 py-3.5 text-right text-[12.5px] text-faint">{relativeTime(a.lastActivityAt)}</td>
+                      <td className="px-5 py-3.5 text-right">
+                        {archivedView ? (
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            loading={restoringId === a.id}
+                            onClick={(e) => { e.stopPropagation(); restore(a.id, a.name); }}
+                          >
+                            <RotateCcw className="size-3.5" /> Restore
+                          </Button>
+                        ) : (
+                          <span className="text-[12.5px] text-faint">{relativeTime(a.lastActivityAt)}</span>
+                        )}
+                      </td>
                     </tr>
                   );
                 })}

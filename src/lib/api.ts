@@ -9,6 +9,8 @@ import type {
   IExpense,
   IActivity,
   IUser,
+  IDocument,
+  IAuditLog,
 } from "./models";
 import type {
   LeadDTO,
@@ -18,8 +20,10 @@ import type {
   ExpenseDTO,
   ActivityDTO,
   MemberDTO,
+  DocumentDTO,
+  AuditLogDTO,
 } from "./types";
-import type { LeadStage, AccountStatus, InvoiceStatus, Role, MemberStatus, ActivityKind } from "./constants";
+import type { LeadStage, AccountStatus, InvoiceStatus, Role, MemberStatus, ActivityKind, DocumentKind, AuditAction, AuditEntity } from "./constants";
 
 /* ---------------------------------------------------------- responses */
 
@@ -83,6 +87,7 @@ export function serializeLead(l: ILead, ownerName = ""): LeadDTO {
     order: l.order ?? 0,
     lastActivityAt: iso(l.lastActivityAt) ?? "",
     createdAt: iso(l.createdAt) ?? "",
+    deletedAt: iso(l.deletedAt),
   };
 }
 
@@ -117,6 +122,7 @@ export function serializeAccount(
     contactCount: extra.contactCount ?? 0,
     lastActivityAt: iso(a.lastActivityAt) ?? "",
     createdAt: iso(a.createdAt) ?? "",
+    deletedAt: iso(a.deletedAt),
   };
 }
 
@@ -168,6 +174,35 @@ export function serializeMember(u: IUser, opts: { invitedByName?: string | null;
     status: u.status as MemberStatus,
     invitedByName: opts.invitedByName ?? null,
     isYou: !!opts.isYou,
+  };
+}
+
+export function serializeDocument(d: IDocument, uploadedByName = ""): DocumentDTO {
+  return {
+    id: id(d._id),
+    accountId: id(d.accountId),
+    kind: d.kind as DocumentKind,
+    title: d.title,
+    fileName: d.fileName,
+    fileType: d.fileType ?? null,
+    fileSize: d.fileSize ?? null,
+    uploadedByName,
+    createdAt: iso(d.createdAt) ?? "",
+  };
+}
+
+export function serializeAuditLog(a: IAuditLog): AuditLogDTO {
+  return {
+    id: id(a._id),
+    entity: a.entity as AuditEntity,
+    entityId: id(a.entityId),
+    entityLabel: a.entityLabel ?? "",
+    action: a.action as AuditAction,
+    actorName: a.actorName ?? "",
+    changes: (a.changes ?? []).map((c) => ({ field: c.field, from: c.from, to: c.to })),
+    leadId: a.leadId ? id(a.leadId) : null,
+    accountId: a.accountId ? id(a.accountId) : null,
+    createdAt: iso(a.createdAt) ?? "",
   };
 }
 

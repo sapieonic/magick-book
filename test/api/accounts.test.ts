@@ -21,6 +21,10 @@ let models: typeof import("@/lib/models");
 let accountsRoute: typeof import("@/app/api/accounts/route");
 let accountIdRoute: typeof import("@/app/api/accounts/[id]/route");
 let contactsRoute: typeof import("@/app/api/accounts/[id]/contacts/route");
+let contactIdRoute: typeof import("@/app/api/accounts/[id]/contacts/[contactId]/route");
+let documentsRoute: typeof import("@/app/api/accounts/[id]/documents/route");
+let documentIdRoute: typeof import("@/app/api/accounts/[id]/documents/[docId]/route");
+let accountAuditRoute: typeof import("@/app/api/accounts/[id]/audit/route");
 let invoicesRoute: typeof import("@/app/api/accounts/[id]/invoices/route");
 let expensesRoute: typeof import("@/app/api/accounts/[id]/expenses/route");
 
@@ -35,6 +39,10 @@ beforeAll(async () => {
   accountsRoute = await import("@/app/api/accounts/route");
   accountIdRoute = await import("@/app/api/accounts/[id]/route");
   contactsRoute = await import("@/app/api/accounts/[id]/contacts/route");
+  contactIdRoute = await import("@/app/api/accounts/[id]/contacts/[contactId]/route");
+  documentsRoute = await import("@/app/api/accounts/[id]/documents/route");
+  documentIdRoute = await import("@/app/api/accounts/[id]/documents/[docId]/route");
+  accountAuditRoute = await import("@/app/api/accounts/[id]/audit/route");
   invoicesRoute = await import("@/app/api/accounts/[id]/invoices/route");
   expensesRoute = await import("@/app/api/accounts/[id]/expenses/route");
   await connectDB();
@@ -77,7 +85,7 @@ describe("GET /api/accounts", () => {
 
     const all = await (await accountsRoute.GET(jsonRequest("/api/accounts", "GET"))).json();
     expect(all.accounts).toHaveLength(3);
-    expect(all.tabCounts).toEqual({ all: 3, active: 1, at_risk: 1, churned: 1 });
+    expect(all.tabCounts).toEqual({ all: 3, active: 1, at_risk: 1, churned: 1, archived: 0 });
 
     const filtered = await (await accountsRoute.GET(jsonRequest("/api/accounts?status=at_risk", "GET"))).json();
     expect(filtered.accounts).toHaveLength(1);
@@ -139,16 +147,40 @@ describe("PATCH /api/accounts/:id RBAC", () => {
   });
 });
 
-describe("DELETE /api/accounts/:id cascade", () => {
-  it("removes the account and its children", async () => {
+describe("DELETE /api/accounts/:id soft-delete", () => {
+  it("archives the account (deletedAt set) and keeps children for restore", async () => {
     const acc = await makeAccount(admin);
     await models.Contact.create({ workspaceId, accountId: acc._id, name: "C" });
     await models.Invoice.create({ workspaceId, accountId: acc._id, number: 1, amount: 1, status: "sent" });
     const res = await accountIdRoute.DELETE(jsonRequest(`/api/accounts/${acc._id}`, "DELETE"), ctx({ id: String(acc._id) }));
     expect(res.status).toBe(200);
-    expect(await models.Account.countDocuments({ _id: acc._id })).toBe(0);
-    expect(await models.Contact.countDocuments({ accountId: acc._id })).toBe(0);
-    expect(await models.Invoice.countDocuments({ accountId: acc._id })).toBe(0);
+
+    const fresh = await models.Account.findById(acc._id).lean();
+    expect(fresh).not.toBeNull();
+    expect(fresh!.deletedAt).toBeInstanceOf(Date);
+    expect(String(fresh!.deletedBy)).toBe(String(admin._id));
+    // Children are NOT hard-deleted (they reappear on restore).
+    expect(await models.Contact.countDocuments({ accountId: acc._id })).toBe(1);
+    expect(await models.Invoice.countDocuments({ accountId: acc._id })).toBe(1);
+    // An audit entry was written.
+    expect(await models.AuditLog.countDocuments({ accountId: acc._id, action: "delete" })).toBe(1);
+  });
+
+  it("hides archived accounts from the list and surfaces them under ?archived=1, then restores", async () => {
+    const acc = await makeAccount(admin, { name: "Gone" });
+    await accountIdRoute.DELETE(jsonRequest(`/api/accounts/${acc._id}`, "DELETE"), ctx({ id: String(acc._id) }));
+
+    const live = await (await accountsRoute.GET(jsonRequest("/api/accounts", "GET"))).json();
+    expect(live.accounts.find((a: { name: string }) => a.name === "Gone")).toBeUndefined();
+    expect(live.tabCounts.archived).toBe(1);
+
+    const archived = await (await accountsRoute.GET(jsonRequest("/api/accounts?archived=1", "GET"))).json();
+    expect(archived.accounts.map((a: { name: string }) => a.name)).toContain("Gone");
+
+    const restored = await accountIdRoute.PATCH(jsonRequest(`/api/accounts/${acc._id}`, "PATCH", { action: "restore" }), ctx({ id: String(acc._id) }));
+    expect(restored.status).toBe(200);
+    const back = await (await accountsRoute.GET(jsonRequest("/api/accounts", "GET"))).json();
+    expect(back.accounts.find((a: { name: string }) => a.name === "Gone")).toBeDefined();
   });
 });
 
@@ -166,6 +198,83 @@ describe("contacts sub-route", () => {
     const acc = await makeAccount(admin);
     const res = await contactsRoute.POST(jsonRequest(`/api/accounts/${acc._id}/contacts`, "POST", {}), ctx({ id: String(acc._id) }));
     expect(res.status).toBe(400);
+  });
+
+  it("edits a contact's email and phone", async () => {
+    const acc = await makeAccount(admin);
+    const c = await models.Contact.create({ workspaceId, accountId: acc._id, name: "Asha", email: "old@x.com" });
+    const res = await contactIdRoute.PATCH(
+      jsonRequest(`/api/accounts/${acc._id}/contacts/${c._id}`, "PATCH", { email: "new@x.com", phone: "+91 99999" }),
+      ctx({ id: String(acc._id), contactId: String(c._id) }),
+    );
+    expect(res.status).toBe(200);
+    const { contact } = await res.json();
+    expect(contact.email).toBe("new@x.com");
+    expect(contact.phone).toBe("+91 99999");
+  });
+
+  it("rejects blanking a contact's name", async () => {
+    const acc = await makeAccount(admin);
+    const c = await models.Contact.create({ workspaceId, accountId: acc._id, name: "Asha" });
+    const res = await contactIdRoute.PATCH(
+      jsonRequest(`/api/accounts/${acc._id}/contacts/${c._id}`, "PATCH", { name: "  " }),
+      ctx({ id: String(acc._id), contactId: String(c._id) }),
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it("promoting a contact to primary repoints the account and demotes the old primary", async () => {
+    const acc = await makeAccount(admin);
+    const oldPrimary = await models.Contact.create({ workspaceId, accountId: acc._id, name: "Old", isPrimary: true });
+    await models.Account.updateOne({ _id: acc._id }, { primaryContactId: oldPrimary._id });
+    const second = await models.Contact.create({ workspaceId, accountId: acc._id, name: "New" });
+
+    const res = await contactIdRoute.PATCH(
+      jsonRequest(`/api/accounts/${acc._id}/contacts/${second._id}`, "PATCH", { isPrimary: true }),
+      ctx({ id: String(acc._id), contactId: String(second._id) }),
+    );
+    expect(res.status).toBe(200);
+    expect((await res.json()).contact.isPrimary).toBe(true);
+
+    const fresh = await models.Account.findById(acc._id).lean();
+    expect(String(fresh!.primaryContactId)).toBe(String(second._id));
+    expect((await models.Contact.findById(oldPrimary._id).lean())!.isPrimary).toBe(false);
+  });
+
+  it("archiving the primary contact promotes the next live one (soft-delete)", async () => {
+    const acc = await makeAccount(admin);
+    const primary = await models.Contact.create({ workspaceId, accountId: acc._id, name: "Primary", isPrimary: true });
+    await models.Account.updateOne({ _id: acc._id }, { primaryContactId: primary._id });
+    const other = await models.Contact.create({ workspaceId, accountId: acc._id, name: "Other" });
+
+    const res = await contactIdRoute.DELETE(
+      jsonRequest(`/api/accounts/${acc._id}/contacts/${primary._id}`, "DELETE"),
+      ctx({ id: String(acc._id), contactId: String(primary._id) }),
+    );
+    expect(res.status).toBe(200);
+    // Soft-deleted: still present with deletedAt, but no longer listed or primary.
+    const archived = await models.Contact.findById(primary._id).lean();
+    expect(archived!.deletedAt).toBeInstanceOf(Date);
+    expect(archived!.isPrimary).toBe(false);
+    const fresh = await models.Account.findById(acc._id).lean();
+    expect(String(fresh!.primaryContactId)).toBe(String(other._id));
+    expect((await models.Contact.findById(other._id).lean())!.isPrimary).toBe(true);
+
+    // The contacts listing excludes the archived one.
+    const list = await (await contactsRoute.GET(jsonRequest(`/api/accounts/${acc._id}/contacts`, "GET"), ctx({ id: String(acc._id) }))).json();
+    expect(list.contacts.map((c: { name: string }) => c.name)).toEqual(["Other"]);
+  });
+
+  it("403 when a standard user edits a contact on an account they don't own", async () => {
+    const acc = await makeAccount(admin);
+    const c = await models.Contact.create({ workspaceId, accountId: acc._id, name: "Asha" });
+    session.user = standard;
+    const res = await contactIdRoute.PATCH(
+      jsonRequest(`/api/accounts/${acc._id}/contacts/${c._id}`, "PATCH", { email: "x@y.com" }),
+      ctx({ id: String(acc._id), contactId: String(c._id) }),
+    );
+    // standard can't even see the admin's account → 404 from scope
+    expect(res.status).toBe(404);
   });
 });
 
@@ -203,5 +312,54 @@ describe("expenses sub-route", () => {
     const res = await expensesRoute.POST(jsonRequest(`/api/accounts/${acc._id}/expenses`, "POST", { amount: 100, category: "Nope" }), ctx({ id: String(acc._id) }));
     const { expense } = await res.json();
     expect(expense.category).toBe("Other");
+  });
+});
+
+describe("documents sub-route (proposals/agreements)", () => {
+  it("lists documents (live only) with the uploader name", async () => {
+    const acc = await makeAccount(admin);
+    await models.Document.create({ workspaceId, accountId: acc._id, kind: "agreement", title: "MSA 2026", fileKey: "k1", fileName: "msa.pdf", uploadedById: admin._id });
+    await models.Document.create({ workspaceId, accountId: acc._id, kind: "proposal", title: "Old", fileKey: "k2", fileName: "old.pdf", uploadedById: admin._id, deletedAt: new Date() });
+
+    const res = await documentsRoute.GET(jsonRequest(`/api/accounts/${acc._id}/documents`, "GET"), ctx({ id: String(acc._id) }));
+    expect(res.status).toBe(200);
+    const { documents } = await res.json();
+    expect(documents).toHaveLength(1);
+    expect(documents[0].title).toBe("MSA 2026");
+    expect(documents[0].kind).toBe("agreement");
+    expect(documents[0].uploadedByName).toBe("Admin");
+  });
+
+  it("returns 501 when file storage isn't configured", async () => {
+    const acc = await makeAccount(admin);
+    const res = await documentsRoute.POST(jsonRequest(`/api/accounts/${acc._id}/documents`, "POST", {}), ctx({ id: String(acc._id) }));
+    expect(res.status).toBe(501);
+  });
+
+  it("soft-deletes a document and writes an audit entry", async () => {
+    const acc = await makeAccount(admin);
+    const doc = await models.Document.create({ workspaceId, accountId: acc._id, kind: "proposal", title: "Pitch", fileKey: "k3", fileName: "pitch.pdf", uploadedById: admin._id });
+    const res = await documentIdRoute.DELETE(jsonRequest(`/api/accounts/${acc._id}/documents/${doc._id}`, "DELETE"), ctx({ id: String(acc._id), docId: String(doc._id) }));
+    expect(res.status).toBe(200);
+    expect((await models.Document.findById(doc._id).lean())!.deletedAt).toBeInstanceOf(Date);
+    expect(await models.AuditLog.countDocuments({ entity: "document", action: "delete", accountId: acc._id })).toBe(1);
+  });
+});
+
+describe("GET /api/accounts/:id/audit (account history)", () => {
+  it("aggregates the account's own + child-record changes", async () => {
+    const created = await accountsRoute.POST(jsonRequest("/api/accounts", "POST", { name: "Lumen" }));
+    const id = (await created.json()).account.id;
+
+    await contactsRoute.POST(jsonRequest(`/api/accounts/${id}/contacts`, "POST", { name: "Asha" }), ctx({ id }));
+    await invoicesRoute.POST(jsonRequest(`/api/accounts/${id}/invoices`, "POST", { amount: 5000 }), ctx({ id }));
+
+    const res = await accountAuditRoute.GET(jsonRequest(`/api/accounts/${id}/audit`, "GET"), ctx({ id }));
+    expect(res.status).toBe(200);
+    const { entries } = await res.json();
+    const entities = entries.map((e: { entity: string }) => e.entity);
+    expect(entities).toContain("account");
+    expect(entities).toContain("contact");
+    expect(entities).toContain("invoice");
   });
 });

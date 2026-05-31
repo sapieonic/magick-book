@@ -12,6 +12,14 @@ export function formatINR(amount: number): string {
   return "₹" + new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 }).format(Math.round(amount));
 }
 
+/** Human-readable file size, e.g. 824 KB, 3.1 MB. */
+export function formatBytes(bytes?: number | null): string {
+  if (!bytes || bytes <= 0) return "—";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 /**
  * Compact Indian currency, e.g. ₹4.2L, ₹1.1Cr, ₹85k, ₹420.
  * Mirrors the lakh/crore shorthand used across the wireframes.

@@ -4,7 +4,7 @@ import { connectDB } from "@/lib/db";
 import { Lead, type ILead } from "@/lib/models";
 import { requireUser } from "@/lib/auth/server";
 import { leadScope, canEditOwned } from "@/lib/rbac";
-import { logActivity } from "@/lib/services";
+import { logActivity, audit } from "@/lib/services";
 import { LEAD_STAGES, STAGE_META } from "@/lib/constants";
 import { Types } from "mongoose";
 
@@ -37,6 +37,10 @@ export const PATCH = route(async (req: NextRequest, ctx: Ctx) => {
       kind: "stage_change",
       title: stage === "lost" ? "Marked lost" : STAGE_META[stage as keyof typeof STAGE_META].label,
       detail: stage === "lost" ? (b.lostReason ? String(b.lostReason) : undefined) : undefined,
+    });
+    await audit({
+      entity: "lead", entityId: lead._id, entityLabel: lead.name, action: "update", actor: user,
+      changes: [{ field: "stage", from: lead.stage, to: stage }], leadId: lead._id,
     });
   }
 

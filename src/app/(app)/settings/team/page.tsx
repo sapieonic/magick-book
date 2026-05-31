@@ -4,6 +4,7 @@ import { ShieldCheck, User, Check, X, Plus, Lock, Trash2 } from "lucide-react";
 import { PageHeader } from "@/components/layout/Sidebar";
 import { useSession } from "@/components/layout/SessionContext";
 import { InviteModal } from "@/components/settings/InviteModal";
+import { SettingsTabs } from "@/components/settings/SettingsTabs";
 import { Avatar } from "@/components/ui/Avatar";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -75,6 +76,8 @@ export default function TeamPage() {
           </Button>
         )}
       </PageHeader>
+
+      <SettingsTabs />
 
       <div className="px-6 py-6 lg:px-8">
         <div className="mx-auto max-w-[1080px]">

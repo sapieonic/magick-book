@@ -4,7 +4,7 @@ import { connectDB } from "@/lib/db";
 import { Lead, type ILead } from "@/lib/models";
 import { requireUser } from "@/lib/auth/server";
 import { leadScope } from "@/lib/rbac";
-import { logActivity, ownerNameMap } from "@/lib/services";
+import { logActivity, ownerNameMap, audit } from "@/lib/services";
 import { LEAD_STAGES } from "@/lib/constants";
 import { Types } from "mongoose";
 
@@ -13,8 +13,9 @@ export const GET = route(async (req: NextRequest) => {
   const user = await requireUser();
   await connectDB();
   const q = req.nextUrl.searchParams.get("q")?.trim();
+  const archived = req.nextUrl.searchParams.get("archived") === "1";
 
-  const filter: Record<string, unknown> = leadScope(user);
+  const filter: Record<string, unknown> = leadScope(user, { archived });
   if (q) {
     filter.$or = [
       { name: { $regex: q, $options: "i" } },
@@ -61,6 +62,7 @@ export const POST = route(async (req: NextRequest) => {
     title: "Lead created",
     detail: `from ${lead.source}`,
   });
+  await audit({ entity: "lead", entityId: lead._id, entityLabel: lead.name, action: "create", actor: user, leadId: lead._id });
 
   const fresh = await Lead.findById(lead._id).lean<ILead>();
   return ok({ lead: serializeLead(fresh!, user.name) }, 201);

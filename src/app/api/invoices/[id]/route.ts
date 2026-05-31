@@ -4,6 +4,7 @@ import { connectDB } from "@/lib/db";
 import { Invoice, Account, type IInvoice, type IAccount } from "@/lib/models";
 import { requireUser } from "@/lib/auth/server";
 import { accountScope, canEditOwned } from "@/lib/rbac";
+import { audit } from "@/lib/services";
 import { INVOICE_STATUSES } from "@/lib/constants";
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -14,7 +15,7 @@ export const PATCH = route(async (req: NextRequest, ctx: Ctx) => {
   await connectDB();
   const { id } = await ctx.params;
 
-  const inv = await Invoice.findOne({ _id: id, workspaceId: user.workspaceId }).lean<IInvoice>();
+  const inv = await Invoice.findOne({ _id: id, workspaceId: user.workspaceId, deletedAt: null }).lean<IInvoice>();
   if (!inv) throw new HttpError("Invoice not found", 404);
   const acc = await Account.findOne({ _id: inv.accountId, ...accountScope(user) }).lean<IAccount>();
   if (!acc) throw new HttpError("Invoice not found", 404);
@@ -29,6 +30,10 @@ export const PATCH = route(async (req: NextRequest, ctx: Ctx) => {
 
   if (b.status && INVOICE_STATUSES.includes(b.status)) {
     await Invoice.updateOne({ _id: inv._id }, { status: b.status });
+    await audit({
+      entity: "invoice", entityId: inv._id, entityLabel: `Invoice #${inv.number}`, action: "update", actor: user,
+      changes: [{ field: "status", from: inv.status, to: b.status }], accountId: inv.accountId,
+    });
     const fresh = await Invoice.findById(inv._id).lean<IInvoice>();
     return ok({ invoice: serializeInvoice(fresh!) });
   }

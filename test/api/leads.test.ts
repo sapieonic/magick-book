@@ -25,6 +25,7 @@ let leadIdRoute: typeof import("@/app/api/leads/[id]/route");
 let stageRoute: typeof import("@/app/api/leads/[id]/stage/route");
 let convertRoute: typeof import("@/app/api/leads/[id]/convert/route");
 let activitiesRoute: typeof import("@/app/api/leads/[id]/activities/route");
+let leadAuditRoute: typeof import("@/app/api/leads/[id]/audit/route");
 
 let workspaceId: Types.ObjectId;
 let admin: IUser;
@@ -39,6 +40,7 @@ beforeAll(async () => {
   stageRoute = await import("@/app/api/leads/[id]/stage/route");
   convertRoute = await import("@/app/api/leads/[id]/convert/route");
   activitiesRoute = await import("@/app/api/leads/[id]/activities/route");
+  leadAuditRoute = await import("@/app/api/leads/[id]/audit/route");
   await connectDB();
 });
 afterAll(stopTestDB);
@@ -237,5 +239,62 @@ describe("POST /api/leads/:id/activities", () => {
     const lead = await makeLead(admin);
     const res = await activitiesRoute.POST(jsonRequest(`/api/leads/${lead._id}/activities`, "POST", { kind: "bogus" }), ctx({ id: String(lead._id) }));
     expect(res.status).toBe(400);
+  });
+});
+
+describe("DELETE + restore /api/leads/:id (soft-delete)", () => {
+  it("archives a lead, hides it from the live list, surfaces it under ?archived=1, and restores it", async () => {
+    const lead = await makeLead(admin, { name: "Bye" });
+    const del = await leadIdRoute.DELETE(jsonRequest(`/api/leads/${lead._id}`, "DELETE"), ctx({ id: String(lead._id) }));
+    expect(del.status).toBe(200);
+
+    const fresh = await models.Lead.findById(lead._id).lean();
+    expect(fresh!.deletedAt).toBeInstanceOf(Date);
+
+    const live = await (await leadsRoute.GET(jsonRequest("/api/leads", "GET"))).json();
+    expect(live.leads.find((l: { name: string }) => l.name === "Bye")).toBeUndefined();
+
+    const archived = await (await leadsRoute.GET(jsonRequest("/api/leads?archived=1", "GET"))).json();
+    expect(archived.leads.map((l: { name: string }) => l.name)).toContain("Bye");
+
+    const restored = await leadIdRoute.PATCH(jsonRequest(`/api/leads/${lead._id}`, "PATCH", { action: "restore" }), ctx({ id: String(lead._id) }));
+    expect(restored.status).toBe(200);
+    expect((await restored.json()).lead.deletedAt).toBeNull();
+
+    const back = await (await leadsRoute.GET(jsonRequest("/api/leads", "GET"))).json();
+    expect(back.leads.find((l: { name: string }) => l.name === "Bye")).toBeDefined();
+  });
+
+  it("403 when a standard user archives a lead they don't own", async () => {
+    const lead = await makeLead(admin);
+    session.user = standard;
+    const res = await leadIdRoute.DELETE(jsonRequest(`/api/leads/${lead._id}`, "DELETE"), ctx({ id: String(lead._id) }));
+    expect(res.status).toBe(404); // scope hides it before ownership check
+  });
+});
+
+describe("GET /api/leads/:id/audit (change history)", () => {
+  it("records create, field edits (with diffs), stage moves, and delete", async () => {
+    const created = await leadsRoute.POST(jsonRequest("/api/leads", "POST", { name: "Asha", estValue: 1000 }));
+    const id = (await created.json()).lead.id;
+
+    await leadIdRoute.PATCH(jsonRequest(`/api/leads/${id}`, "PATCH", { name: "Asha V", estValue: 5000 }), ctx({ id }));
+    await stageRoute.PATCH(jsonRequest(`/api/leads/${id}/stage`, "PATCH", { stage: "qualified" }), ctx({ id }));
+    await leadIdRoute.DELETE(jsonRequest(`/api/leads/${id}`, "DELETE"), ctx({ id }));
+
+    const res = await leadAuditRoute.GET(jsonRequest(`/api/leads/${id}/audit`, "GET"), ctx({ id }));
+    expect(res.status).toBe(200);
+    const { entries } = await res.json();
+    const actions = entries.map((e: { action: string }) => e.action);
+    expect(actions).toContain("create");
+    expect(actions).toContain("update");
+    expect(actions).toContain("delete");
+
+    // The field edit captured a name + estValue diff.
+    const edit = entries.find((e: { changes: { field: string }[] }) => e.changes.some((c) => c.field === "name"));
+    expect(edit).toBeDefined();
+    const nameChange = edit.changes.find((c: { field: string }) => c.field === "name");
+    expect(nameChange.from).toBe("Asha");
+    expect(nameChange.to).toBe("Asha V");
   });
 });

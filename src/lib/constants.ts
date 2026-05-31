@@ -59,6 +59,33 @@ export type MemberStatus = (typeof MEMBER_STATUSES)[number];
 export const CONTACT_METHODS = ["call", "whatsapp", "email", "sms"] as const;
 export type ContactMethod = (typeof CONTACT_METHODS)[number];
 
+/* ----------------------------------------------------- documents (S3-backed) */
+
+export const DOCUMENT_KINDS = ["proposal", "agreement", "other"] as const;
+export type DocumentKind = (typeof DOCUMENT_KINDS)[number];
+
+export const DOCUMENT_KIND_META: Record<DocumentKind, { label: string; tint: string }> = {
+  proposal: { label: "Proposal", tint: "bg-info-bg text-info border-info/30" },
+  agreement: { label: "Agreement", tint: "bg-violet-100 text-violet-700 border-violet-300" },
+  other: { label: "Other", tint: "bg-line text-ink-soft border-line-strong" },
+};
+
+/* --------------------------------------------------------------- audit trail */
+
+export const AUDIT_ACTIONS = ["create", "update", "delete", "restore"] as const;
+export type AuditAction = (typeof AUDIT_ACTIONS)[number];
+
+export const AUDIT_ACTION_META: Record<AuditAction, { label: string; tint: string }> = {
+  create: { label: "Created", tint: "bg-success-bg text-success border-success/30" },
+  update: { label: "Updated", tint: "bg-info-bg text-info border-info/30" },
+  delete: { label: "Archived", tint: "bg-danger-bg text-danger border-danger/30" },
+  restore: { label: "Restored", tint: "bg-violet-50 text-violet-700 border-violet-200" },
+};
+
+// Entity types tracked by the audit log.
+export const AUDIT_ENTITIES = ["lead", "account", "contact", "invoice", "expense", "document"] as const;
+export type AuditEntity = (typeof AUDIT_ENTITIES)[number];
+
 export const ACTIVITY_KINDS = [
   "lead_created",
   "stage_change",
