@@ -93,7 +93,7 @@ export function LoginClient() {
   return (
     <div className="grid min-h-screen lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)]">
       {/* ── Left: brand panel ─────────────────────────────────────────── */}
-      <div className="relative hidden flex-col justify-between overflow-hidden bg-ink p-10 text-white lg:flex xl:p-14">
+      <div className="relative hidden flex-col justify-between overflow-hidden bg-[#1b1a1f] p-10 text-white lg:flex xl:p-14">
         <div
           className="pointer-events-none absolute inset-0 opacity-90"
           style={{ background: "radial-gradient(120% 90% at 15% 0%, rgba(123,63,242,0.55), transparent 55%), radial-gradient(100% 80% at 100% 100%, rgba(47,154,232,0.45), transparent 50%)" }}

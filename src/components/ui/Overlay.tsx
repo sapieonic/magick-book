@@ -54,17 +54,17 @@ function ModalInner({
   useEscape(onClose);
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="animate-fade absolute inset-0 bg-ink/35 backdrop-blur-[2px]" onClick={onClose} />
+      <div className="animate-fade absolute inset-0 bg-black/45 backdrop-blur-[2px]" onClick={onClose} />
       <div
         role="dialog"
         aria-modal="true"
         className={cn(
-          "animate-scale-in relative z-10 w-full overflow-hidden rounded-[var(--radius-xl)] border border-line bg-paper shadow-[var(--shadow-pop)]",
+          "animate-scale-in relative z-10 flex max-h-[90vh] w-full flex-col overflow-hidden rounded-[var(--radius-xl)] border border-line bg-paper shadow-[var(--shadow-pop)]",
           widths,
         )}
       >
         {(title || subtitle) && (
-          <div className="flex items-start justify-between gap-4 px-6 pt-6">
+          <div className="flex shrink-0 items-start justify-between gap-4 px-6 pt-6">
             <div>
               {title && <h2 className="font-display text-[22px] font-bold leading-tight tracking-tight text-ink">{title}</h2>}
               {subtitle && <p className="mt-1 text-[13px] text-muted">{subtitle}</p>}
@@ -74,7 +74,7 @@ function ModalInner({
             </button>
           </div>
         )}
-        <div className="px-6 pb-6 pt-5">{children}</div>
+        <div className="overflow-y-auto px-6 pb-6 pt-5">{children}</div>
       </div>
     </div>
   );

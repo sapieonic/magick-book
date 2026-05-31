@@ -5,11 +5,12 @@ import { usePathname, useRouter } from "next/navigation";
 import { LayoutGrid, Users, Building2, Wallet, Settings, LifeBuoy, LogOut, ChevronDown } from "lucide-react";
 import { Logo } from "@/components/ui/Misc";
 import { Avatar } from "@/components/ui/Avatar";
+import { ThemeToggle } from "@/components/theme/ThemeToggle";
 import { useSession } from "./SessionContext";
 import { api } from "@/lib/client";
 import { cn } from "@/lib/utils";
 
-const NAV = [
+export const NAV = [
   { href: "/dashboard", label: "Home", icon: LayoutGrid },
   { href: "/leads", label: "Leads", icon: Users },
   { href: "/accounts", label: "Accts", icon: Building2 },
@@ -31,7 +32,7 @@ export function Sidebar() {
   }
 
   return (
-    <aside className="sticky top-0 z-30 flex h-screen w-[84px] shrink-0 flex-col items-center border-r border-line bg-paper/80 py-4 backdrop-blur-sm">
+    <aside className="sticky top-0 z-30 hidden h-screen w-[84px] shrink-0 flex-col items-center border-r border-line bg-paper/80 py-4 backdrop-blur-sm md:flex">
       <Link href="/dashboard" className="brand-gradient flex size-11 items-center justify-center rounded-[var(--radius-md)] shadow-[var(--shadow-violet)]">
         <span className="font-display text-[22px] font-extrabold text-white">M</span>
       </Link>
@@ -100,6 +101,10 @@ export function Sidebar() {
                 <span className="truncate text-[11.5px] text-ink-soft">{user.workspaceName ?? "Workspace"}</span>
                 <span className="rounded-full bg-violet-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-violet-700">{user.role}</span>
               </div>
+              <div className="mx-2 mb-1 mt-1.5">
+                <p className="mb-1 px-0.5 text-[10.5px] font-semibold uppercase tracking-wide text-faint">Theme</p>
+                <ThemeToggle />
+              </div>
               <button
                 onClick={logout}
                 className="mt-1 flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-[13px] font-medium text-ink-soft transition-colors hover:bg-danger-bg hover:text-danger"
@@ -124,7 +129,7 @@ export function PageHeader({
 }) {
   return (
     <header className={cn("sticky top-0 z-20 border-b border-line bg-canvas/85 backdrop-blur-md", className)}>
-      <div className="flex h-[68px] items-center gap-4 px-6 lg:px-8">{children}</div>
+      <div className="flex h-[68px] items-center gap-3 px-4 sm:gap-4 sm:px-6 lg:px-8">{children}</div>
     </header>
   );
 }

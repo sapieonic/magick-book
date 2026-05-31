@@ -65,7 +65,8 @@ export default function MoneyPage() {
                 <EmptyState icon={<Receipt className="size-6" />} title="No invoices yet" description="Bill an account from its Invoices tab." />
               ) : (
                 <Card className="overflow-hidden">
-                  <table className="w-full">
+                  <div className="overflow-x-auto">
+                  <table className="w-full min-w-[620px]">
                     <thead>
                       <tr className="border-b border-line bg-canvas/60 text-left text-[11.5px] font-semibold uppercase tracking-wide text-muted">
                         <th className="px-5 py-3">Invoice</th>
@@ -87,13 +88,15 @@ export default function MoneyPage() {
                       ))}
                     </tbody>
                   </table>
+                  </div>
                 </Card>
               )
             ) : data.expenses.length === 0 ? (
               <EmptyState icon={<Wallet className="size-6" />} title="No expenses yet" description="Log costs from an account's Expenses tab." />
             ) : (
               <Card className="overflow-hidden">
-                <table className="w-full">
+                <div className="overflow-x-auto">
+                <table className="w-full min-w-[680px]">
                   <thead>
                     <tr className="border-b border-line bg-canvas/60 text-left text-[11.5px] font-semibold uppercase tracking-wide text-muted">
                       <th className="px-5 py-3">Date</th>
@@ -117,6 +120,7 @@ export default function MoneyPage() {
                     ))}
                   </tbody>
                 </table>
+                </div>
               </Card>
             )}
           </div>

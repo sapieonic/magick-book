@@ -103,7 +103,8 @@ export default function TeamPage() {
               {/* Members */}
               <h2 className="mb-3 mt-7 font-display text-[16px] font-bold text-ink">Members · {members.length}</h2>
               <Card className="overflow-hidden">
-                <table className="w-full">
+                <div className="overflow-x-auto">
+                <table className="w-full min-w-[720px]">
                   <thead>
                     <tr className="border-b border-line bg-canvas/60 text-left text-[11.5px] font-semibold uppercase tracking-wide text-muted">
                       <th className="px-5 py-3">Member</th>
@@ -160,6 +161,7 @@ export default function TeamPage() {
                     ))}
                   </tbody>
                 </table>
+                </div>
               </Card>
             </>
           )}

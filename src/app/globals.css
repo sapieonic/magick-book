@@ -65,6 +65,56 @@
   color-scheme: light;
 }
 
+/*
+  Dark theme — same warm SaaS character, inverted onto a deep charcoal canvas.
+  Because the whole UI is built on the semantic tokens above (paper / ink / line
+  / status / violet …), redefining those CSS variables here re-skins every
+  component automatically. `data-theme="dark"` is set on <html> by the no-flash
+  script in layout.tsx and toggled by the ThemeProvider.
+*/
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  /* Brand violet — keep 400/500 vivid as the accent; flip the light tints
+     (used as subtle backgrounds) to dark, and brighten the high steps (used as
+     text/borders on dark surfaces). */
+  --color-violet-50: #221d3d;
+  --color-violet-100: #2a2450;
+  --color-violet-200: #39316b;
+  --color-violet-300: #4f4699;
+  --color-violet-400: #8d78f3;
+  --color-violet-500: #6d5cf5;
+  --color-violet-600: #a08fff;
+  --color-violet-700: #c3b8fb;
+  --color-violet-800: #d8d0fc;
+  --color-violet-900: #ebe7fd;
+
+  /* Neutrals — warm charcoal paper */
+  --color-canvas: #15141a;
+  --color-paper: #1e1d24;
+  --color-ink: #f4f2ef;
+  --color-ink-soft: #c6c3cd;
+  --color-muted: #908d9a;
+  --color-faint: #67646f;
+  --color-line: #2a2832;
+  --color-line-strong: #393640;
+
+  /* Status — brightened foregrounds, deep tinted backgrounds */
+  --color-success: #34d27f;
+  --color-success-bg: #15301f;
+  --color-warn: #e3a740;
+  --color-warn-bg: #332810;
+  --color-danger: #f3756b;
+  --color-danger-bg: #3a1d1b;
+  --color-info: #5aa0f0;
+  --color-info-bg: #16273d;
+
+  /* Shadows read as depth, so lean on near-black on the dark canvas */
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3), 0 4px 16px rgba(0, 0, 0, 0.35);
+  --shadow-pop: 0 8px 30px rgba(0, 0, 0, 0.55), 0 2px 8px rgba(0, 0, 0, 0.4);
+  --shadow-violet: 0 6px 20px rgba(109, 92, 245, 0.4);
+}
+
 * {
   border-color: var(--color-line);
 }
@@ -86,6 +136,13 @@ body {
     transparent 0
   );
   background-size: 22px 22px;
+}
+:root[data-theme="dark"] body {
+  background-image: radial-gradient(
+    circle at 1px 1px,
+    rgba(255, 255, 255, 0.022) 1px,
+    transparent 0
+  );
 }
 
 ::selection {
@@ -176,3 +233,36 @@ body {
   background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.6), transparent);
   animation: mb-shimmer 1.4s infinite;
 }
+:root[data-theme="dark"] .skeleton::after {
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.07), transparent);
+}
+
+/*
+  Theme-aware fixes for opacity-modified token utilities.
+
+  Tailwind v4 statically resolves utilities like `bg-canvas/85` or
+  `border-success/30` to a literal rgba at build time (e.g. #faf8f5d9), so they
+  do NOT follow the runtime `--color-*` overrides that power the dark theme.
+  Here we re-declare those exact classes under the dark scope using `var()` +
+  `color-mix`, which stays dynamic — keeping the frosted surfaces and tinted
+  borders correct in dark mode. (Light mode is untouched.)
+*/
+:root[data-theme="dark"] .bg-canvas\/85 { background-color: color-mix(in oklab, var(--color-canvas) 85%, transparent); }
+:root[data-theme="dark"] .bg-canvas\/60 { background-color: color-mix(in oklab, var(--color-canvas) 60%, transparent); }
+:root[data-theme="dark"] .bg-canvas\/50 { background-color: color-mix(in oklab, var(--color-canvas) 50%, transparent); }
+:root[data-theme="dark"] .bg-canvas\/40 { background-color: color-mix(in oklab, var(--color-canvas) 40%, transparent); }
+:root[data-theme="dark"] .bg-paper\/90 { background-color: color-mix(in oklab, var(--color-paper) 90%, transparent); }
+:root[data-theme="dark"] .bg-paper\/80 { background-color: color-mix(in oklab, var(--color-paper) 80%, transparent); }
+:root[data-theme="dark"] .bg-paper\/60 { background-color: color-mix(in oklab, var(--color-paper) 60%, transparent); }
+:root[data-theme="dark"] .bg-violet-50\/70 { background-color: color-mix(in oklab, var(--color-violet-50) 70%, transparent); }
+:root[data-theme="dark"] .bg-violet-50\/60 { background-color: color-mix(in oklab, var(--color-violet-50) 60%, transparent); }
+:root[data-theme="dark"] .hover\:bg-violet-50\/40:hover { background-color: color-mix(in oklab, var(--color-violet-50) 40%, transparent); }
+:root[data-theme="dark"] .bg-danger-bg\/40 { background-color: color-mix(in oklab, var(--color-danger-bg) 40%, transparent); }
+:root[data-theme="dark"] .border-success\/30 { border-color: color-mix(in oklab, var(--color-success) 30%, transparent); }
+:root[data-theme="dark"] .border-danger\/30 { border-color: color-mix(in oklab, var(--color-danger) 30%, transparent); }
+:root[data-theme="dark"] .border-danger\/20 { border-color: color-mix(in oklab, var(--color-danger) 20%, transparent); }
+:root[data-theme="dark"] .hover\:border-danger\/40:hover { border-color: color-mix(in oklab, var(--color-danger) 40%, transparent); }
+:root[data-theme="dark"] .border-warn\/40 { border-color: color-mix(in oklab, var(--color-warn) 40%, transparent); }
+:root[data-theme="dark"] .border-warn\/30 { border-color: color-mix(in oklab, var(--color-warn) 30%, transparent); }
+:root[data-theme="dark"] .border-info\/30 { border-color: color-mix(in oklab, var(--color-info) 30%, transparent); }
+:root[data-theme="dark"] .text-violet-700\/80 { color: color-mix(in oklab, var(--color-violet-700) 80%, transparent); }

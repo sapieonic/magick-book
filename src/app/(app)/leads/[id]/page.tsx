@@ -80,17 +80,17 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
           <span className="truncate font-display text-[20px] font-bold tracking-tight text-ink">{lead.name}</span>
           <Badge tint={meta.tint} dot={meta.dot} className="ml-1">{meta.label}</Badge>
         </nav>
-        <div className="ml-auto flex items-center gap-2">
-          <Button variant="secondary" onClick={() => setEditing(true)}>
-            <Pencil className="size-4" /> Edit
+        <div className="ml-auto flex shrink-0 items-center gap-2">
+          <Button variant="secondary" onClick={() => setEditing(true)} aria-label="Edit lead">
+            <Pencil className="size-4" /> <span className="hidden sm:inline">Edit</span>
           </Button>
           {converted ? (
             <Button variant="primary" onClick={() => router.push(`/accounts/${lead.convertedAccountId}`)}>
-              <Building2 className="size-4" /> View account
+              <Building2 className="size-4" /> <span className="hidden sm:inline">View account</span><span className="sm:hidden">Account</span>
             </Button>
           ) : (
             <Button variant="primary" onClick={() => setConverting(true)} disabled={lead.stage === "lost"}>
-              Convert to account <ArrowRight className="size-4" />
+              <span className="hidden sm:inline">Convert to account</span><span className="sm:hidden">Convert</span> <ArrowRight className="size-4" />
             </Button>
           )}
         </div>
