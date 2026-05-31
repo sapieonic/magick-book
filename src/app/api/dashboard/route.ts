@@ -26,7 +26,7 @@ export const GET = route(async () => {
 
   const [leads, invoices] = await Promise.all([
     Lead.find(lScope).select("name company stage estValue lastActivityAt").lean<ILead[]>(),
-    Invoice.find({ accountId: { $in: accIds } }).lean<IInvoice[]>(),
+    Invoice.find({ accountId: { $in: accIds }, deletedAt: null }).lean<IInvoice[]>(),
   ]);
 
   // KPIs

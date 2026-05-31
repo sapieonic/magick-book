@@ -14,10 +14,12 @@ import {
   Building2,
   ChevronRight,
   Plus,
+  Archive,
 } from "lucide-react";
 import { PageHeader } from "@/components/layout/Sidebar";
 import { useSession } from "@/components/layout/SessionContext";
 import { ActivityTimeline } from "@/components/ActivityTimeline";
+import { AuditTimeline } from "@/components/AuditTimeline";
 import { AddLeadDrawer } from "@/components/leads/AddLeadDrawer";
 import { ConvertModal } from "@/components/leads/ConvertModal";
 import { Avatar } from "@/components/ui/Avatar";
@@ -30,7 +32,7 @@ import { useToast } from "@/components/ui/Toast";
 import { api, useApi } from "@/lib/client";
 import { PIPELINE_STAGES, STAGE_META } from "@/lib/constants";
 import { formatINR, cn } from "@/lib/utils";
-import type { LeadDTO, ActivityDTO } from "@/lib/types";
+import type { LeadDTO, ActivityDTO, AuditLogDTO } from "@/lib/types";
 
 interface LeadResponse {
   lead: LeadDTO;
@@ -49,10 +51,13 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
   const router = useRouter();
   const { toast } = useToast();
   const { data, loading, error, refresh } = useApi<LeadResponse>(`/api/leads/${id}`);
+  const history = useApi<{ entries: AuditLogDTO[] }>(`/api/leads/${id}/audit`);
   const [editing, setEditing] = useState(false);
   const [converting, setConverting] = useState(false);
   const [lostOpen, setLostOpen] = useState(false);
   const [reach, setReach] = useState<(typeof REACH)[number] | null>(null);
+  const [rightTab, setRightTab] = useState<"activity" | "history">("activity");
+  const [archiving, setArchiving] = useState(false);
 
   if (loading) return <PageLoader label="Loading lead…" />;
   if (error || !data) return <div className="p-8"><ErrorState message={error ?? "Lead not found"} onRetry={refresh} /></div>;
@@ -66,8 +71,22 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
       await api.patch(`/api/leads/${id}/stage`, { stage });
       toast(`Moved to ${STAGE_META[stage as keyof typeof STAGE_META].label}.`, "success");
       refresh();
+      history.refresh();
     } catch (err) {
       toast(err instanceof Error ? err.message : "Couldn't update stage", "error");
+    }
+  }
+
+  async function archiveLead() {
+    if (!confirm("Archive this lead? It will be hidden but can be restored from the Archived view.")) return;
+    setArchiving(true);
+    try {
+      await api.delete(`/api/leads/${id}`);
+      toast("Lead archived.", "info");
+      router.push("/leads");
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Couldn't archive", "error");
+      setArchiving(false);
     }
   }
 
@@ -81,6 +100,9 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
           <Badge tint={meta.tint} dot={meta.dot} className="ml-1">{meta.label}</Badge>
         </nav>
         <div className="ml-auto flex shrink-0 items-center gap-2">
+          <Button variant="ghost" onClick={archiveLead} loading={archiving} aria-label="Archive lead">
+            <Archive className="size-4" /> <span className="hidden sm:inline">Archive</span>
+          </Button>
           <Button variant="secondary" onClick={() => setEditing(true)} aria-label="Edit lead">
             <Pencil className="size-4" /> <span className="hidden sm:inline">Edit</span>
           </Button>
@@ -171,14 +193,35 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
 
             {/* Right: timeline */}
             <Card className="p-6">
-              <h2 className="mb-4 font-display text-[16px] font-bold text-ink">Lifecycle &amp; activity</h2>
-              <NoteComposer leadId={id} onAdded={refresh} />
-              {lead.notes && (
-                <div className="mb-5 rounded-[var(--radius-md)] border border-line bg-canvas/60 p-3.5 text-[13px] leading-relaxed text-ink-soft">
-                  {lead.notes}
-                </div>
+              <div className="mb-4 flex items-center gap-1 rounded-[var(--radius-md)] border border-line bg-paper p-1">
+                {(["activity", "history"] as const).map((t) => (
+                  <button
+                    key={t}
+                    onClick={() => setRightTab(t)}
+                    className={cn(
+                      "inline-flex h-8 flex-1 items-center justify-center gap-1.5 rounded-[var(--radius-sm)] text-[12.5px] font-semibold capitalize transition-all",
+                      rightTab === t ? "bg-violet-50 text-violet-700" : "text-muted hover:text-ink",
+                    )}
+                  >
+                    {t === "activity" ? "Lifecycle & activity" : "Change history"}
+                  </button>
+                ))}
+              </div>
+              {rightTab === "activity" ? (
+                <>
+                  <NoteComposer leadId={id} onAdded={() => { refresh(); history.refresh(); }} />
+                  {lead.notes && (
+                    <div className="mb-5 rounded-[var(--radius-md)] border border-line bg-canvas/60 p-3.5 text-[13px] leading-relaxed text-ink-soft">
+                      {lead.notes}
+                    </div>
+                  )}
+                  <ActivityTimeline activities={activities} />
+                </>
+              ) : history.loading ? (
+                <PageLoader />
+              ) : (
+                <AuditTimeline entries={history.data?.entries ?? []} />
               )}
-              <ActivityTimeline activities={activities} />
             </Card>
           </div>
         </div>
@@ -192,6 +235,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
           onSaved={() => {
             setEditing(false);
             refresh();
+            history.refresh();
           }}
         />
       )}
@@ -212,7 +256,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
           refresh();
         }}
       />
-      <LostModal open={lostOpen} leadId={id} name={lead.name} onClose={() => setLostOpen(false)} onDone={() => { setLostOpen(false); refresh(); }} />
+      <LostModal open={lostOpen} leadId={id} name={lead.name} onClose={() => setLostOpen(false)} onDone={() => { setLostOpen(false); refresh(); history.refresh(); }} />
     </>
   );
 }

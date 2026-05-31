@@ -31,8 +31,9 @@ function buildBoard(leads: LeadDTO[]): Board {
   const board: Board = {};
   for (const s of PIPELINE_STAGES) board[s] = [];
   for (const l of leads) {
-    const stage = (PIPELINE_STAGES as readonly string[]).includes(l.stage) ? l.stage : "new";
-    (board[stage] ||= []).push(l);
+    // Lost leads (and any non-pipeline stage) aren't shown on the board.
+    if (!(PIPELINE_STAGES as readonly string[]).includes(l.stage)) continue;
+    board[l.stage].push(l);
   }
   for (const s of PIPELINE_STAGES) board[s].sort((a, b) => a.order - b.order || +new Date(a.createdAt) - +new Date(b.createdAt));
   return board;

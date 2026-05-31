@@ -53,3 +53,8 @@ export async function presignGetUrl(key: string, expiresInSeconds = 300, downloa
 export function invoiceKey(workspaceId: string, invoiceId: string): string {
   return `workspaces/${workspaceId}/invoices/${invoiceId}`;
 }
+
+/** Stable key for an account document (proposal/agreement) within a workspace. */
+export function documentKey(workspaceId: string, documentId: string): string {
+  return `workspaces/${workspaceId}/documents/${documentId}`;
+}

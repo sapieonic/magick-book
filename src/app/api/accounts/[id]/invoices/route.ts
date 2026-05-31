@@ -4,7 +4,7 @@ import { connectDB } from "@/lib/db";
 import { Account, Invoice, type IAccount, type IInvoice } from "@/lib/models";
 import { requireUser } from "@/lib/auth/server";
 import { accountScope, canEditOwned } from "@/lib/rbac";
-import { logActivity, nextInvoiceNumber } from "@/lib/services";
+import { logActivity, nextInvoiceNumber, audit } from "@/lib/services";
 import { INVOICE_STATUSES } from "@/lib/constants";
 import { formatINR } from "@/lib/utils";
 import { Types } from "mongoose";
@@ -22,7 +22,7 @@ export const GET = route(async (_req: NextRequest, ctx: Ctx) => {
   await connectDB();
   const { id } = await ctx.params;
   await requireAccount(accountScope(user), id);
-  const invoices = await Invoice.find({ accountId: id }).sort({ issuedAt: -1 }).lean<IInvoice[]>();
+  const invoices = await Invoice.find({ accountId: id, deletedAt: null }).sort({ issuedAt: -1 }).lean<IInvoice[]>();
   return ok({ invoices: invoices.map((i) => serializeInvoice(i)) });
 });
 
@@ -60,6 +60,7 @@ export const POST = route(async (req: NextRequest, ctx: Ctx) => {
     title: `Invoice #${number} ${status}`,
     detail: formatINR(amount),
   });
+  await audit({ entity: "invoice", entityId: inv._id, entityLabel: `Invoice #${number}`, action: "create", actor: user, accountId: acc._id });
 
   return ok({ invoice: serializeInvoice(inv.toObject()) }, 201);
 });

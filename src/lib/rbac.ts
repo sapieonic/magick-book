@@ -14,16 +14,29 @@ export function isAdmin(user: IUser): boolean {
   return user.role === "admin";
 }
 
+/**
+ * Soft-delete filter fragment. By default queries see only LIVE records
+ * (deletedAt null/absent); pass `{ archived: true }` for the trash view.
+ */
+function deletedFilter(opts?: ScopeOpts): Record<string, unknown> {
+  return { deletedAt: opts?.archived ? { $ne: null } : null };
+}
+
+export interface ScopeOpts {
+  /** When true, return ARCHIVED (soft-deleted) records instead of live ones. */
+  archived?: boolean;
+}
+
 /** Base filter for leads visible to this user. */
-export function leadScope(user: IUser): Record<string, unknown> {
-  const base: Record<string, unknown> = { workspaceId: user.workspaceId };
+export function leadScope(user: IUser, opts?: ScopeOpts): Record<string, unknown> {
+  const base: Record<string, unknown> = { workspaceId: user.workspaceId, ...deletedFilter(opts) };
   if (!isAdmin(user)) base.ownerId = user._id;
   return base;
 }
 
 /** Base filter for accounts visible to this user. */
-export function accountScope(user: IUser): Record<string, unknown> {
-  const base: Record<string, unknown> = { workspaceId: user.workspaceId };
+export function accountScope(user: IUser, opts?: ScopeOpts): Record<string, unknown> {
+  const base: Record<string, unknown> = { workspaceId: user.workspaceId, ...deletedFilter(opts) };
   if (!isAdmin(user)) base.ownerId = user._id;
   return base;
 }

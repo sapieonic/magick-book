@@ -1,8 +1,8 @@
 import "server-only";
 import { Types } from "mongoose";
-import { Activity, Invoice, Expense, User } from "./models";
-import type { ActivityKind } from "./constants";
-import type { AccountFinance } from "./types";
+import { Activity, AuditLog, Invoice, Expense, User, type IUser } from "./models";
+import type { ActivityKind, AuditAction, AuditEntity } from "./constants";
+import type { AccountFinance, AuditChange } from "./types";
 
 /** Append an activity/timeline entry. */
 export async function logActivity(opts: {
@@ -15,6 +15,59 @@ export async function logActivity(opts: {
   accountId?: Types.ObjectId;
 }): Promise<void> {
   await Activity.create(opts);
+}
+
+/**
+ * Write an audit-trail entry. Records WHO did WHAT to WHICH record, with an
+ * optional field-level diff. `entityLabel` and `actor.name` are denormalized so
+ * the entry stays readable even after the record itself is archived/removed.
+ */
+export async function audit(opts: {
+  entity: AuditEntity;
+  entityId: Types.ObjectId | string;
+  entityLabel: string;
+  action: AuditAction;
+  actor: Pick<IUser, "_id" | "name" | "workspaceId">;
+  changes?: AuditChange[];
+  leadId?: Types.ObjectId | string;
+  accountId?: Types.ObjectId | string;
+}): Promise<void> {
+  // No-op an "update" with an empty diff so we don't clutter the trail.
+  if (opts.action === "update" && (!opts.changes || opts.changes.length === 0)) return;
+  await AuditLog.create({
+    workspaceId: opts.actor.workspaceId,
+    entity: opts.entity,
+    entityId: opts.entityId,
+    entityLabel: opts.entityLabel,
+    action: opts.action,
+    actorId: opts.actor._id,
+    actorName: opts.actor.name,
+    changes: opts.changes ?? [],
+    leadId: opts.leadId,
+    accountId: opts.accountId,
+  });
+}
+
+/**
+ * Field-level diff for an audit "update". Compares `patch` against the
+ * `before` snapshot and returns only the keys whose value actually changed.
+ * Dates and arrays are normalized so cosmetic differences don't register.
+ */
+export function diffChanges(before: Record<string, unknown>, patch: Record<string, unknown>, fields: string[]): AuditChange[] {
+  const norm = (v: unknown): unknown => {
+    if (v === undefined || v === null) return null;
+    if (v instanceof Date) return v.toISOString();
+    if (Array.isArray(v)) return v.map(String).join(", ");
+    return v;
+  };
+  const changes: AuditChange[] = [];
+  for (const f of fields) {
+    if (!(f in patch)) continue;
+    const from = norm(before[f]);
+    const to = norm(patch[f]);
+    if (from !== to) changes.push({ field: f, from, to });
+  }
+  return changes;
 }
 
 /** Resolve a set of user ids to display names in one query. */
@@ -32,11 +85,11 @@ export async function accountFinance(accountId: Types.ObjectId | string): Promis
   const accId = new Types.ObjectId(accountId);
   const [invoiceAgg, expenseAgg] = await Promise.all([
     Invoice.aggregate<{ _id: string; total: number }>([
-      { $match: { accountId: accId } },
+      { $match: { accountId: accId, deletedAt: null } },
       { $group: { _id: "$status", total: { $sum: "$amount" } } },
     ]),
     Expense.aggregate<{ _id: null; total: number }>([
-      { $match: { accountId: accId } },
+      { $match: { accountId: accId, deletedAt: null } },
       { $group: { _id: null, total: { $sum: "$amount" } } },
     ]),
   ]);

@@ -4,7 +4,7 @@ import { connectDB } from "@/lib/db";
 import { Account, Expense, type IAccount, type IExpense } from "@/lib/models";
 import { requireUser } from "@/lib/auth/server";
 import { accountScope, canEditOwned } from "@/lib/rbac";
-import { logActivity } from "@/lib/services";
+import { logActivity, audit } from "@/lib/services";
 import { EXPENSE_CATEGORIES } from "@/lib/constants";
 import { formatINR } from "@/lib/utils";
 import { Types } from "mongoose";
@@ -22,7 +22,7 @@ export const GET = route(async (_req: NextRequest, ctx: Ctx) => {
   await connectDB();
   const { id } = await ctx.params;
   await requireAccount(accountScope(user), id);
-  const expenses = await Expense.find({ accountId: id }).sort({ date: -1 }).lean<IExpense[]>();
+  const expenses = await Expense.find({ accountId: id, deletedAt: null }).sort({ date: -1 }).lean<IExpense[]>();
   return ok({ expenses: expenses.map((e) => serializeExpense(e)) });
 });
 
@@ -56,6 +56,7 @@ export const POST = route(async (req: NextRequest, ctx: Ctx) => {
     title: `${category} expense`,
     detail: `${b.vendor?.trim() || "Expense"} · ${formatINR(amount)}`,
   });
+  await audit({ entity: "expense", entityId: exp._id, entityLabel: `${category} · ${formatINR(amount)}`, action: "create", actor: user, accountId: acc._id });
 
   return ok({ expense: serializeExpense(exp.toObject()) }, 201);
 });

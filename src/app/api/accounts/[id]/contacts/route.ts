@@ -4,6 +4,7 @@ import { connectDB } from "@/lib/db";
 import { Account, Contact, type IAccount, type IContact } from "@/lib/models";
 import { requireUser } from "@/lib/auth/server";
 import { accountScope, canEditOwned } from "@/lib/rbac";
+import { audit } from "@/lib/services";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -18,7 +19,7 @@ export const GET = route(async (_req: NextRequest, ctx: Ctx) => {
   await connectDB();
   const { id } = await ctx.params;
   await requireAccount(accountScope(user), id);
-  const contacts = await Contact.find({ accountId: id }).sort({ isPrimary: -1, createdAt: 1 }).lean<IContact[]>();
+  const contacts = await Contact.find({ accountId: id, deletedAt: null }).sort({ isPrimary: -1, createdAt: 1 }).lean<IContact[]>();
   return ok({ contacts: contacts.map(serializeContact) });
 });
 
@@ -41,5 +42,6 @@ export const POST = route(async (req: NextRequest, ctx: Ctx) => {
     isPrimary: false,
   });
   await Account.updateOne({ _id: acc._id }, { lastActivityAt: new Date() });
+  await audit({ entity: "contact", entityId: c._id, entityLabel: c.name, action: "create", actor: user, accountId: acc._id });
   return ok({ contact: serializeContact(c.toObject()) }, 201);
 });

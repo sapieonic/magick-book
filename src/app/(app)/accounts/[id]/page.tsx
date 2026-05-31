@@ -1,6 +1,7 @@
 "use client";
 import { use, useState, useMemo, useRef } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   Building2,
   ChevronRight,
@@ -12,42 +13,69 @@ import {
   Wallet,
   Eye,
   Upload,
+  Pencil,
+  FileText,
+  Download,
+  Trash2,
+  Archive,
 } from "lucide-react";
 import { PageHeader } from "@/components/layout/Sidebar";
 import { ActivityTimeline } from "@/components/ActivityTimeline";
-import { AddContactModal, NewInvoiceModal, LogExpenseModal, uploadInvoiceFile } from "@/components/accounts/AccountModals";
+import { AuditTimeline } from "@/components/AuditTimeline";
+import { AddContactModal, EditContactModal, NewInvoiceModal, LogExpenseModal, UploadDocumentModal, uploadInvoiceFile } from "@/components/accounts/AccountModals";
 import { Avatar } from "@/components/ui/Avatar";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card, PageLoader, ErrorState, EmptyState } from "@/components/ui/Misc";
 import { useToast } from "@/components/ui/Toast";
 import { api, useApi } from "@/lib/client";
-import { ACCOUNT_STATUS_META, INVOICE_STATUS_META } from "@/lib/constants";
-import { formatINR, formatINRCompact, cn } from "@/lib/utils";
+import { ACCOUNT_STATUS_META, INVOICE_STATUS_META, DOCUMENT_KIND_META } from "@/lib/constants";
+import { formatINR, formatINRCompact, formatBytes, cn } from "@/lib/utils";
 import { format } from "date-fns";
-import type { AccountDTO, AccountFinance, ContactDTO, InvoiceDTO, ExpenseDTO, ActivityDTO } from "@/lib/types";
+import type { AccountDTO, AccountFinance, ContactDTO, InvoiceDTO, ExpenseDTO, ActivityDTO, DocumentDTO, AuditLogDTO } from "@/lib/types";
 
-type Tab = "overview" | "contacts" | "invoices" | "expenses" | "activity";
-const TABS: Tab[] = ["overview", "contacts", "invoices", "expenses", "activity"];
+type Tab = "overview" | "contacts" | "documents" | "invoices" | "expenses" | "activity" | "history";
+const TABS: Tab[] = ["overview", "contacts", "documents", "invoices", "expenses", "activity", "history"];
 
 export default function AccountDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
+  const router = useRouter();
+  const { toast } = useToast();
   const [tab, setTab] = useState<Tab>("overview");
   const [addContact, setAddContact] = useState(false);
+  const [editContact, setEditContact] = useState<ContactDTO | null>(null);
   const [newInvoice, setNewInvoice] = useState(false);
   const [logExpense, setLogExpense] = useState(false);
+  const [uploadDoc, setUploadDoc] = useState(false);
+  const [archiving, setArchiving] = useState(false);
 
   const acc = useApi<{ account: AccountDTO; finance: AccountFinance }>(`/api/accounts/${id}`);
   const contacts = useApi<{ contacts: ContactDTO[] }>(`/api/accounts/${id}/contacts`);
+  const documents = useApi<{ documents: DocumentDTO[] }>(`/api/accounts/${id}/documents`);
   const invoices = useApi<{ invoices: InvoiceDTO[] }>(`/api/accounts/${id}/invoices`);
   const expenses = useApi<{ expenses: ExpenseDTO[] }>(`/api/accounts/${id}/expenses`);
   const activity = useApi<{ activities: ActivityDTO[] }>(`/api/accounts/${id}/activity`);
+  const history = useApi<{ entries: AuditLogDTO[] }>(`/api/accounts/${id}/audit`);
 
   function refreshMoney() {
     acc.refresh();
     invoices.refresh();
     expenses.refresh();
     activity.refresh();
+    history.refresh();
+  }
+
+  async function archiveAccount() {
+    if (!confirm("Archive this account? It will be hidden from your lists but can be restored from the Archived view.")) return;
+    setArchiving(true);
+    try {
+      await api.delete(`/api/accounts/${id}`);
+      toast("Account archived.", "info");
+      router.push("/accounts");
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Could not archive", "error");
+      setArchiving(false);
+    }
   }
 
   if (acc.loading) return <PageLoader label="Loading account…" />;
@@ -66,7 +94,10 @@ export default function AccountDetailPage({ params }: { params: Promise<{ id: st
           <span className="truncate font-display text-[20px] font-bold tracking-tight text-ink">{account.name}</span>
           <Badge tint={meta.tint} className="ml-1">{meta.label}</Badge>
         </nav>
-        <div className="ml-auto">
+        <div className="ml-auto flex items-center gap-2">
+          <Button variant="ghost" onClick={archiveAccount} loading={archiving} aria-label="Archive account">
+            <Archive className="size-4" /> <span className="hidden sm:inline">Archive</span>
+          </Button>
           <Button variant="primary" onClick={() => setAddContact(true)}>
             <Plus className="size-4" /> Add contact
           </Button>
@@ -97,14 +128,24 @@ export default function AccountDetailPage({ params }: { params: Promise<{ id: st
           {tab === "overview" && (
             <Overview account={account} finance={finance} contacts={contacts.data?.contacts ?? []} invoices={invoices.data?.invoices ?? []} expenses={expenses.data?.expenses ?? []} onSeeInvoices={() => setTab("invoices")} onSeeExpenses={() => setTab("expenses")} />
           )}
-          {tab === "contacts" && <Contacts contacts={contacts.data?.contacts ?? []} loading={contacts.loading} onAdd={() => setAddContact(true)} />}
+          {tab === "contacts" && <Contacts contacts={contacts.data?.contacts ?? []} loading={contacts.loading} onAdd={() => setAddContact(true)} onEdit={setEditContact} />}
+          {tab === "documents" && <Documents accountId={id} documents={documents.data?.documents ?? []} loading={documents.loading} onUpload={() => setUploadDoc(true)} onChanged={() => { documents.refresh(); acc.refresh(); history.refresh(); }} />}
           {tab === "invoices" && <Invoices accountId={id} invoices={invoices.data?.invoices ?? []} finance={finance} loading={invoices.loading} onNew={() => setNewInvoice(true)} onChanged={refreshMoney} />}
           {tab === "expenses" && <Expenses expenses={expenses.data?.expenses ?? []} finance={finance} loading={expenses.loading} onNew={() => setLogExpense(true)} />}
           {tab === "activity" && (activity.loading ? <PageLoader /> : <Card className="p-6"><ActivityTimeline activities={activity.data?.activities ?? []} /></Card>)}
+          {tab === "history" && (history.loading ? <PageLoader /> : <Card className="p-6"><AuditTimeline entries={history.data?.entries ?? []} showEntity /></Card>)}
         </div>
       </div>
 
-      <AddContactModal accountId={id} open={addContact} onClose={() => setAddContact(false)} onAdded={() => { contacts.refresh(); acc.refresh(); }} />
+      <AddContactModal accountId={id} open={addContact} onClose={() => setAddContact(false)} onAdded={() => { contacts.refresh(); acc.refresh(); history.refresh(); }} />
+      <EditContactModal
+        accountId={id}
+        contact={editContact}
+        onClose={() => setEditContact(null)}
+        onSaved={() => { contacts.refresh(); acc.refresh(); history.refresh(); }}
+        onDeleted={() => { contacts.refresh(); acc.refresh(); history.refresh(); }}
+      />
+      <UploadDocumentModal accountId={id} open={uploadDoc} onClose={() => setUploadDoc(false)} onUploaded={() => { documents.refresh(); acc.refresh(); history.refresh(); }} />
       <NewInvoiceModal accountId={id} open={newInvoice} onClose={() => setNewInvoice(false)} onCreated={refreshMoney} />
       <LogExpenseModal accountId={id} open={logExpense} onClose={() => setLogExpense(false)} onCreated={refreshMoney} />
     </>
@@ -243,7 +284,7 @@ function Kpi({ label, value, tone }: { label: string; value: number; tone?: "suc
 
 /* ---------------------------------------------------------------- Contacts */
 
-function Contacts({ contacts, loading, onAdd }: { contacts: ContactDTO[]; loading: boolean; onAdd: () => void }) {
+function Contacts({ contacts, loading, onAdd, onEdit }: { contacts: ContactDTO[]; loading: boolean; onAdd: () => void; onEdit: (c: ContactDTO) => void }) {
   if (loading) return <PageLoader />;
   if (contacts.length === 0) return <EmptyState icon={<Mail className="size-6" />} title="No contacts" description="Add the people you work with at this account." action={<Button variant="primary" onClick={onAdd}><Plus className="size-4" /> Add contact</Button>} />;
   return (
@@ -259,6 +300,13 @@ function Contacts({ contacts, loading, onAdd }: { contacts: ContactDTO[]; loadin
               </div>
               {c.title && <p className="text-[12px] text-muted">{c.title}</p>}
             </div>
+            <button
+              onClick={() => onEdit(c)}
+              className="ml-auto inline-flex items-center gap-1.5 rounded-[var(--radius-sm)] px-2.5 py-1.5 text-[12.5px] font-semibold text-muted transition-colors hover:bg-violet-50 hover:text-violet-700"
+              aria-label={`Edit ${c.name}`}
+            >
+              <Pencil className="size-3.5" /> Edit
+            </button>
           </div>
           {(c.email || c.phone) && (
             <div className="mt-3 space-y-1 text-[12.5px] text-ink-soft">
@@ -268,6 +316,68 @@ function Contacts({ contacts, loading, onAdd }: { contacts: ContactDTO[]; loadin
           )}
         </Card>
       ))}
+    </div>
+  );
+}
+
+/* --------------------------------------------------------------- Documents */
+
+function Documents({ accountId, documents, loading, onUpload, onChanged }: { accountId: string; documents: DocumentDTO[]; loading: boolean; onUpload: () => void; onChanged: () => void }) {
+  const { toast } = useToast();
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  function view(docId: string) {
+    window.open(`/api/accounts/${accountId}/documents/${docId}`, "_blank", "noopener");
+  }
+
+  async function remove(doc: DocumentDTO) {
+    if (!confirm(`Archive "${doc.title}"?`)) return;
+    setBusyId(doc.id);
+    try {
+      await api.delete(`/api/accounts/${accountId}/documents/${doc.id}`);
+      toast(`${doc.title} archived.`, "info");
+      onChanged();
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Could not archive", "error");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  if (loading) return <PageLoader />;
+  return (
+    <div>
+      <div className="mb-4 flex items-center">
+        <p className="text-[13px] text-muted">Proposals & signed agreements for this account.</p>
+        <Button variant="primary" className="ml-auto" onClick={onUpload}><Upload className="size-4" /> Upload</Button>
+      </div>
+      {documents.length === 0 ? (
+        <EmptyState icon={<FileText className="size-6" />} title="No documents" description="Upload a proposal or signed agreement to keep it on file." action={<Button variant="primary" onClick={onUpload}><Upload className="size-4" /> Upload document</Button>} />
+      ) : (
+        <div className="grid gap-3 sm:grid-cols-2">
+          {documents.map((d) => {
+            const meta = DOCUMENT_KIND_META[d.kind];
+            return (
+              <Card key={d.id} className="flex items-center gap-3 p-4">
+                <div className="flex size-10 shrink-0 items-center justify-center rounded-[var(--radius-md)] bg-canvas text-muted"><FileText className="size-5" /></div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <p className="truncate text-[14px] font-semibold text-ink">{d.title}</p>
+                    <Badge tint={meta.tint}>{meta.label}</Badge>
+                  </div>
+                  <p className="truncate text-[12px] text-muted">
+                    {d.fileName} · {formatBytes(d.fileSize)}{d.uploadedByName ? ` · ${d.uploadedByName}` : ""}
+                  </p>
+                </div>
+                <div className="flex shrink-0 items-center gap-1">
+                  <button onClick={() => view(d.id)} className="rounded-md p-2 text-muted transition-colors hover:bg-violet-50 hover:text-violet-700" aria-label={`Open ${d.title}`}><Download className="size-4" /></button>
+                  <button onClick={() => remove(d)} disabled={busyId === d.id} className="rounded-md p-2 text-muted transition-colors hover:bg-danger-bg hover:text-danger disabled:opacity-50" aria-label={`Archive ${d.title}`}><Trash2 className="size-4" /></button>
+                </div>
+              </Card>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

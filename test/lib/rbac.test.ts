@@ -27,14 +27,20 @@ describe("isAdmin", () => {
 describe("leadScope / accountScope", () => {
   it("admin scope pins workspace but omits ownerId", () => {
     const u = makeUser("admin");
-    expect(leadScope(u)).toEqual({ workspaceId: u.workspaceId });
-    expect(accountScope(u)).toEqual({ workspaceId: u.workspaceId });
+    expect(leadScope(u)).toEqual({ workspaceId: u.workspaceId, deletedAt: null });
+    expect(accountScope(u)).toEqual({ workspaceId: u.workspaceId, deletedAt: null });
     expect("ownerId" in leadScope(u)).toBe(false);
   });
   it("standard scope pins workspace AND ownerId", () => {
     const u = makeUser("standard");
-    expect(leadScope(u)).toEqual({ workspaceId: u.workspaceId, ownerId: u._id });
-    expect(accountScope(u)).toEqual({ workspaceId: u.workspaceId, ownerId: u._id });
+    expect(leadScope(u)).toEqual({ workspaceId: u.workspaceId, ownerId: u._id, deletedAt: null });
+    expect(accountScope(u)).toEqual({ workspaceId: u.workspaceId, ownerId: u._id, deletedAt: null });
+  });
+  it("excludes soft-deleted by default and targets them when archived", () => {
+    const u = makeUser("admin");
+    expect(leadScope(u).deletedAt).toBeNull();
+    expect(leadScope(u, { archived: true }).deletedAt).toEqual({ $ne: null });
+    expect(accountScope(u, { archived: true }).deletedAt).toEqual({ $ne: null });
   });
 });
 

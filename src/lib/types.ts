@@ -8,6 +8,9 @@ import type {
   Role,
   MemberStatus,
   ActivityKind,
+  DocumentKind,
+  AuditAction,
+  AuditEntity,
 } from "./constants";
 
 export interface SessionUser {
@@ -50,6 +53,7 @@ export interface LeadDTO {
   order: number;
   lastActivityAt: string;
   createdAt: string;
+  deletedAt: string | null;
 }
 
 export interface ContactDTO {
@@ -77,6 +81,7 @@ export interface AccountDTO {
   contactCount: number;
   lastActivityAt: string;
   createdAt: string;
+  deletedAt: string | null;
 }
 
 export interface InvoiceDTO {
@@ -109,6 +114,37 @@ export interface ActivityDTO {
   title: string;
   detail: string;
   actorName: string;
+  createdAt: string;
+}
+
+export interface DocumentDTO {
+  id: string;
+  accountId: string;
+  kind: DocumentKind;
+  title: string;
+  fileName: string;
+  fileType: string | null;
+  fileSize: number | null;
+  uploadedByName: string;
+  createdAt: string;
+}
+
+export interface AuditChange {
+  field: string;
+  from?: unknown;
+  to?: unknown;
+}
+
+export interface AuditLogDTO {
+  id: string;
+  entity: AuditEntity;
+  entityId: string;
+  entityLabel: string;
+  action: AuditAction;
+  actorName: string;
+  changes: AuditChange[];
+  leadId: string | null;
+  accountId: string | null;
   createdAt: string;
 }
 

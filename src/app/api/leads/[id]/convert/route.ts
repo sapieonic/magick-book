@@ -4,7 +4,7 @@ import { connectDB } from "@/lib/db";
 import { Lead, Account, Contact, Activity, User, type ILead } from "@/lib/models";
 import { requireUser } from "@/lib/auth/server";
 import { leadScope, canEditOwned } from "@/lib/rbac";
-import { logActivity } from "@/lib/services";
+import { logActivity, audit } from "@/lib/services";
 import { Types } from "mongoose";
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -70,6 +70,8 @@ export const POST = route(async (req: NextRequest, ctx: Ctx) => {
     title: "Converted from lead",
     detail: `${lead.name} set as primary contact`,
   });
+  await audit({ entity: "account", entityId: accId, entityLabel: accountName, action: "create", actor: user, accountId: accId, changes: [{ field: "fromLead", to: lead.name }] });
+  await audit({ entity: "lead", entityId: lead._id, entityLabel: lead.name, action: "update", actor: user, changes: [{ field: "stage", from: lead.stage, to: "won" }, { field: "convertedAccount", to: accountName }], leadId: lead._id, accountId: accId });
 
   return ok(
     { account: serializeAccount(account.toObject(), { ownerName: user.name, primaryContact: primary.toObject(), contactCount: 1 }) },

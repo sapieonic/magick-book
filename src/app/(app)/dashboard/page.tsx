@@ -107,7 +107,7 @@ function PipelineCard({ data, loading }: { data: DashboardData | null; loading: 
           ))}
         </div>
       ) : (
-        <div className="mt-5 flex h-48 items-end gap-3">
+        <div className="mt-5 flex h-48 items-stretch gap-3">
           {data?.pipeline.map((p) => {
             const meta = STAGE_META[p.stage];
             const h = 16 + (p.count / max) * 84;
