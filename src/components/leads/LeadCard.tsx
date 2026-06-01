@@ -1,7 +1,8 @@
 "use client";
+import type { CSSProperties } from "react";
 import { Phone } from "lucide-react";
 import { Avatar } from "@/components/ui/Avatar";
-import { formatINRCompact, initials, avatarTint, cn } from "@/lib/utils";
+import { formatINRCompact, initials, avatarTint, valueTier, cn } from "@/lib/utils";
 import type { LeadDTO } from "@/lib/types";
 
 const TAG_TINT: Record<string, string> = {
@@ -13,11 +14,27 @@ const TAG_TINT: Record<string, string> = {
 /** Presentational lead card used on the board. */
 export function LeadCard({ lead, dragging }: { lead: LeadDTO; dragging?: boolean }) {
   const tint = avatarTint(lead.ownerName || lead.name);
+  // Colour the card by deal size — one hue per ₹25k band (see --color-tier* tokens).
+  const tier = valueTier(lead.estValue);
+  const tierStyle =
+    tier >= 0
+      ? ({
+          "--tier": `var(--color-tier${tier})`,
+          "--tier-bg": `var(--color-tier${tier}-bg)`,
+          borderLeftColor: "var(--tier)",
+          borderLeftWidth: "3px",
+        } as CSSProperties)
+      : undefined;
   return (
     <div
+      style={tierStyle}
       className={cn(
-        "rounded-[var(--radius-md)] border border-line bg-paper p-3.5 shadow-[var(--shadow-card)] transition-all",
-        dragging ? "rotate-[1.5deg] scale-[1.02] shadow-[var(--shadow-pop)] ring-2 ring-violet-300" : "hover:border-line-strong",
+        "rounded-[var(--radius-md)] border border-line bg-paper p-3.5 shadow-[var(--shadow-card)] transition-all duration-150",
+        dragging
+          ? "rotate-[1.5deg] scale-[1.02] shadow-[var(--shadow-pop)] ring-2 ring-violet-300"
+          : tier >= 0
+            ? "hover:-translate-y-0.5 hover:shadow-[var(--shadow-pop)] hover:ring-2 hover:ring-[var(--tier)]"
+            : "hover:-translate-y-0.5 hover:border-line-strong hover:shadow-[var(--shadow-pop)]",
       )}
     >
       <div className="flex items-start justify-between gap-2">
@@ -50,7 +67,12 @@ export function LeadCard({ lead, dragging }: { lead: LeadDTO; dragging?: boolean
             </span>
           ))}
           {lead.estValue > 0 && (
-            <span className="ml-auto font-mono text-[12px] font-semibold text-ink-soft tnum">{formatINRCompact(lead.estValue)}</span>
+            <span
+              className="ml-auto rounded-full px-2 py-0.5 font-mono text-[12px] font-bold tnum"
+              style={{ background: "var(--tier-bg)", color: "var(--tier)" }}
+            >
+              {formatINRCompact(lead.estValue)}
+            </span>
           )}
           {lead.convertedAccountId && <span className="text-[11px] font-medium text-success">→ became an account</span>}
         </div>

@@ -15,6 +15,7 @@ import {
   ChevronRight,
   Plus,
   Archive,
+  Loader2,
 } from "lucide-react";
 import { PageHeader } from "@/components/layout/Sidebar";
 import { useSession } from "@/components/layout/SessionContext";
@@ -29,8 +30,10 @@ import { Card, PageLoader, ErrorState } from "@/components/ui/Misc";
 import { Modal } from "@/components/ui/Overlay";
 import { Textarea, Field } from "@/components/ui/Field";
 import { useToast } from "@/components/ui/Toast";
+import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { api, useApi } from "@/lib/client";
 import { PIPELINE_STAGES, STAGE_META } from "@/lib/constants";
+import type { PipelineStage } from "@/lib/constants";
 import { formatINR, cn } from "@/lib/utils";
 import type { LeadDTO, ActivityDTO, AuditLogDTO } from "@/lib/types";
 
@@ -50,6 +53,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
   const { id } = use(params);
   const router = useRouter();
   const { toast } = useToast();
+  const confirm = useConfirm();
   const { data, loading, error, refresh } = useApi<LeadResponse>(`/api/leads/${id}`);
   const history = useApi<{ entries: AuditLogDTO[] }>(`/api/leads/${id}/audit`);
   const [editing, setEditing] = useState(false);
@@ -58,6 +62,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
   const [reach, setReach] = useState<(typeof REACH)[number] | null>(null);
   const [rightTab, setRightTab] = useState<"activity" | "history">("activity");
   const [archiving, setArchiving] = useState(false);
+  const [pendingStage, setPendingStage] = useState<PipelineStage | null>(null);
 
   if (loading) return <PageLoader label="Loading lead…" />;
   if (error || !data) return <div className="p-8"><ErrorState message={error ?? "Lead not found"} onRetry={refresh} /></div>;
@@ -66,19 +71,32 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
   const meta = STAGE_META[lead.stage];
   const converted = !!lead.convertedAccountId;
 
-  async function moveStage(stage: string) {
+  async function moveStage(stage: PipelineStage) {
+    if (pendingStage || lead.stage === stage) return;
+    setPendingStage(stage);
     try {
       await api.patch(`/api/leads/${id}/stage`, { stage });
-      toast(`Moved to ${STAGE_META[stage as keyof typeof STAGE_META].label}.`, "success");
+      toast(`Moved to ${STAGE_META[stage].label}.`, "success");
       refresh();
       history.refresh();
     } catch (err) {
       toast(err instanceof Error ? err.message : "Couldn't update stage", "error");
+    } finally {
+      setPendingStage(null);
     }
   }
 
   async function archiveLead() {
-    if (!confirm("Archive this lead? It will be hidden but can be restored from the Archived view.")) return;
+    if (
+      !(await confirm({
+        title: "Archive this lead?",
+        description:
+          "It moves to the Archived view. You can restore it anytime — its activity and history are kept.",
+        confirmLabel: "Archive",
+        tone: "danger",
+      }))
+    )
+      return;
     setArchiving(true);
     try {
       await api.delete(`/api/leads/${id}`);
@@ -123,31 +141,42 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
           {/* Stage stepper */}
           <div className="mb-6 flex flex-wrap items-center gap-2">
             {PIPELINE_STAGES.map((s, i) => {
-              const idx = PIPELINE_STAGES.indexOf(lead.stage as never);
+              const idx = PIPELINE_STAGES.indexOf(lead.stage as PipelineStage);
               const done = idx > i;
               const current = lead.stage === s;
+              const pending = pendingStage === s;
+              const busy = pendingStage !== null;
               return (
                 <button
                   key={s}
                   onClick={() => moveStage(s)}
-                  disabled={converted}
+                  disabled={converted || current || busy}
+                  aria-current={current ? "step" : undefined}
+                  title={converted ? "Converted leads can't change stage" : `Move to ${STAGE_META[s].label}`}
                   className={cn(
-                    "inline-flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-[12.5px] font-semibold transition-all disabled:cursor-not-allowed",
+                    "inline-flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-[12.5px] font-semibold transition-all",
+                    "disabled:cursor-not-allowed",
                     current
                       ? "border-violet-400 bg-violet-50 text-violet-700 shadow-[0_0_0_3px_rgba(109,92,245,0.1)]"
                       : done
-                        ? "border-success/30 bg-success-bg text-success"
+                        ? "border-success/30 bg-success-bg text-success hover:border-violet-300 hover:bg-violet-50 hover:text-violet-600"
                         : "border-line-strong bg-paper text-muted hover:border-violet-300 hover:text-violet-600",
+                    !current && !converted && "cursor-pointer",
+                    busy && !pending && "opacity-50",
                   )}
                 >
-                  {done && <Check className="size-3.5" />}
+                  {pending ? (
+                    <Loader2 className="size-3.5 animate-spin" />
+                  ) : (
+                    done && <Check className="size-3.5" />
+                  )}
                   {STAGE_META[s].label}
                 </button>
               );
             })}
             <button
               onClick={() => setLostOpen(true)}
-              disabled={converted || lead.stage === "lost"}
+              disabled={converted || lead.stage === "lost" || pendingStage !== null}
               className="ml-auto inline-flex items-center gap-1.5 rounded-full border border-line-strong px-3.5 py-1.5 text-[12.5px] font-semibold text-muted transition-all hover:border-danger/40 hover:bg-danger-bg hover:text-danger disabled:opacity-40"
             >
               <Ban className="size-3.5" /> {lead.stage === "lost" ? "Lost" : "Mark lost"}

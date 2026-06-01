@@ -67,6 +67,24 @@ export function avatarTint(seed: string): { bg: string; fg: string } {
   return { bg, fg };
 }
 
+/**
+ * Lead value tier — one colour band per ₹25k, low → high, capped at 4.
+ * Bands are half-open: tier 0 = [0,25k), 1 = [25k,50k), 2 = [50k,75k),
+ * 3 = [75k,100k), 4 = ≥100k. Returns -1 when there is no estimated value.
+ * Pairs with the --color-tier{0..4} tokens to colour board cards by deal size.
+ */
+export function valueTier(estValue: number): number {
+  if (!estValue || estValue <= 0) return -1;
+  return Math.min(4, Math.floor(estValue / 25000));
+}
+
+/** Absolute, locale-aware timestamp for tooltips, e.g. "1 Jun 2026, 4:05 pm". */
+export function absoluteTime(date: Date | string): string {
+  const d = typeof date === "string" ? new Date(date) : date;
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" });
+}
+
 /** "2h ago", "3d ago", "1mo ago" — short relative time. */
 export function relativeTime(date: Date | string): string {
   const d = typeof date === "string" ? new Date(date) : date;

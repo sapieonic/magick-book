@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Bricolage_Grotesque, Hanken_Grotesk, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { ToastProvider } from "@/components/ui/Toast";
+import { ConfirmProvider } from "@/components/ui/ConfirmDialog";
 import { ThemeProvider, themeInitScript } from "@/components/theme/ThemeProvider";
 
 const bricolage = Bricolage_Grotesque({
@@ -55,7 +56,9 @@ export default function RootLayout({
       </head>
       <body className="min-h-full">
         <ThemeProvider>
-          <ToastProvider>{children}</ToastProvider>
+          <ToastProvider>
+            <ConfirmProvider>{children}</ConfirmProvider>
+          </ToastProvider>
         </ThemeProvider>
       </body>
     </html>

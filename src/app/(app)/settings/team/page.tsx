@@ -8,7 +8,7 @@ import { SettingsTabs } from "@/components/settings/SettingsTabs";
 import { Avatar } from "@/components/ui/Avatar";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
-import { Card, PageLoader, ErrorState, EmptyState } from "@/components/ui/Misc";
+import { Card, PageLoader, ErrorState, EmptyState, Spinner } from "@/components/ui/Misc";
 import { useToast } from "@/components/ui/Toast";
 import { api, useApi } from "@/lib/client";
 import { cn } from "@/lib/utils";
@@ -133,15 +133,20 @@ export default function TeamPage() {
                           {m.isYou ? (
                             <Badge tone="violet">Admin · owner</Badge>
                           ) : (
-                            <select
-                              value={m.role}
-                              disabled={busyId === m.id}
-                              onChange={(e) => changeRole(m, e.target.value)}
-                              className="cursor-pointer rounded-[var(--radius-sm)] border border-line-strong bg-paper px-2.5 py-1.5 text-[12.5px] font-semibold text-ink focus:border-violet-400 focus:outline-none focus:ring-2 focus:ring-violet-100"
-                            >
-                              <option value="admin">Admin</option>
-                              <option value="standard">Standard</option>
-                            </select>
+                            <span className="inline-flex items-center gap-2">
+                              <select
+                                value={m.role}
+                                disabled={busyId === m.id}
+                                onChange={(e) => changeRole(m, e.target.value)}
+                                className="cursor-pointer rounded-[var(--radius-sm)] border border-line-strong bg-paper px-2.5 py-1.5 text-[12.5px] font-semibold text-ink focus:border-violet-400 focus:outline-none focus:ring-2 focus:ring-violet-100 disabled:opacity-60"
+                              >
+                                <option value="admin">Admin</option>
+                                <option value="standard">Standard</option>
+                              </select>
+                              <span className="flex size-4 shrink-0 items-center justify-center">
+                                {busyId === m.id && <Spinner className="size-4" />}
+                              </span>
+                            </span>
                           )}
                         </td>
                         <td className="px-5 py-3.5 text-muted">{m.invitedByName ?? "—"}</td>
@@ -156,7 +161,7 @@ export default function TeamPage() {
                               className="rounded-md p-1.5 text-faint transition-colors hover:bg-danger-bg hover:text-danger disabled:opacity-50"
                               aria-label={`Remove ${m.name}`}
                             >
-                              <Trash2 className="size-4" />
+                              {busyId === m.id ? <Spinner className="size-4" /> : <Trash2 className="size-4" />}
                             </button>
                           )}
                         </td>

@@ -5,7 +5,8 @@ import { cn } from "@/lib/utils";
 
 const baseInput =
   "w-full rounded-[var(--radius-md)] border border-line-strong bg-paper px-3.5 text-[14px] text-ink placeholder:text-faint " +
-  "transition-all duration-150 focus:border-violet-400 focus:outline-none focus:ring-4 focus:ring-violet-100 disabled:opacity-60";
+  "transition-all duration-150 focus:border-violet-400 focus:outline-none focus:ring-4 focus:ring-violet-100 disabled:opacity-60 " +
+  "aria-[invalid=true]:border-danger aria-[invalid=true]:focus:border-danger aria-[invalid=true]:focus:ring-danger/15";
 
 export function Label({ children, required, hint }: { children: ReactNode; required?: boolean; hint?: ReactNode }) {
   return (

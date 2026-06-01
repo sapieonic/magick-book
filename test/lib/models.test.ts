@@ -33,6 +33,10 @@ describe("model validation", () => {
   });
 
   it("enforces the unique email index", async () => {
+    // Mongoose builds indexes asynchronously; wait for the unique email index to
+    // finish building before relying on it, otherwise the duplicate insert races
+    // the index creation and is intermittently accepted.
+    await models.User.init();
     await models.User.create({ name: "A", email: "dup@x.com" });
     await expect(models.User.create({ name: "B", email: "dup@x.com" })).rejects.toThrow();
   });
