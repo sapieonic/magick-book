@@ -118,7 +118,7 @@ function LeadsInner() {
               />
             </div>
           ) : (
-            <LeadTable leads={lostLeads} />
+            <LeadTable key="lost" leads={lostLeads} onChanged={refresh} />
           )
         ) : shownLeads.length === 0 ? (
           <div className="px-6 lg:px-8">
@@ -132,7 +132,7 @@ function LeadsInner() {
         ) : view === "board" ? (
           <LeadBoard leads={activeLeads} onAdd={openAdd} onChanged={refresh} />
         ) : (
-          <LeadTable leads={activeLeads} />
+          <LeadTable key="active" leads={activeLeads} onChanged={refresh} />
         )}
       </div>
 

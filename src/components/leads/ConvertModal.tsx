@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ArrowRight } from "lucide-react";
 import { Modal } from "@/components/ui/Overlay";
 import { Button } from "@/components/ui/Button";
@@ -27,20 +27,31 @@ export function ConvertModal({
   const [plan, setPlan] = useState("");
   const [members, setMembers] = useState<MemberDTO[]>([]);
   const [busy, setBusy] = useState(false);
+  const [errors, setErrors] = useState<{ accountName?: string }>({});
+
+  const accountNameRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (open) {
       setAccountName(lead.company || lead.name);
       setOwnerId(lead.ownerId);
+      setErrors({});
       api.get<{ members: MemberDTO[] }>("/api/members").then((d) => setMembers(d.members)).catch(() => setMembers([]));
     }
   }, [open, lead]);
 
   async function convert() {
-    if (!accountName.trim()) {
-      toast("Give the account a name.", "error");
+    const nextErrors: typeof errors = {};
+    if (!accountName.trim()) nextErrors.accountName = "Give the account a name.";
+    // Owner is not required — the server falls back to the lead's owner when none is chosen.
+
+    if (Object.keys(nextErrors).length > 0) {
+      setErrors(nextErrors);
+      accountNameRef.current?.focus();
       return;
     }
+
+    setErrors({});
     setBusy(true);
     try {
       const { account } = await api.post<{ account: AccountDTO }>(`/api/leads/${lead.id}/convert`, {
@@ -71,12 +82,23 @@ export function ConvertModal({
       </div>
 
       <div className="mt-5 space-y-4">
-        <Field label="Account name">
-          <Input value={accountName} onChange={(e) => setAccountName(e.target.value)} />
+        <Field label="Account name" error={errors.accountName}>
+          <Input
+            ref={accountNameRef}
+            aria-invalid={!!errors.accountName}
+            value={accountName}
+            onChange={(e) => {
+              setAccountName(e.target.value);
+              setErrors((err) => (err.accountName ? { ...err, accountName: undefined } : err));
+            }}
+          />
         </Field>
         <div className="grid grid-cols-2 gap-3">
           <Field label="Owner">
-            <Select value={ownerId} onChange={(e) => setOwnerId(e.target.value)}>
+            <Select
+              value={ownerId}
+              onChange={(e) => setOwnerId(e.target.value)}
+            >
               {members.length === 0 && <option value={lead.ownerId}>{lead.ownerName || "Owner"}</option>}
               {members.map((m) => (
                 <option key={m.id} value={m.id}>

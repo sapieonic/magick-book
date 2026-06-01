@@ -43,6 +43,18 @@
   --color-info: #2f7fe0;
   --color-info-bg: #e3eefb;
 
+  /* Lead value tiers — one hue per ₹25k band, low → high (drives board card accents) */
+  --color-tier0: #64748b; /* ₹0–25k    · slate  */
+  --color-tier0-bg: #eef1f6;
+  --color-tier1: #2f7fe0; /* ₹25–50k   · blue   */
+  --color-tier1-bg: #e3eefb;
+  --color-tier2: #6d5cf5; /* ₹50–75k   · violet */
+  --color-tier2-bg: #e6e2fd;
+  --color-tier3: #b0720a; /* ₹75–100k  · amber (darkened for AA contrast on its tint) */
+  --color-tier3-bg: #fbf0d8;
+  --color-tier4: #15a05a; /* ₹100k+    · green  */
+  --color-tier4-bg: #e4f6ec;
+
   /* Fonts (wired via next/font CSS variables) */
   --font-sans: var(--font-hanken), ui-sans-serif, system-ui, sans-serif;
   --font-display: var(--font-bricolage), var(--font-hanken), sans-serif;
@@ -108,6 +120,18 @@
   --color-danger-bg: #3a1d1b;
   --color-info: #5aa0f0;
   --color-info-bg: #16273d;
+
+  /* Lead value tiers — brightened accents, deep tinted backgrounds */
+  --color-tier0: #94a3b8;
+  --color-tier0-bg: #21262f;
+  --color-tier1: #5aa0f0;
+  --color-tier1-bg: #16273d;
+  --color-tier2: #a08fff;
+  --color-tier2-bg: #2a2450;
+  --color-tier3: #e3a740;
+  --color-tier3-bg: #332810;
+  --color-tier4: #34d27f;
+  --color-tier4-bg: #15301f;
 
   /* Shadows read as depth, so lean on near-black on the dark canvas */
   --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3), 0 4px 16px rgba(0, 0, 0, 0.35);

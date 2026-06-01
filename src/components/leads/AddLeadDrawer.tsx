@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Drawer } from "@/components/ui/Overlay";
 import { Button } from "@/components/ui/Button";
 import { Input, Textarea, Select, Field } from "@/components/ui/Field";
@@ -42,20 +42,50 @@ export function AddLeadDrawer({
   const isEdit = !!lead;
   const [form, setForm] = useState(() => (lead ? fromLead(lead) : { ...empty, stage: defaultStage ?? "new" }));
   const [busy, setBusy] = useState(false);
+  const [errors, setErrors] = useState<{ name?: string; phone?: string; email?: string; estValue?: string }>({});
+
+  const nameRef = useRef<HTMLInputElement>(null);
+  const phoneRef = useRef<HTMLInputElement>(null);
+  const emailRef = useRef<HTMLInputElement>(null);
+  const estValueRef = useRef<HTMLInputElement>(null);
 
   function set<K extends keyof typeof form>(k: K, v: string) {
     setForm((f) => ({ ...f, [k]: v }));
+    setErrors((e) => (e[k as keyof typeof e] ? { ...e, [k]: undefined } : e));
   }
 
   function reset() {
     setForm(lead ? fromLead(lead) : { ...empty, stage: defaultStage ?? "new" });
+    setErrors({});
   }
 
   async function save(addAnother: boolean) {
-    if (!form.name.trim()) {
-      toast("A contact name is required.", "error");
+    const nextErrors: typeof errors = {};
+    if (!form.name.trim()) nextErrors.name = "A contact name is required.";
+    // Phone is only enforced on create — existing leads may predate the requirement (the server treats it as optional).
+    if (!isEdit && !form.phone.trim()) nextErrors.phone = "A phone number is required.";
+    if (form.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) {
+      nextErrors.email = "Enter a valid email address.";
+    }
+    if (form.estValue.trim()) {
+      const parsed = Number(String(form.estValue).replace(/[^\d.]/g, ""));
+      if (!Number.isFinite(parsed) || parsed < 0) nextErrors.estValue = "Enter a non-negative amount.";
+    }
+
+    if (Object.keys(nextErrors).length > 0) {
+      setErrors(nextErrors);
+      const focusTarget = nextErrors.name
+        ? nameRef
+        : nextErrors.phone
+          ? phoneRef
+          : nextErrors.email
+            ? emailRef
+            : estValueRef;
+      focusTarget.current?.focus();
       return;
     }
+
+    setErrors({});
     setBusy(true);
     const payload = { ...form, estValue: Number(String(form.estValue).replace(/[^\d.]/g, "")) || 0 };
     try {
@@ -95,19 +125,19 @@ export function AddLeadDrawer({
         }}
         className="space-y-4"
       >
-        <Field label="Contact name" required>
-          <Input autoFocus placeholder="Priya Sharma" value={form.name} onChange={(e) => set("name", e.target.value)} />
+        <Field label="Contact name" required error={errors.name}>
+          <Input ref={nameRef} autoFocus aria-invalid={!!errors.name} placeholder="Priya Sharma" value={form.name} onChange={(e) => set("name", e.target.value)} />
         </Field>
         <Field label="Company">
           <Input placeholder="Lumen Retail" value={form.company} onChange={(e) => set("company", e.target.value)} />
         </Field>
 
         <div className="grid grid-cols-2 gap-3">
-          <Field label="Phone" required>
-            <Input placeholder="+91 …" value={form.phone} onChange={(e) => set("phone", e.target.value)} />
+          <Field label="Phone" required={!isEdit} error={errors.phone}>
+            <Input ref={phoneRef} aria-invalid={!!errors.phone} placeholder="+91 …" value={form.phone} onChange={(e) => set("phone", e.target.value)} />
           </Field>
-          <Field label="Email">
-            <Input type="email" placeholder="name@company" value={form.email} onChange={(e) => set("email", e.target.value)} />
+          <Field label="Email" error={errors.email}>
+            <Input ref={emailRef} type="email" aria-invalid={!!errors.email} placeholder="name@company" value={form.email} onChange={(e) => set("email", e.target.value)} />
           </Field>
         </div>
 
@@ -130,10 +160,10 @@ export function AddLeadDrawer({
           </Field>
         </div>
 
-        <Field label="Est. value" hint="optional">
+        <Field label="Est. value" hint="optional" error={errors.estValue}>
           <div className="relative">
             <span className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 font-mono text-[14px] text-muted">₹</span>
-            <Input className="pl-7 tnum font-mono" inputMode="numeric" placeholder="1,20,000" value={form.estValue} onChange={(e) => set("estValue", e.target.value)} />
+            <Input ref={estValueRef} aria-invalid={!!errors.estValue} className="pl-7 tnum font-mono" inputMode="numeric" placeholder="1,20,000" value={form.estValue} onChange={(e) => set("estValue", e.target.value)} />
           </div>
         </Field>
 

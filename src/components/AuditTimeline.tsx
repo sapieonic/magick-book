@@ -2,7 +2,8 @@
 import { Avatar } from "@/components/ui/Avatar";
 import { Badge } from "@/components/ui/Badge";
 import { AUDIT_ACTION_META } from "@/lib/constants";
-import { relativeTime, formatINRCompact } from "@/lib/utils";
+import { formatINRCompact } from "@/lib/utils";
+import { Time } from "@/components/ui/Time";
 import type { AuditLogDTO, AuditChange } from "@/lib/types";
 
 const ENTITY_LABEL: Record<string, string> = {
@@ -69,7 +70,7 @@ export function AuditTimeline({ entries, showEntity = false }: { entries: AuditL
                   </span>
                 )}
                 <span className="truncate text-[13px] font-semibold text-ink">{e.entityLabel || "—"}</span>
-                <span className="ml-auto shrink-0 text-[11.5px] text-faint">{relativeTime(e.createdAt)}</span>
+                <Time value={e.createdAt} className="ml-auto shrink-0 text-[11.5px] text-faint" />
               </div>
               <p className="mt-0.5 text-[12px] text-muted">
                 by {e.actorName || "System"}

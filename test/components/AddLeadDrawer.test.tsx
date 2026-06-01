@@ -35,7 +35,7 @@ function renderDrawer(props: Partial<React.ComponentProps<typeof AddLeadDrawer>>
 beforeEach(() => vi.clearAllMocks());
 
 describe("AddLeadDrawer composer", () => {
-  it("blocks submit and shows a validation toast when the name is empty", async () => {
+  it("blocks submit and shows an inline validation error when the name is empty", async () => {
     const user = userEvent.setup();
     renderDrawer();
     await user.click(screen.getByRole("button", { name: "Save lead" }));
@@ -43,12 +43,22 @@ describe("AddLeadDrawer composer", () => {
     expect(post).not.toHaveBeenCalled();
   });
 
-  it("posts to /api/leads and fires onCreated when a name is provided", async () => {
+  it("blocks submit and shows an inline validation error when the phone is empty", async () => {
+    const user = userEvent.setup();
+    renderDrawer();
+    await user.type(screen.getByPlaceholderText("Priya Sharma"), "Priya");
+    await user.click(screen.getByRole("button", { name: "Save lead" }));
+    expect(await screen.findByText("A phone number is required.")).toBeInTheDocument();
+    expect(post).not.toHaveBeenCalled();
+  });
+
+  it("posts to /api/leads and fires onCreated when the required fields are provided", async () => {
     post.mockResolvedValueOnce({ lead: created });
     const user = userEvent.setup();
     const { onCreated } = renderDrawer();
 
     await user.type(screen.getByPlaceholderText("Priya Sharma"), "Priya");
+    await user.type(screen.getByPlaceholderText(/\+91/), "+919876543210");
     await user.click(screen.getByRole("button", { name: "Save lead" }));
 
     await waitFor(() => expect(post).toHaveBeenCalledOnce());
@@ -61,6 +71,7 @@ describe("AddLeadDrawer composer", () => {
     const user = userEvent.setup();
     renderDrawer();
     await user.type(screen.getByPlaceholderText("Priya Sharma"), "Priya");
+    await user.type(screen.getByPlaceholderText(/\+91/), "+919876543210");
     await user.click(screen.getByRole("button", { name: "Save lead" }));
     expect(await screen.findByText("Boom")).toBeInTheDocument();
   });

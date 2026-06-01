@@ -1,24 +1,41 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Paperclip } from "lucide-react";
 import { Modal } from "@/components/ui/Overlay";
 import { Button } from "@/components/ui/Button";
 import { Input, Textarea, Select, Field } from "@/components/ui/Field";
 import { useToast } from "@/components/ui/Toast";
+import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { api } from "@/lib/client";
 import { ACCOUNT_STATUSES, ACCOUNT_STATUS_META, EXPENSE_CATEGORIES, INVOICE_STATUSES, INVOICE_STATUS_META, DOCUMENT_KINDS, DOCUMENT_KIND_META } from "@/lib/constants";
+import { cn } from "@/lib/utils";
 import type { AccountDTO, ContactDTO, InvoiceDTO, ExpenseDTO, DocumentDTO } from "@/lib/types";
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /* ---------------------------------------------------------- New account */
 
 export function NewAccountModal({ open, onClose, onCreated }: { open: boolean; onClose: () => void; onCreated: (a: AccountDTO) => void }) {
   const { toast } = useToast();
   const [f, setF] = useState({ name: "", domain: "", industry: "", value: "", status: "active", contactName: "", contactTitle: "", contactEmail: "", contactPhone: "" });
+  const [errors, setErrors] = useState<{ name?: string; contactEmail?: string }>({});
   const [busy, setBusy] = useState(false);
-  const set = (k: keyof typeof f, v: string) => setF((s) => ({ ...s, [k]: v }));
+  const nameRef = useRef<HTMLInputElement>(null);
+  const emailRef = useRef<HTMLInputElement>(null);
+  const set = (k: keyof typeof f, v: string) => {
+    setF((s) => ({ ...s, [k]: v }));
+    if (k === "name" || k === "contactEmail") setErrors((e) => ({ ...e, [k]: undefined }));
+  };
 
   async function submit() {
-    if (!f.name.trim()) return toast("Account name is required.", "error");
+    const next: typeof errors = {};
+    if (!f.name.trim()) next.name = "Account name is required.";
+    if (f.contactEmail.trim() && !EMAIL_RE.test(f.contactEmail.trim())) next.contactEmail = "Enter a valid email address.";
+    if (next.name || next.contactEmail) {
+      setErrors(next);
+      (next.name ? nameRef : emailRef).current?.focus();
+      return;
+    }
     setBusy(true);
     try {
       const { account } = await api.post<{ account: AccountDTO }>("/api/accounts", { ...f, value: Number(String(f.value).replace(/[^\d.]/g, "")) || 0 });
@@ -36,8 +53,8 @@ export function NewAccountModal({ open, onClose, onCreated }: { open: boolean; o
   return (
     <Modal open onClose={onClose} title="New account" subtitle="Spin up an account directly — or convert a won lead to carry history over.">
       <div className="space-y-4">
-        <Field label="Account name" required>
-          <Input autoFocus placeholder="Acme Logistics" value={f.name} onChange={(e) => set("name", e.target.value)} />
+        <Field label="Account name" required error={errors.name}>
+          <Input ref={nameRef} autoFocus placeholder="Acme Logistics" value={f.name} onChange={(e) => set("name", e.target.value)} aria-invalid={!!errors.name} />
         </Field>
         <div className="grid grid-cols-2 gap-3">
           <Field label="Domain"><Input placeholder="acme.in" value={f.domain} onChange={(e) => set("domain", e.target.value)} /></Field>
@@ -64,7 +81,9 @@ export function NewAccountModal({ open, onClose, onCreated }: { open: boolean; o
               <Input placeholder="Title" value={f.contactTitle} onChange={(e) => set("contactTitle", e.target.value)} />
               <Input placeholder="Phone" value={f.contactPhone} onChange={(e) => set("contactPhone", e.target.value)} />
             </div>
-            <Input type="email" placeholder="email@company" value={f.contactEmail} onChange={(e) => set("contactEmail", e.target.value)} />
+            <Field error={errors.contactEmail}>
+              <Input ref={emailRef} type="email" placeholder="email@company" value={f.contactEmail} onChange={(e) => set("contactEmail", e.target.value)} aria-invalid={!!errors.contactEmail} />
+            </Field>
           </div>
         </div>
         <div className="flex gap-3 pt-1">
@@ -81,12 +100,25 @@ export function NewAccountModal({ open, onClose, onCreated }: { open: boolean; o
 export function AddContactModal({ accountId, open, onClose, onAdded }: { accountId: string; open: boolean; onClose: () => void; onAdded: (c: ContactDTO) => void }) {
   const { toast } = useToast();
   const [f, setF] = useState({ name: "", title: "", email: "", phone: "" });
+  const [errors, setErrors] = useState<{ name?: string; email?: string }>({});
   const [busy, setBusy] = useState(false);
-  const set = (k: keyof typeof f, v: string) => setF((s) => ({ ...s, [k]: v }));
+  const nameRef = useRef<HTMLInputElement>(null);
+  const emailRef = useRef<HTMLInputElement>(null);
+  const set = (k: keyof typeof f, v: string) => {
+    setF((s) => ({ ...s, [k]: v }));
+    if (k === "name" || k === "email") setErrors((e) => ({ ...e, [k]: undefined }));
+  };
   if (!open) return null;
 
   async function submit() {
-    if (!f.name.trim()) return toast("Contact name is required.", "error");
+    const next: typeof errors = {};
+    if (!f.name.trim()) next.name = "Contact name is required.";
+    if (f.email.trim() && !EMAIL_RE.test(f.email.trim())) next.email = "Enter a valid email address.";
+    if (next.name || next.email) {
+      setErrors(next);
+      (next.name ? nameRef : emailRef).current?.focus();
+      return;
+    }
     setBusy(true);
     try {
       const { contact } = await api.post<{ contact: ContactDTO }>(`/api/accounts/${accountId}/contacts`, f);
@@ -104,11 +136,15 @@ export function AddContactModal({ accountId, open, onClose, onAdded }: { account
   return (
     <Modal open onClose={onClose} title="Add contact" subtitle="Another person at this account." size="sm">
       <div className="space-y-3">
-        <Input autoFocus placeholder="Name" value={f.name} onChange={(e) => set("name", e.target.value)} />
+        <Field error={errors.name}>
+          <Input ref={nameRef} autoFocus placeholder="Name" value={f.name} onChange={(e) => set("name", e.target.value)} aria-invalid={!!errors.name} />
+        </Field>
         <Input placeholder="Title (e.g. Finance)" value={f.title} onChange={(e) => set("title", e.target.value)} />
         <div className="grid grid-cols-2 gap-3">
           <Input placeholder="Phone" value={f.phone} onChange={(e) => set("phone", e.target.value)} />
-          <Input type="email" placeholder="Email" value={f.email} onChange={(e) => set("email", e.target.value)} />
+          <Field error={errors.email}>
+            <Input ref={emailRef} type="email" placeholder="Email" value={f.email} onChange={(e) => set("email", e.target.value)} aria-invalid={!!errors.email} />
+          </Field>
         </div>
         <div className="flex gap-3 pt-1">
           <Button variant="primary" onClick={submit} loading={busy}>Add contact</Button>
@@ -135,21 +171,38 @@ export function EditContactModal({
   onDeleted: (id: string) => void;
 }) {
   const { toast } = useToast();
+  const confirm = useConfirm();
   const [f, setF] = useState({ name: "", title: "", email: "", phone: "", makePrimary: false });
+  const [errors, setErrors] = useState<{ name?: string; email?: string }>({});
   const [busy, setBusy] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const set = (k: keyof typeof f, v: string | boolean) => setF((s) => ({ ...s, [k]: v }));
+  const nameRef = useRef<HTMLInputElement>(null);
+  const emailRef = useRef<HTMLInputElement>(null);
+  const set = (k: keyof typeof f, v: string | boolean) => {
+    setF((s) => ({ ...s, [k]: v }));
+    if (k === "name" || k === "email") setErrors((e) => ({ ...e, [k]: undefined }));
+  };
 
   // Re-seed the form whenever a different contact is opened.
   useEffect(() => {
-    if (contact) setF({ name: contact.name, title: contact.title ?? "", email: contact.email ?? "", phone: contact.phone ?? "", makePrimary: false });
+    if (contact) {
+      setF({ name: contact.name, title: contact.title ?? "", email: contact.email ?? "", phone: contact.phone ?? "", makePrimary: false });
+      setErrors({});
+    }
   }, [contact]);
 
   if (!contact) return null;
 
   async function submit() {
     if (!contact) return;
-    if (!f.name.trim()) return toast("Contact name is required.", "error");
+    const next: typeof errors = {};
+    if (!f.name.trim()) next.name = "Contact name is required.";
+    if (f.email.trim() && !EMAIL_RE.test(f.email.trim())) next.email = "Enter a valid email address.";
+    if (next.name || next.email) {
+      setErrors(next);
+      (next.name ? nameRef : emailRef).current?.focus();
+      return;
+    }
     setBusy(true);
     try {
       const body: Record<string, unknown> = { name: f.name, title: f.title, email: f.email, phone: f.phone };
@@ -167,6 +220,12 @@ export function EditContactModal({
 
   async function remove() {
     if (!contact) return;
+    if (!(await confirm({
+      title: `Remove ${contact.name}?`,
+      description: "This contact will be removed from the account. You can restore it later from the Archived view.",
+      confirmLabel: "Remove contact",
+      tone: "danger",
+    }))) return;
     setDeleting(true);
     try {
       await api.delete(`/api/accounts/${accountId}/contacts/${contact.id}`);
@@ -183,11 +242,15 @@ export function EditContactModal({
   return (
     <Modal open onClose={onClose} title="Edit contact" subtitle={`Update ${contact.name}'s details.`} size="sm">
       <div className="space-y-3">
-        <Input autoFocus placeholder="Name" value={f.name} onChange={(e) => set("name", e.target.value)} />
+        <Field error={errors.name}>
+          <Input ref={nameRef} autoFocus placeholder="Name" value={f.name} onChange={(e) => set("name", e.target.value)} aria-invalid={!!errors.name} />
+        </Field>
         <Input placeholder="Title (e.g. Finance)" value={f.title} onChange={(e) => set("title", e.target.value)} />
         <div className="grid grid-cols-2 gap-3">
           <Input placeholder="Phone" value={f.phone} onChange={(e) => set("phone", e.target.value)} />
-          <Input type="email" placeholder="Email" value={f.email} onChange={(e) => set("email", e.target.value)} />
+          <Field error={errors.email}>
+            <Input ref={emailRef} type="email" placeholder="Email" value={f.email} onChange={(e) => set("email", e.target.value)} aria-invalid={!!errors.email} />
+          </Field>
         </div>
         {contact.isPrimary ? (
           <p className="text-[12px] font-medium text-muted">This is the primary contact for the account.</p>
@@ -226,6 +289,7 @@ export function UploadDocumentModal({ accountId, open, onClose, onUploaded }: { 
   const [kind, setKind] = useState<string>("proposal");
   const [title, setTitle] = useState("");
   const [file, setFile] = useState<File | null>(null);
+  const [fileError, setFileError] = useState<string | undefined>();
   const [busy, setBusy] = useState(false);
   if (!open) return null;
 
@@ -233,10 +297,19 @@ export function UploadDocumentModal({ accountId, open, onClose, onUploaded }: { 
     setKind("proposal");
     setTitle("");
     setFile(null);
+    setFileError(undefined);
+  }
+
+  function pick(f: File | null) {
+    setFile(f);
+    setFileError(undefined);
   }
 
   async function submit() {
-    if (!file) return toast("Attach a file.", "error");
+    if (!file) {
+      setFileError("Attach a file to upload.");
+      return;
+    }
     setBusy(true);
     try {
       const doc = await uploadAccountDocument(accountId, file, kind, title.trim() || file.name);
@@ -264,8 +337,8 @@ export function UploadDocumentModal({ accountId, open, onClose, onUploaded }: { 
             <Input placeholder="MSA 2026" value={title} onChange={(e) => setTitle(e.target.value)} />
           </Field>
         </div>
-        <Field label="File" hint="PDF/DOC/PNG/JPEG · max 25 MB">
-          <FileDrop file={file} onPick={setFile} label="Attach the proposal or agreement" accept="application/pdf,image/png,image/jpeg,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
+        <Field label="File" hint="PDF/DOC/PNG/JPEG · max 25 MB" error={fileError}>
+          <FileDrop file={file} onPick={pick} invalid={!!fileError} label="Attach the proposal or agreement" accept="application/pdf,image/png,image/jpeg,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
         </Field>
         <div className="flex gap-3 pt-1">
           <Button variant="primary" onClick={submit} loading={busy}>Upload</Button>
@@ -284,7 +357,9 @@ export function NewInvoiceModal({ accountId, open, onClose, onCreated }: { accou
   const [status, setStatus] = useState("sent");
   const [dueAt, setDueAt] = useState("");
   const [file, setFile] = useState<File | null>(null);
+  const [amountError, setAmountError] = useState<string | undefined>();
   const [busy, setBusy] = useState(false);
+  const amountRef = useRef<HTMLInputElement>(null);
   if (!open) return null;
 
   function reset() {
@@ -292,11 +367,16 @@ export function NewInvoiceModal({ accountId, open, onClose, onCreated }: { accou
     setDueAt("");
     setFile(null);
     setStatus("sent");
+    setAmountError(undefined);
   }
 
   async function submit() {
     const amt = Number(String(amount).replace(/[^\d.]/g, ""));
-    if (!amt) return toast("Enter an amount.", "error");
+    if (!amt || amt <= 0) {
+      setAmountError("Enter an amount greater than zero.");
+      amountRef.current?.focus();
+      return;
+    }
     setBusy(true);
     try {
       const { invoice } = await api.post<{ invoice: InvoiceDTO }>(`/api/accounts/${accountId}/invoices`, { amount: amt, status, dueAt: dueAt || undefined });
@@ -326,10 +406,10 @@ export function NewInvoiceModal({ accountId, open, onClose, onCreated }: { accou
   return (
     <Modal open onClose={onClose} title="New invoice" subtitle="We'll number it automatically." size="sm">
       <div className="space-y-4">
-        <Field label="Amount" required>
+        <Field label="Amount" required error={amountError}>
           <div className="relative">
             <span className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 font-mono text-[14px] text-muted">₹</span>
-            <Input autoFocus className="pl-7 font-mono tnum" inputMode="numeric" placeholder="1,10,000" value={amount} onChange={(e) => setAmount(e.target.value)} />
+            <Input ref={amountRef} autoFocus className="pl-7 font-mono tnum" inputMode="numeric" placeholder="1,10,000" value={amount} onChange={(e) => { setAmount(e.target.value); setAmountError(undefined); }} aria-invalid={!!amountError} />
           </div>
         </Field>
         <div className="grid grid-cols-2 gap-3">
@@ -367,16 +447,21 @@ export async function uploadInvoiceFile(invoiceId: string, file: File): Promise<
 function FileDrop({
   file,
   onPick,
+  invalid = false,
   label = "Attach the generated invoice (PDF)",
   accept = "application/pdf,image/png,image/jpeg",
 }: {
   file: File | null;
   onPick: (f: File | null) => void;
+  invalid?: boolean;
   label?: string;
   accept?: string;
 }) {
   return (
-    <label className="flex cursor-pointer items-center gap-3 rounded-[var(--radius-md)] border border-dashed border-line-strong bg-canvas/50 px-3.5 py-3 transition-colors hover:border-violet-400">
+    <label className={cn(
+      "flex cursor-pointer items-center gap-3 rounded-[var(--radius-md)] border border-dashed border-line-strong bg-canvas/50 px-3.5 py-3 transition-colors hover:border-violet-400",
+      invalid && "border-danger hover:border-danger",
+    )}>
       <input
         type="file"
         accept={accept}
@@ -397,12 +482,18 @@ function FileDrop({
 export function LogExpenseModal({ accountId, open, onClose, onCreated }: { accountId: string; open: boolean; onClose: () => void; onCreated: (e: ExpenseDTO) => void }) {
   const { toast } = useToast();
   const [f, setF] = useState({ amount: "", category: "Software", vendor: "", billable: false });
+  const [amountError, setAmountError] = useState<string | undefined>();
   const [busy, setBusy] = useState(false);
+  const amountRef = useRef<HTMLInputElement>(null);
   if (!open) return null;
 
   async function submit() {
     const amt = Number(String(f.amount).replace(/[^\d.]/g, ""));
-    if (!amt) return toast("Enter an amount.", "error");
+    if (!amt || amt <= 0) {
+      setAmountError("Enter an amount greater than zero.");
+      amountRef.current?.focus();
+      return;
+    }
     setBusy(true);
     try {
       const { expense } = await api.post<{ expense: ExpenseDTO }>(`/api/accounts/${accountId}/expenses`, { ...f, amount: amt });
@@ -410,6 +501,7 @@ export function LogExpenseModal({ accountId, open, onClose, onCreated }: { accou
       onCreated(expense);
       onClose();
       setF({ amount: "", category: "Software", vendor: "", billable: false });
+      setAmountError(undefined);
     } catch (e) {
       toast(e instanceof Error ? e.message : "Could not log", "error");
     } finally {
@@ -420,10 +512,10 @@ export function LogExpenseModal({ accountId, open, onClose, onCreated }: { accou
   return (
     <Modal open onClose={onClose} title="Log expense" subtitle="Track cost so you see true margin." size="sm">
       <div className="space-y-4">
-        <Field label="Amount" required>
+        <Field label="Amount" required error={amountError}>
           <div className="relative">
             <span className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 font-mono text-[14px] text-muted">₹</span>
-            <Input autoFocus className="pl-7 font-mono tnum" inputMode="numeric" placeholder="6,200" value={f.amount} onChange={(e) => setF((s) => ({ ...s, amount: e.target.value }))} />
+            <Input ref={amountRef} autoFocus className="pl-7 font-mono tnum" inputMode="numeric" placeholder="6,200" value={f.amount} onChange={(e) => { setF((s) => ({ ...s, amount: e.target.value })); setAmountError(undefined); }} aria-invalid={!!amountError} />
           </div>
         </Field>
         <div className="grid grid-cols-2 gap-3">

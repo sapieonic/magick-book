@@ -12,7 +12,7 @@ import {
   Wallet,
   type LucideIcon,
 } from "lucide-react";
-import { relativeTime } from "@/lib/utils";
+import { Time } from "@/components/ui/Time";
 import type { ActivityDTO } from "@/lib/types";
 import type { ActivityKind } from "@/lib/constants";
 
@@ -60,7 +60,7 @@ export function ActivityTimeline({ activities }: { activities: ActivityDTO[] }) 
                   {isNote ? "Note" : a.title}
                   {isNote && a.actorName && <span className="font-normal text-muted"> · {a.actorName}</span>}
                 </p>
-                <span className="shrink-0 text-[11.5px] text-faint">{relativeTime(a.createdAt)}</span>
+                <Time value={a.createdAt} className="shrink-0 text-[11.5px] text-faint" />
               </div>
               {isNote ? (
                 a.detail && (

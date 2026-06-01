@@ -158,7 +158,9 @@ function Column({
         <div className="flex items-center gap-2">
           <span className="size-2 rounded-full" style={{ background: meta.dot }} />
           <h3 className="text-[13px] font-bold text-ink">{meta.label}</h3>
-          <span className="text-[12px] font-medium text-faint tnum">{leads.length}</span>
+          <span className={cn("rounded-full border px-1.5 py-0.5 text-[11px] font-bold tnum", meta.tint)}>
+            {leads.length}
+          </span>
         </div>
         <button onClick={onAdd} className="rounded-md p-1 text-faint transition-colors hover:bg-violet-50 hover:text-violet-600" aria-label={`Add to ${meta.label}`}>
           <Plus className="size-4" />
@@ -218,6 +220,8 @@ function SortableCard({ lead, onOpen, hidden }: { lead: LeadDTO; onOpen: () => v
   );
 }
 
+const QUICK_REASONS = ["Price", "Competitor", "No response", "Bad timing", "Not a fit"] as const;
+
 function LostModal({ lead, onClose, onDone }: { lead: LeadDTO | null; onClose: () => void; onDone: () => void }) {
   const { toast } = useToast();
   const [reason, setReason] = useState("");
@@ -226,11 +230,12 @@ function LostModal({ lead, onClose, onDone }: { lead: LeadDTO | null; onClose: (
   useEffect(() => setReason(""), [lead]);
   if (!lead) return null;
 
-  async function submit() {
+  async function submit(overrideReason?: string) {
     if (!lead) return;
+    const finalReason = (overrideReason ?? reason).trim();
     setBusy(true);
     try {
-      await api.patch(`/api/leads/${lead.id}/stage`, { stage: "lost", lostReason: reason.trim() });
+      await api.patch(`/api/leads/${lead.id}/stage`, { stage: "lost", lostReason: finalReason });
       toast(`${lead.name} marked lost.`, "info");
       onDone();
       onClose();
@@ -243,14 +248,35 @@ function LostModal({ lead, onClose, onDone }: { lead: LeadDTO | null; onClose: (
 
   return (
     <Modal open onClose={onClose} title="Mark as lost" subtitle={`What happened with ${lead.name}?`} size="sm">
-      <Field label="Reason" hint="helps you learn">
-        <Textarea autoFocus placeholder="budget, timing, went with competitor…" value={reason} onChange={(e) => setReason(e.target.value)} />
+      <Field label="Reason" hint="tap a common reason or write your own">
+        <div className="mb-2.5 flex flex-wrap gap-1.5">
+          {QUICK_REASONS.map((r) => {
+            const active = reason.trim().toLowerCase() === r.toLowerCase();
+            return (
+              <button
+                key={r}
+                type="button"
+                disabled={busy}
+                onClick={() => submit(r)}
+                className={cn(
+                  "rounded-full border px-3 py-1 text-[12.5px] font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-55",
+                  active
+                    ? "border-danger/40 bg-danger-bg text-danger"
+                    : "border-line-strong text-ink-soft hover:border-danger/40 hover:bg-danger-bg hover:text-danger",
+                )}
+              >
+                {r}
+              </button>
+            );
+          })}
+        </div>
+        <Textarea autoFocus placeholder="Other reason — budget, went with competitor…" value={reason} onChange={(e) => setReason(e.target.value)} />
       </Field>
       <div className="mt-5 flex gap-3">
-        <Button variant="danger" onClick={submit} loading={busy}>
+        <Button variant="danger" onClick={() => submit()} loading={busy}>
           Mark lost
         </Button>
-        <Button variant="ghost" onClick={onClose}>
+        <Button variant="ghost" onClick={onClose} disabled={busy}>
           Cancel
         </Button>
       </div>

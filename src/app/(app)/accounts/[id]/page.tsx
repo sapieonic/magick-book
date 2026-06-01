@@ -28,6 +28,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card, PageLoader, ErrorState, EmptyState } from "@/components/ui/Misc";
 import { useToast } from "@/components/ui/Toast";
+import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { api, useApi } from "@/lib/client";
 import { ACCOUNT_STATUS_META, INVOICE_STATUS_META, DOCUMENT_KIND_META } from "@/lib/constants";
 import { formatINR, formatINRCompact, formatBytes, cn } from "@/lib/utils";
@@ -41,6 +42,7 @@ export default function AccountDetailPage({ params }: { params: Promise<{ id: st
   const { id } = use(params);
   const router = useRouter();
   const { toast } = useToast();
+  const confirm = useConfirm();
   const [tab, setTab] = useState<Tab>("overview");
   const [addContact, setAddContact] = useState(false);
   const [editContact, setEditContact] = useState<ContactDTO | null>(null);
@@ -66,7 +68,12 @@ export default function AccountDetailPage({ params }: { params: Promise<{ id: st
   }
 
   async function archiveAccount() {
-    if (!confirm("Archive this account? It will be hidden from your lists but can be restored from the Archived view.")) return;
+    if (!(await confirm({
+      title: `Archive ${account.name}?`,
+      description: "The account will be hidden from your lists. Its contacts, invoices, expenses and documents stay put and reappear if you restore it later from the Archived view.",
+      confirmLabel: "Archive account",
+      tone: "danger",
+    }))) return;
     setArchiving(true);
     try {
       await api.delete(`/api/accounts/${id}`);
@@ -324,6 +331,7 @@ function Contacts({ contacts, loading, onAdd, onEdit }: { contacts: ContactDTO[]
 
 function Documents({ accountId, documents, loading, onUpload, onChanged }: { accountId: string; documents: DocumentDTO[]; loading: boolean; onUpload: () => void; onChanged: () => void }) {
   const { toast } = useToast();
+  const confirm = useConfirm();
   const [busyId, setBusyId] = useState<string | null>(null);
 
   function view(docId: string) {
@@ -331,7 +339,12 @@ function Documents({ accountId, documents, loading, onUpload, onChanged }: { acc
   }
 
   async function remove(doc: DocumentDTO) {
-    if (!confirm(`Archive "${doc.title}"?`)) return;
+    if (!(await confirm({
+      title: `Archive "${doc.title}"?`,
+      description: "The document will be removed from this account but can be restored from the Archived view.",
+      confirmLabel: "Archive document",
+      tone: "danger",
+    }))) return;
     setBusyId(doc.id);
     try {
       await api.delete(`/api/accounts/${accountId}/documents/${doc.id}`);
