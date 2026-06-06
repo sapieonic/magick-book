@@ -17,7 +17,7 @@ import type { LeadDTO } from "@/lib/types";
 const created: LeadDTO = {
   id: "new1", name: "Priya", company: "Lumen", title: "", phone: "", email: "",
   source: "Website", stage: "new", estValue: 5000, notes: "", tags: [], lostReason: "",
-  ownerId: "o", ownerName: "", convertedAccountId: null, order: 0,
+  ownerId: "o", ownerName: "", convertedAccountId: null, order: 0, commentCount: 0,
   lastActivityAt: new Date().toISOString(), createdAt: new Date().toISOString(),
 };
 

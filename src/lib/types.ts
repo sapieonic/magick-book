@@ -51,6 +51,8 @@ export interface LeadDTO {
   ownerName: string;
   convertedAccountId: string | null;
   order: number;
+  /** Count of `note` activities on the lead — the "comments" shown on board cards. */
+  commentCount: number;
   lastActivityAt: string;
   createdAt: string;
   deletedAt: string | null;

@@ -301,10 +301,10 @@ export async function seedDatabase({ force = false }: { force?: boolean } = {}):
   });
 
   await makeLead({ name: "Dev Mehta", company: "Nova Foods", phone: "+91 98200 55330", stage: "new", estValue: 80000, owner: neha._id, order: 0, createdDaysAgo: 2 });
-  await makeLead({ name: "Aisha Khan", company: "Orbit Media", phone: "+91 99001 23456", stage: "contacted", tags: ["called"], owner: riya._id, order: 0, createdDaysAgo: 6, lastActivityMs: 1 * DAY });
+  const aishaLead = await makeLead({ name: "Aisha Khan", company: "Orbit Media", phone: "+91 99001 23456", stage: "contacted", tags: ["called"], owner: riya._id, order: 0, createdDaysAgo: 6, lastActivityMs: 1 * DAY });
   await makeLead({ name: "Sam Toh", company: "Pine & Co", phone: "+91 90011 44556", stage: "contacted", estValue: 200000, owner: riya._id, order: 1, createdDaysAgo: 8 });
   await makeLead({ name: "Leo Park", company: "Wavelength", email: "leo@wavelength.io", stage: "qualified", estValue: 90000, owner: karan._id, order: 1, createdDaysAgo: 7 });
-  await makeLead({ name: "Maya Iyer", company: "Brightline", phone: "+91 99887 22110", stage: "proposal", estValue: 340000, owner: karan._id, order: 0, createdDaysAgo: 12, lastActivityMs: 2 * DAY, notes: "Proposal sent — following up." });
+  const mayaLead = await makeLead({ name: "Maya Iyer", company: "Brightline", phone: "+91 99887 22110", stage: "proposal", estValue: 340000, owner: karan._id, order: 0, createdDaysAgo: 12, lastActivityMs: 2 * DAY, notes: "Proposal sent — following up." });
   await makeLead({ name: "Acme Logistics", company: "Acme Logistics", stage: "won", estValue: 85000, owner: riya._id, order: 0, createdDaysAgo: 80, convertedAccountId: acme._id });
   // a few more "new" so the column count feels alive
   await makeLead({ name: "Ravi Shah", company: "Delta Traders", phone: "+91 90090 12121", stage: "new", estValue: 60000, owner: riya._id, order: 1, createdDaysAgo: 1 });
@@ -316,7 +316,17 @@ export async function seedDatabase({ force = false }: { force?: boolean } = {}):
     { workspaceId: wsId, leadId: priyaLead._id, actorId: riya._id, kind: "stage_change", title: "Contacted", createdAt: ago(4 * DAY) },
     { workspaceId: wsId, leadId: priyaLead._id, actorId: riya._id, kind: "whatsapp", title: "WhatsApp reply", detail: '"Yes, send me the details."', createdAt: ago(3 * DAY) },
     { workspaceId: wsId, leadId: priyaLead._id, actorId: riya._id, kind: "call", title: "Call logged · 4m12s", detail: "Outbound — Aria summarised the call.", createdAt: ago(2 * DAY) },
+    { workspaceId: wsId, leadId: priyaLead._id, actorId: riya._id, kind: "note", title: "Note", detail: "Wants the proposal to cover onboarding + 3 months support.", createdAt: ago(1 * DAY) },
+    { workspaceId: wsId, leadId: priyaLead._id, actorId: riya._id, kind: "note", title: "Note", detail: "Decision maker is the COO — loop her in on the next call.", createdAt: ago(6 * HOUR) },
     { workspaceId: wsId, leadId: priyaLead._id, actorId: riya._id, kind: "stage_change", title: "Qualified", detail: "Budget confirmed on call. Ready for proposal.", createdAt: ago(3 * HOUR) },
+  ]);
+
+  // ---- A couple of notes on other leads so board cards show comment counts ----
+  await Activity.insertMany([
+    { workspaceId: wsId, leadId: mayaLead._id, actorId: karan._id, kind: "note", title: "Note", detail: "Sent the proposal PDF. Following up Thursday.", createdAt: ago(2 * DAY) },
+    { workspaceId: wsId, leadId: mayaLead._id, actorId: karan._id, kind: "note", title: "Note", detail: "Asked for a small discount on the annual plan.", createdAt: ago(1 * DAY) },
+    { workspaceId: wsId, leadId: mayaLead._id, actorId: karan._id, kind: "note", title: "Note", detail: "Legal review in progress on their side.", createdAt: ago(5 * HOUR) },
+    { workspaceId: wsId, leadId: aishaLead._id, actorId: riya._id, kind: "note", title: "Note", detail: "Left a voicemail — try WhatsApp next.", createdAt: ago(20 * HOUR) },
   ]);
 
   // ---- Activity for Acme account --------------------------------------

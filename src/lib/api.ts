@@ -67,7 +67,7 @@ const id = (v: unknown) => (v ? String(v) : "");
 
 type OwnerLike = { _id: unknown; name?: string } | null | undefined;
 
-export function serializeLead(l: ILead, ownerName = ""): LeadDTO {
+export function serializeLead(l: ILead, ownerName = "", commentCount = 0): LeadDTO {
   return {
     id: id(l._id),
     name: l.name,
@@ -85,6 +85,7 @@ export function serializeLead(l: ILead, ownerName = ""): LeadDTO {
     ownerName,
     convertedAccountId: l.convertedAccountId ? id(l.convertedAccountId) : null,
     order: l.order ?? 0,
+    commentCount,
     lastActivityAt: iso(l.lastActivityAt) ?? "",
     createdAt: iso(l.createdAt) ?? "",
     deletedAt: iso(l.deletedAt),

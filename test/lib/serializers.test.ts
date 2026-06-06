@@ -46,7 +46,7 @@ describe("serializeLead", () => {
       lastActivityAt: DATE,
       createdAt: DATE,
     } as unknown as ILead;
-    const dto = serializeLead(lead, "Owner Name");
+    const dto = serializeLead(lead, "Owner Name", 4);
     expect(dto.id).toBe(String(lead._id));
     expect(dto.ownerId).toBe(String(ownerId));
     expect(dto.ownerName).toBe("Owner Name");
@@ -55,6 +55,7 @@ describe("serializeLead", () => {
     expect(dto.createdAt).toBe(ISO);
     expect(dto.stage).toBe("qualified");
     expect(dto.tags).toEqual(["hot"]);
+    expect(dto.commentCount).toBe(4);
   });
 
   it("applies defaults for missing optional fields and null convertedAccountId", () => {
@@ -66,6 +67,7 @@ describe("serializeLead", () => {
     expect(dto.ownerName).toBe("");
     expect(dto.convertedAccountId).toBeNull();
     expect(dto.lastActivityAt).toBe("");
+    expect(dto.commentCount).toBe(0);
   });
 });
 
