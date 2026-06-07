@@ -52,6 +52,7 @@ const REACH = [
 export default function LeadDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const router = useRouter();
+  const me = useSession();
   const { toast } = useToast();
   const confirm = useConfirm();
   const { data, loading, error, refresh } = useApi<LeadResponse>(`/api/leads/${id}`);
@@ -83,6 +84,17 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
       toast(err instanceof Error ? err.message : "Couldn't update stage", "error");
     } finally {
       setPendingStage(null);
+    }
+  }
+
+  async function editNote(activityId: string, detail: string) {
+    try {
+      await api.patch(`/api/leads/${id}/activities/${activityId}`, { detail });
+      toast("Note updated.", "success");
+      refresh();
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Couldn't update note", "error");
+      throw err;
     }
   }
 
@@ -244,7 +256,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
                       {lead.notes}
                     </div>
                   )}
-                  <ActivityTimeline activities={activities} />
+                  <ActivityTimeline activities={activities} currentUserId={me.id} onEdit={editNote} />
                 </>
               ) : history.loading ? (
                 <PageLoader />
