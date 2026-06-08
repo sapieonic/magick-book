@@ -17,6 +17,7 @@ import {
   Archive,
   Loader2,
   BellRing,
+  Webhook,
 } from "lucide-react";
 import { PageHeader } from "@/components/layout/Sidebar";
 import { useSession } from "@/components/layout/SessionContext";
@@ -25,6 +26,7 @@ import { AuditTimeline } from "@/components/AuditTimeline";
 import { AddLeadDrawer } from "@/components/leads/AddLeadDrawer";
 import { ConvertModal } from "@/components/leads/ConvertModal";
 import { ReminderModal } from "@/components/reminders/ReminderModal";
+import { LeadWebhookModal } from "@/components/reminders/LeadWebhookModal";
 import { Avatar } from "@/components/ui/Avatar";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -64,6 +66,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
   const [lostOpen, setLostOpen] = useState(false);
   const [reach, setReach] = useState<(typeof REACH)[number] | null>(null);
   const [reminderOpen, setReminderOpen] = useState(false);
+  const [webhookOpen, setWebhookOpen] = useState(false);
   const [rightTab, setRightTab] = useState<"activity" | "history">("activity");
   const [archiving, setArchiving] = useState(false);
   const [pendingStage, setPendingStage] = useState<PipelineStage | null>(null);
@@ -238,6 +241,12 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
                 >
                   <BellRing className="size-4" /> Set reminder
                 </button>
+                <button
+                  onClick={() => setWebhookOpen(true)}
+                  className="mt-2 inline-flex w-full items-center justify-center gap-1.5 text-[12px] font-medium text-muted transition-colors hover:text-violet-700"
+                >
+                  <Webhook className="size-3.5" /> Customize webhook for this lead
+                </button>
               </Card>
             </div>
 
@@ -314,6 +323,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
         onClose={() => setReminderOpen(false)}
         onCreated={() => { refresh(); history.refresh(); }}
       />
+      <LeadWebhookModal open={webhookOpen} leadId={id} leadName={lead.name} onClose={() => setWebhookOpen(false)} />
     </>
   );
 }

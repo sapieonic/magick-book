@@ -228,3 +228,68 @@ describe("dispatch", () => {
     expect(fetchMock).toHaveBeenCalledOnce();
   });
 });
+
+describe("per-lead webhook override", () => {
+  function mockFetch() {
+    const fn = vi.fn(async () => new Response("ok", { status: 200 }));
+    vi.stubGlobal("fetch", fn);
+    return fn;
+  }
+
+  async function makeLead() {
+    return models.Lead.create({ workspaceId, ownerId: admin._id, name: "Acme", source: "Website", stage: "new" });
+  }
+
+  it("upserts and reads a lead override alongside the default", async () => {
+    const lead = await makeLead();
+    await settingsRoute.PUT(jsonRequest("http://localhost/api/reminders/settings", "PUT", { enabled: true, url: "https://default.example/hook", method: "POST", payloadTemplate: "{}" }));
+    await settingsRoute.PUT(jsonRequest("http://localhost/api/reminders/settings", "PUT", { leadId: String(lead._id), enabled: true, url: "https://lead.example/hook", method: "POST", payloadTemplate: "{}" }));
+
+    const res = await settingsRoute.GET(jsonRequest(`http://localhost/api/reminders/settings?leadId=${lead._id}`, "GET"));
+    const json = await res.json();
+    expect(json.hasOverride).toBe(true);
+    expect(json.setting.url).toBe("https://lead.example/hook");
+
+    // Two distinct configs now exist for the same user.
+    expect(await models.ReminderSetting.countDocuments({ userId: admin._id })).toBe(2);
+  });
+
+  it("dispatch prefers the lead override, else the default", async () => {
+    const lead = await makeLead();
+    await models.ReminderSetting.create({ workspaceId, userId: admin._id, leadId: null, enabled: true, url: "https://default.example/hook", method: "POST", payloadTemplate: "{}" });
+    await models.ReminderSetting.create({ workspaceId, userId: admin._id, leadId: lead._id, enabled: true, url: "https://lead.example/hook", method: "POST", payloadTemplate: "{}" });
+
+    await models.Reminder.create({ workspaceId, userId: admin._id, title: "On lead", dueAt: new Date(Date.now() - 1000), status: "scheduled", leadId: lead._id });
+    await models.Reminder.create({ workspaceId, userId: admin._id, title: "Standalone", dueAt: new Date(Date.now() - 1000), status: "scheduled" });
+
+    const fetchMock = mockFetch();
+    await lib.dispatchDueReminders({});
+    const urls = fetchMock.mock.calls.map((c) => c[0]).sort();
+    expect(urls).toEqual(["https://default.example/hook", "https://lead.example/hook"]);
+  });
+
+  it("falls back to the default when the lead override is disabled", async () => {
+    const lead = await makeLead();
+    await models.ReminderSetting.create({ workspaceId, userId: admin._id, leadId: null, enabled: true, url: "https://default.example/hook", method: "POST", payloadTemplate: "{}" });
+    await models.ReminderSetting.create({ workspaceId, userId: admin._id, leadId: lead._id, enabled: false, url: "https://lead.example/hook", method: "POST", payloadTemplate: "{}" });
+    await models.Reminder.create({ workspaceId, userId: admin._id, title: "On lead", dueAt: new Date(Date.now() - 1000), status: "scheduled", leadId: lead._id });
+
+    const fetchMock = mockFetch();
+    await lib.dispatchDueReminders({});
+    expect(fetchMock.mock.calls[0][0]).toBe("https://default.example/hook");
+  });
+
+  it("removes a lead override, reverting to the default", async () => {
+    const lead = await makeLead();
+    await models.ReminderSetting.create({ workspaceId, userId: admin._id, leadId: lead._id, enabled: true, url: "https://lead.example/hook", method: "POST", payloadTemplate: "{}" });
+
+    const res = await settingsRoute.DELETE(jsonRequest(`http://localhost/api/reminders/settings?leadId=${lead._id}`, "DELETE"));
+    expect(res.status).toBe(200);
+    expect(await models.ReminderSetting.countDocuments({ userId: admin._id, leadId: lead._id })).toBe(0);
+  });
+
+  it("won't remove the default config via DELETE", async () => {
+    const res = await settingsRoute.DELETE(jsonRequest("http://localhost/api/reminders/settings", "DELETE"));
+    expect(res.status).toBe(400);
+  });
+});

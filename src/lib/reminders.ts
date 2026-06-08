@@ -87,6 +87,29 @@ export async function deliverReminder(
   }
 }
 
+/**
+ * Resolve which webhook delivers a reminder: a per-lead override (if it exists
+ * and is enabled) wins, otherwise the user's default config. Results are memoized
+ * in `cache` for the batch.
+ */
+async function resolveSetting(
+  cache: Map<string, IReminderSetting | null>,
+  userId: Types.ObjectId,
+  leadId?: Types.ObjectId | null,
+): Promise<IReminderSetting | null> {
+  const defaultKey = `${userId}:-`;
+  const load = async (key: string, filter: Record<string, unknown>) => {
+    if (!cache.has(key)) cache.set(key, await ReminderSetting.findOne(filter).lean<IReminderSetting>());
+    return cache.get(key) ?? null;
+  };
+
+  if (leadId) {
+    const override = await load(`${userId}:${leadId}`, { userId, leadId });
+    if (override && override.enabled && override.url?.trim()) return override;
+  }
+  return load(defaultKey, { userId, leadId: null });
+}
+
 export interface DispatchSummary {
   due: number;
   sent: number;
@@ -112,18 +135,17 @@ export async function dispatchDueReminders(opts: { userId?: Types.ObjectId | str
   const summary: DispatchSummary = { due: due.length, sent: 0, failed: 0, skipped: 0 };
   if (!due.length) return summary;
 
-  // Cache per-owner settings + identity so a batch for one user hits Mongo once.
+  // Cache resolved settings + owner identity so a batch hits Mongo minimally.
   const settings = new Map<string, IReminderSetting | null>();
   const owners = new Map<string, Pick<IUser, "name" | "email"> | null>();
 
   for (const reminder of due) {
     const ownerId = String(reminder.userId);
-    if (!settings.has(ownerId)) {
-      settings.set(ownerId, await ReminderSetting.findOne({ userId: reminder.userId }).lean<IReminderSetting>());
+    if (!owners.has(ownerId)) {
       owners.set(ownerId, await User.findById(reminder.userId).select("name email").lean<Pick<IUser, "name" | "email">>());
     }
-    const setting = settings.get(ownerId) ?? null;
     const owner = owners.get(ownerId) ?? null;
+    const setting = await resolveSetting(settings, reminder.userId, reminder.leadId);
 
     if (!setting || !setting.enabled || !setting.url?.trim()) {
       summary.skipped++;

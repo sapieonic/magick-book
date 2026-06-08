@@ -209,11 +209,16 @@ export interface IReminder extends SoftDelete {
   updatedAt: Date;
 }
 
-/** Per-user webhook config — the "API to call" set on the Settings page. */
+/**
+ * Per-user webhook config — the "API to call". One default per user
+ * (`leadId: null`, set on the Settings page) plus optional per-lead overrides
+ * (`leadId` set, configured from the lead's comment area).
+ */
 export interface IReminderSetting {
   _id: Types.ObjectId;
   workspaceId: Types.ObjectId;
-  userId: Types.ObjectId; // one config per user
+  userId: Types.ObjectId;
+  leadId?: Types.ObjectId | null; // null = the user's default config
   enabled: boolean;
   url: string;
   method: (typeof REMINDER_HTTP_METHODS)[number];
@@ -413,7 +418,8 @@ ReminderSchema.index({ status: 1, dueAt: 1 });
 const ReminderSettingSchema = new Schema<IReminderSetting>(
   {
     workspaceId: { type: Schema.Types.ObjectId, ref: "Workspace", index: true, required: true },
-    userId: { type: Schema.Types.ObjectId, ref: "User", required: true, unique: true },
+    userId: { type: Schema.Types.ObjectId, ref: "User", required: true },
+    leadId: { type: Schema.Types.ObjectId, ref: "Lead", default: null },
     enabled: { type: Boolean, default: false },
     url: { type: String, default: "" },
     method: { type: String, enum: REMINDER_HTTP_METHODS, default: "POST" },
@@ -422,6 +428,8 @@ const ReminderSettingSchema = new Schema<IReminderSetting>(
   },
   opts,
 );
+// One config per (user, lead) — the default config uses leadId: null.
+ReminderSettingSchema.index({ userId: 1, leadId: 1 }, { unique: true });
 
 /* ----------------------------------------------------------------- models */
 // Guard against "OverwriteModelError" during Next.js hot reload.

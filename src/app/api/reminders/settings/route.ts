@@ -1,18 +1,32 @@
 import { type NextRequest } from "next/server";
 import { ok, route, serializeReminderSetting, HttpError } from "@/lib/api";
 import { connectDB } from "@/lib/db";
-import { ReminderSetting, type IReminderSetting, type IReminder } from "@/lib/models";
+import { ReminderSetting, Lead, type IReminderSetting, type IReminder, type ILead } from "@/lib/models";
 import { requireUser } from "@/lib/auth/server";
+import { leadScope } from "@/lib/rbac";
 import { REMINDER_HTTP_METHODS, DEFAULT_REMINDER_TEMPLATE } from "@/lib/constants";
 import { deliverReminder } from "@/lib/reminders";
 import { Types } from "mongoose";
+import type { IUser } from "@/lib/models";
 
-// GET /api/reminders/settings — the signed-in user's webhook config.
-export const GET = route(async () => {
+/**
+ * Resolve the optional `?leadId`/`body.leadId` into a per-lead override target,
+ * enforcing the caller can see the lead. Returns null for the user's default.
+ */
+async function resolveLeadId(user: IUser, raw: unknown): Promise<Types.ObjectId | null> {
+  if (!raw) return null;
+  const lead = await Lead.findOne({ _id: String(raw), ...leadScope(user) }).lean<ILead>();
+  if (!lead) throw new HttpError("Lead not found", 404);
+  return lead._id;
+}
+
+// GET /api/reminders/settings[?leadId=…] — the default config, or a lead override.
+export const GET = route(async (req: NextRequest) => {
   const user = await requireUser();
   await connectDB();
-  const setting = await ReminderSetting.findOne({ userId: user._id }).lean<IReminderSetting>();
-  return ok({ setting: serializeReminderSetting(setting), defaultTemplate: DEFAULT_REMINDER_TEMPLATE });
+  const leadId = await resolveLeadId(user, req.nextUrl.searchParams.get("leadId"));
+  const setting = await ReminderSetting.findOne({ userId: user._id, leadId }).lean<IReminderSetting>();
+  return ok({ setting: serializeReminderSetting(setting), defaultTemplate: DEFAULT_REMINDER_TEMPLATE, hasOverride: !!setting && !!leadId });
 });
 
 /** Normalize + validate an incoming config body into a setting patch. */
@@ -37,23 +51,34 @@ function parseConfig(b: Record<string, unknown>) {
   return { enabled, url, method, headers, payloadTemplate };
 }
 
-// PUT /api/reminders/settings — upsert the webhook config.
+// PUT /api/reminders/settings — upsert the default config, or a lead override.
 export const PUT = route(async (req: NextRequest) => {
   const user = await requireUser();
   await connectDB();
   const b = await req.json().catch(() => ({}));
+  const leadId = await resolveLeadId(user, b.leadId);
   const patch = parseConfig(b);
 
   const setting = await ReminderSetting.findOneAndUpdate(
-    { userId: user._id },
-    { $set: patch, $setOnInsert: { workspaceId: user.workspaceId } },
+    { userId: user._id, leadId },
+    { $set: patch, $setOnInsert: { workspaceId: user.workspaceId, userId: user._id, leadId } },
     { returnDocument: "after", upsert: true },
   ).lean<IReminderSetting>();
 
   return ok({ setting: serializeReminderSetting(setting) });
 });
 
-// POST /api/reminders/settings — send a sample payload to test the config.
+// DELETE /api/reminders/settings?leadId=… — drop a lead override (revert to default).
+export const DELETE = route(async (req: NextRequest) => {
+  const user = await requireUser();
+  await connectDB();
+  const leadId = await resolveLeadId(user, req.nextUrl.searchParams.get("leadId"));
+  if (!leadId) throw new HttpError("Only per-lead overrides can be removed.");
+  await ReminderSetting.deleteOne({ userId: user._id, leadId });
+  return ok({ removed: true });
+});
+
+// POST /api/reminders/settings — send a sample payload to test a config.
 export const POST = route(async (req: NextRequest) => {
   const user = await requireUser();
   await connectDB();

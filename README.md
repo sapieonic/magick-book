@@ -160,6 +160,10 @@ template with `{{title}}`, `{{dueAt}}`, `{{entityName}}`, `{{entityUrl}}`, … v
 Point it at Slack, Zapier, n8n, or your own API. Config is **per-user**; reminders are
 private to whoever created them.
 
+Each user sets a **default** webhook in Settings, and any **lead can override** it from
+its page ("Customize webhook for this lead") — reminders on that lead then call the lead's
+webhook instead of the default. Resolution at delivery: enabled lead override → user default.
+
 **Delivery** is done by a sweep endpoint that finds due reminders and fires each webhook:
 
 ```
