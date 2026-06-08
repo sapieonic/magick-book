@@ -164,6 +164,10 @@ Each user sets a **default** webhook in Settings, and any **lead can override** 
 its page ("Customize webhook for this lead") — reminders on that lead then call the lead's
 webhook instead of the default. Resolution at delivery: enabled lead override → user default.
 
+In a **lead or account note composer**, type **`/remind <text>`** and press Enter: the
+composer switches to reminder mode and opens a reminder modal prefilled with your text as
+the title (you confirm the time in the picker). Regular notes still post with ⌘/Ctrl+Enter.
+
 **Delivery** is done by a sweep endpoint that finds due reminders and fires each webhook:
 
 ```
