@@ -151,6 +151,41 @@ row) → `POST /api/invoices/:id/document` streams it to S3 → `GET /api/invoic
 redirects to a presigned URL to view/download. Without `INVOICES_BUCKET` set, uploads are
 disabled gracefully (the rest of the app is unaffected). Implemented in `src/lib/s3.ts`.
 
+## ⏰ Reminders (webhook + cron)
+
+Each user can set **reminders** — from **Settings → Reminders**, or from any **lead**
+or **account** page. When a reminder falls due, MagickBook **calls an outbound webhook**
+the user configures in Settings (URL, HTTP method, custom headers, and a JSON payload
+template with `{{title}}`, `{{dueAt}}`, `{{entityName}}`, `{{entityUrl}}`, … variables).
+Point it at Slack, Zapier, n8n, or your own API. Config is **per-user**; reminders are
+private to whoever created them.
+
+**Delivery** is done by a sweep endpoint that finds due reminders and fires each webhook:
+
+```
+GET|POST /api/reminders/dispatch     # cron secret → all users; signed-in user → their own
+```
+
+Set a shared secret so only your scheduler can trigger the full sweep:
+
+```bash
+CRON_SECRET="<a long random string>"
+# optional: absolute base URL used to build {{entityUrl}} deep-links in payloads
+APP_BASE_URL="https://your-app.vercel.app"
+```
+
+The scheduler must send it as `Authorization: Bearer $CRON_SECRET` (Vercel Cron does this
+automatically). Without `CRON_SECRET`, the endpoint still works for a signed-in user's own
+reminders (the "Run due now" button), and runs an open full sweep in non-production for the
+in-memory demo.
+
+- **Vercel free (Hobby):** [`vercel.json`](./vercel.json) ships a built-in cron, but Hobby
+  crons only run **once per day**. For to-the-minute delivery, also point a **free external
+  scheduler** at the dispatch URL every few minutes:
+  - [cron-job.org](https://cron-job.org) — add the URL, set an `Authorization: Bearer …` header.
+  - **GitHub Actions** — a `schedule:` workflow (min ~5 min) that `curl`s the URL with the secret.
+- **Vercel Pro:** bump the `vercel.json` schedule to e.g. `*/5 * * * *`.
+
 ## 🗂️ Project structure
 
 ```

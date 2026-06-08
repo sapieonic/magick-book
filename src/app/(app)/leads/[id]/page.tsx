@@ -16,6 +16,7 @@ import {
   Plus,
   Archive,
   Loader2,
+  BellRing,
 } from "lucide-react";
 import { PageHeader } from "@/components/layout/Sidebar";
 import { useSession } from "@/components/layout/SessionContext";
@@ -23,6 +24,7 @@ import { ActivityTimeline } from "@/components/ActivityTimeline";
 import { AuditTimeline } from "@/components/AuditTimeline";
 import { AddLeadDrawer } from "@/components/leads/AddLeadDrawer";
 import { ConvertModal } from "@/components/leads/ConvertModal";
+import { ReminderModal } from "@/components/reminders/ReminderModal";
 import { Avatar } from "@/components/ui/Avatar";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -61,6 +63,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
   const [converting, setConverting] = useState(false);
   const [lostOpen, setLostOpen] = useState(false);
   const [reach, setReach] = useState<(typeof REACH)[number] | null>(null);
+  const [reminderOpen, setReminderOpen] = useState(false);
   const [rightTab, setRightTab] = useState<"activity" | "history">("activity");
   const [archiving, setArchiving] = useState(false);
   const [pendingStage, setPendingStage] = useState<PipelineStage | null>(null);
@@ -229,6 +232,12 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
                     </button>
                   ))}
                 </div>
+                <button
+                  onClick={() => setReminderOpen(true)}
+                  className="mt-2.5 inline-flex w-full items-center justify-center gap-2 rounded-[var(--radius-md)] border border-dashed border-line-strong py-2.5 text-[13px] font-semibold text-ink-soft transition-all hover:border-violet-400 hover:bg-violet-50 hover:text-violet-700"
+                >
+                  <BellRing className="size-4" /> Set reminder
+                </button>
               </Card>
             </div>
 
@@ -298,6 +307,13 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
         }}
       />
       <LostModal open={lostOpen} leadId={id} name={lead.name} onClose={() => setLostOpen(false)} onDone={() => { setLostOpen(false); refresh(); history.refresh(); }} />
+      <ReminderModal
+        open={reminderOpen}
+        leadId={id}
+        entityName={lead.name}
+        onClose={() => setReminderOpen(false)}
+        onCreated={() => { refresh(); history.refresh(); }}
+      />
     </>
   );
 }

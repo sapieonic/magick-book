@@ -11,6 +11,8 @@ import type {
   IUser,
   IDocument,
   IAuditLog,
+  IReminder,
+  IReminderSetting,
 } from "./models";
 import type {
   LeadDTO,
@@ -22,8 +24,10 @@ import type {
   MemberDTO,
   DocumentDTO,
   AuditLogDTO,
+  ReminderDTO,
+  ReminderSettingDTO,
 } from "./types";
-import type { LeadStage, AccountStatus, InvoiceStatus, Role, MemberStatus, ActivityKind, DocumentKind, AuditAction, AuditEntity } from "./constants";
+import type { LeadStage, AccountStatus, InvoiceStatus, Role, MemberStatus, ActivityKind, DocumentKind, AuditAction, AuditEntity, ReminderStatus, ReminderHttpMethod } from "./constants";
 
 /* ---------------------------------------------------------- responses */
 
@@ -206,6 +210,33 @@ export function serializeAuditLog(a: IAuditLog): AuditLogDTO {
     leadId: a.leadId ? id(a.leadId) : null,
     accountId: a.accountId ? id(a.accountId) : null,
     createdAt: iso(a.createdAt) ?? "",
+  };
+}
+
+export function serializeReminder(r: IReminder): ReminderDTO {
+  return {
+    id: id(r._id),
+    title: r.title,
+    notes: r.notes ?? "",
+    dueAt: iso(r.dueAt) ?? "",
+    status: r.status as ReminderStatus,
+    leadId: r.leadId ? id(r.leadId) : null,
+    accountId: r.accountId ? id(r.accountId) : null,
+    entityLabel: r.entityLabel ?? "",
+    attempts: r.attempts ?? 0,
+    sentAt: iso(r.sentAt),
+    lastError: r.lastError ?? "",
+    createdAt: iso(r.createdAt) ?? "",
+  };
+}
+
+export function serializeReminderSetting(s: IReminderSetting | null): ReminderSettingDTO {
+  return {
+    enabled: !!s?.enabled,
+    url: s?.url ?? "",
+    method: (s?.method ?? "POST") as ReminderHttpMethod,
+    headers: (s?.headers ?? []).map((h) => ({ key: h.key, value: h.value })),
+    payloadTemplate: s?.payloadTemplate ?? "",
   };
 }
 

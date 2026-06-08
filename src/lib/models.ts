@@ -11,6 +11,8 @@ import {
   DOCUMENT_KINDS,
   AUDIT_ACTIONS,
   AUDIT_ENTITIES,
+  REMINDER_STATUSES,
+  REMINDER_HTTP_METHODS,
 } from "./constants";
 
 /** Soft-delete fields mixed into every trackable domain document. */
@@ -184,6 +186,43 @@ export interface IActivity {
   updatedAt: Date;
 }
 
+/**
+ * A reminder fires an outbound HTTP call to the owner's configured webhook when
+ * it falls due. Owned per-user; can stand alone or link back to a lead/account.
+ */
+export interface IReminder extends SoftDelete {
+  _id: Types.ObjectId;
+  workspaceId: Types.ObjectId;
+  userId: Types.ObjectId; // owner — reminders are private to their creator
+  title: string;
+  notes?: string;
+  dueAt: Date;
+  status: (typeof REMINDER_STATUSES)[number];
+  leadId?: Types.ObjectId;
+  accountId?: Types.ObjectId;
+  entityLabel?: string; // denormalized lead/account name for display + payload
+  attempts: number;
+  lastAttemptAt?: Date;
+  sentAt?: Date;
+  lastError?: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+/** Per-user webhook config — the "API to call" set on the Settings page. */
+export interface IReminderSetting {
+  _id: Types.ObjectId;
+  workspaceId: Types.ObjectId;
+  userId: Types.ObjectId; // one config per user
+  enabled: boolean;
+  url: string;
+  method: (typeof REMINDER_HTTP_METHODS)[number];
+  headers: { key: string; value: string }[];
+  payloadTemplate: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 /* ---------------------------------------------------------------- schemas */
 
 const opts = { timestamps: true };
@@ -349,6 +388,41 @@ const ActivitySchema = new Schema<IActivity>(
   opts,
 );
 
+const ReminderSchema = new Schema<IReminder>(
+  {
+    workspaceId: { type: Schema.Types.ObjectId, ref: "Workspace", index: true, required: true },
+    userId: { type: Schema.Types.ObjectId, ref: "User", index: true, required: true },
+    title: { type: String, required: true },
+    notes: String,
+    dueAt: { type: Date, required: true, index: true },
+    status: { type: String, enum: REMINDER_STATUSES, default: "scheduled", index: true },
+    leadId: { type: Schema.Types.ObjectId, ref: "Lead", index: true },
+    accountId: { type: Schema.Types.ObjectId, ref: "Account", index: true },
+    entityLabel: String,
+    attempts: { type: Number, default: 0 },
+    lastAttemptAt: Date,
+    sentAt: Date,
+    lastError: String,
+    ...softDeleteFields,
+  },
+  opts,
+);
+// The dispatch sweep reads by (status, dueAt) — index it.
+ReminderSchema.index({ status: 1, dueAt: 1 });
+
+const ReminderSettingSchema = new Schema<IReminderSetting>(
+  {
+    workspaceId: { type: Schema.Types.ObjectId, ref: "Workspace", index: true, required: true },
+    userId: { type: Schema.Types.ObjectId, ref: "User", required: true, unique: true },
+    enabled: { type: Boolean, default: false },
+    url: { type: String, default: "" },
+    method: { type: String, enum: REMINDER_HTTP_METHODS, default: "POST" },
+    headers: { type: [{ _id: false, key: String, value: String }], default: [] },
+    payloadTemplate: { type: String, default: "" },
+  },
+  opts,
+);
+
 /* ----------------------------------------------------------------- models */
 // Guard against "OverwriteModelError" during Next.js hot reload.
 
@@ -362,3 +436,6 @@ export const Expense = (models.Expense as mongoose.Model<IExpense>) || model<IEx
 export const Activity = (models.Activity as mongoose.Model<IActivity>) || model<IActivity>("Activity", ActivitySchema);
 export const Document = (models.Document as mongoose.Model<IDocument>) || model<IDocument>("Document", DocumentSchema);
 export const AuditLog = (models.AuditLog as mongoose.Model<IAuditLog>) || model<IAuditLog>("AuditLog", AuditLogSchema);
+export const Reminder = (models.Reminder as mongoose.Model<IReminder>) || model<IReminder>("Reminder", ReminderSchema);
+export const ReminderSetting =
+  (models.ReminderSetting as mongoose.Model<IReminderSetting>) || model<IReminderSetting>("ReminderSetting", ReminderSettingSchema);

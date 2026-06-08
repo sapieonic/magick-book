@@ -97,5 +97,53 @@ export const ACTIVITY_KINDS = [
   "converted",
   "invoice",
   "expense",
+  "reminder",
 ] as const;
 export type ActivityKind = (typeof ACTIVITY_KINDS)[number];
+
+/* ----------------------------------------------------------------- reminders */
+// Reminders fire an outbound HTTP request ("call an API") to a per-user webhook
+// configured in Settings. A cron-hit dispatch endpoint delivers them when due.
+
+export const REMINDER_STATUSES = ["scheduled", "sent", "failed", "done", "canceled"] as const;
+export type ReminderStatus = (typeof REMINDER_STATUSES)[number];
+
+export const REMINDER_STATUS_META: Record<ReminderStatus, { label: string; tint: string }> = {
+  scheduled: { label: "Scheduled", tint: "bg-info-bg text-info border-info/30" },
+  sent: { label: "Sent", tint: "bg-success-bg text-success border-success/30" },
+  failed: { label: "Failed", tint: "bg-danger-bg text-danger border-danger/30" },
+  done: { label: "Done", tint: "bg-line text-ink-soft border-line-strong" },
+  canceled: { label: "Canceled", tint: "bg-line text-ink-soft border-line-strong" },
+};
+
+/** HTTP verbs allowed for the outbound reminder webhook. */
+export const REMINDER_HTTP_METHODS = ["POST", "PUT", "PATCH", "GET"] as const;
+export type ReminderHttpMethod = (typeof REMINDER_HTTP_METHODS)[number];
+
+/** Placeholders that get substituted into the webhook payload template. */
+export const REMINDER_TEMPLATE_VARS = [
+  "title",
+  "notes",
+  "dueAt",
+  "entityType",
+  "entityName",
+  "entityUrl",
+  "reminderId",
+  "userName",
+  "userEmail",
+] as const;
+
+/** Sensible default body — shaped to drop straight into a Slack/Zapier webhook. */
+export const DEFAULT_REMINDER_TEMPLATE = `{
+  "text": "⏰ Reminder: {{title}}",
+  "title": "{{title}}",
+  "notes": "{{notes}}",
+  "dueAt": "{{dueAt}}",
+  "entity": "{{entityType}}",
+  "entityName": "{{entityName}}",
+  "url": "{{entityUrl}}",
+  "reminderId": "{{reminderId}}"
+}`;
+
+/** How many delivery attempts before a reminder is marked `failed`. */
+export const REMINDER_MAX_ATTEMPTS = 5;
