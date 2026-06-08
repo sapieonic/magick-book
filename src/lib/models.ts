@@ -179,6 +179,7 @@ export interface IActivity {
   kind: (typeof ACTIVITY_KINDS)[number];
   title: string;
   detail?: string;
+  editedAt?: Date;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -343,6 +344,7 @@ const ActivitySchema = new Schema<IActivity>(
     kind: { type: String, enum: ACTIVITY_KINDS, required: true },
     title: { type: String, required: true },
     detail: String,
+    editedAt: Date,
   },
   opts,
 );

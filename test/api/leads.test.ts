@@ -25,6 +25,7 @@ let leadIdRoute: typeof import("@/app/api/leads/[id]/route");
 let stageRoute: typeof import("@/app/api/leads/[id]/stage/route");
 let convertRoute: typeof import("@/app/api/leads/[id]/convert/route");
 let activitiesRoute: typeof import("@/app/api/leads/[id]/activities/route");
+let activityIdRoute: typeof import("@/app/api/leads/[id]/activities/[activityId]/route");
 let leadAuditRoute: typeof import("@/app/api/leads/[id]/audit/route");
 
 let workspaceId: Types.ObjectId;
@@ -40,6 +41,7 @@ beforeAll(async () => {
   stageRoute = await import("@/app/api/leads/[id]/stage/route");
   convertRoute = await import("@/app/api/leads/[id]/convert/route");
   activitiesRoute = await import("@/app/api/leads/[id]/activities/route");
+  activityIdRoute = await import("@/app/api/leads/[id]/activities/[activityId]/route");
   leadAuditRoute = await import("@/app/api/leads/[id]/audit/route");
   await connectDB();
 });
@@ -239,6 +241,73 @@ describe("POST /api/leads/:id/activities", () => {
     const lead = await makeLead(admin);
     const res = await activitiesRoute.POST(jsonRequest(`/api/leads/${lead._id}/activities`, "POST", { kind: "bogus" }), ctx({ id: String(lead._id) }));
     expect(res.status).toBe(400);
+  });
+});
+
+describe("PATCH /api/leads/:id/activities/:activityId (edit a note)", () => {
+  async function makeNote(owner: IUser, lead: { _id: Types.ObjectId }, detail = "original") {
+    return models.Activity.create({ workspaceId, leadId: lead._id, actorId: owner._id, kind: "note", title: "Note added", detail });
+  }
+
+  it("edits the author's own note and stamps editedAt", async () => {
+    const lead = await makeLead(admin);
+    const note = await makeNote(admin, lead);
+    const res = await activityIdRoute.PATCH(
+      jsonRequest(`/api/leads/${lead._id}/activities/${note._id}`, "PATCH", { detail: "updated note" }),
+      ctx({ id: String(lead._id), activityId: String(note._id) }),
+    );
+    expect(res.status).toBe(200);
+    const { activity } = await res.json();
+    expect(activity.detail).toBe("updated note");
+    expect(activity.editedAt).toBeTruthy();
+    const fresh = await models.Activity.findById(note._id).lean();
+    expect(fresh!.detail).toBe("updated note");
+    expect(fresh!.editedAt).toBeInstanceOf(Date);
+  });
+
+  it("refuses to edit a note authored by someone else (even an admin who can see the lead)", async () => {
+    // Lead owned by the standard user; admin can see it (workspace-wide) but didn't write the note.
+    const lead = await makeLead(standard);
+    const note = await makeNote(standard, lead);
+    session.user = admin;
+    const res = await activityIdRoute.PATCH(
+      jsonRequest(`/api/leads/${lead._id}/activities/${note._id}`, "PATCH", { detail: "hijack" }),
+      ctx({ id: String(lead._id), activityId: String(note._id) }),
+    );
+    expect(res.status).toBe(403);
+    const fresh = await models.Activity.findById(note._id).lean();
+    expect(fresh!.detail).toBe("original");
+  });
+
+  it("refuses to edit a non-note activity", async () => {
+    const lead = await makeLead(admin);
+    const sys = await models.Activity.create({ workspaceId, leadId: lead._id, actorId: admin._id, kind: "call", title: "Call logged", detail: "rang" });
+    const res = await activityIdRoute.PATCH(
+      jsonRequest(`/api/leads/${lead._id}/activities/${sys._id}`, "PATCH", { detail: "nope" }),
+      ctx({ id: String(lead._id), activityId: String(sys._id) }),
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it("rejects an empty note body", async () => {
+    const lead = await makeLead(admin);
+    const note = await makeNote(admin, lead);
+    const res = await activityIdRoute.PATCH(
+      jsonRequest(`/api/leads/${lead._id}/activities/${note._id}`, "PATCH", { detail: "   " }),
+      ctx({ id: String(lead._id), activityId: String(note._id) }),
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it("404s when the note belongs to a different lead", async () => {
+    const lead = await makeLead(admin);
+    const other = await makeLead(admin, { name: "Other" });
+    const note = await makeNote(admin, other);
+    const res = await activityIdRoute.PATCH(
+      jsonRequest(`/api/leads/${lead._id}/activities/${note._id}`, "PATCH", { detail: "x" }),
+      ctx({ id: String(lead._id), activityId: String(note._id) }),
+    );
+    expect(res.status).toBe(404);
   });
 });
 

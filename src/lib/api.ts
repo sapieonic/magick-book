@@ -161,8 +161,10 @@ export function serializeActivity(a: IActivity, actorName = ""): ActivityDTO {
     kind: a.kind as ActivityKind,
     title: a.title,
     detail: a.detail ?? "",
+    actorId: a.actorId ? id(a.actorId) : "",
     actorName,
     createdAt: iso(a.createdAt) ?? "",
+    editedAt: iso(a.editedAt) ?? null,
   };
 }
 

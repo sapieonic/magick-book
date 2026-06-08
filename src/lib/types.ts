@@ -115,8 +115,10 @@ export interface ActivityDTO {
   kind: ActivityKind;
   title: string;
   detail: string;
+  actorId: string;
   actorName: string;
   createdAt: string;
+  editedAt: string | null;
 }
 
 export interface DocumentDTO {
