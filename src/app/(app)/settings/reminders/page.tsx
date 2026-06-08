@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { BellRing, Plus, Trash2, Check, Clock, Webhook, Play } from "lucide-react";
 import { PageHeader } from "@/components/layout/Sidebar";
