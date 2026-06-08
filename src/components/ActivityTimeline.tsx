@@ -12,6 +12,7 @@ import {
   Receipt,
   Wallet,
   Pencil,
+  BellRing,
   type LucideIcon,
 } from "lucide-react";
 import { Time } from "@/components/ui/Time";
@@ -31,6 +32,7 @@ const ICONS: Record<ActivityKind, LucideIcon> = {
   converted: Trophy,
   invoice: Receipt,
   expense: Wallet,
+  reminder: BellRing,
 };
 
 const TINT: Partial<Record<ActivityKind, string>> = {
@@ -40,6 +42,7 @@ const TINT: Partial<Record<ActivityKind, string>> = {
   whatsapp: "bg-success-bg text-success",
   invoice: "bg-warn-bg text-warn",
   expense: "bg-warn-bg text-warn",
+  reminder: "bg-violet-50 text-violet-600",
 };
 
 export function ActivityTimeline({

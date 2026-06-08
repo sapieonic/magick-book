@@ -18,11 +18,14 @@ import {
   Download,
   Trash2,
   Archive,
+  BellRing,
 } from "lucide-react";
 import { PageHeader } from "@/components/layout/Sidebar";
 import { ActivityTimeline } from "@/components/ActivityTimeline";
 import { AuditTimeline } from "@/components/AuditTimeline";
 import { AddContactModal, EditContactModal, NewInvoiceModal, LogExpenseModal, UploadDocumentModal, uploadInvoiceFile } from "@/components/accounts/AccountModals";
+import { ReminderModal } from "@/components/reminders/ReminderModal";
+import { NoteComposer } from "@/components/activity/NoteComposer";
 import { Avatar } from "@/components/ui/Avatar";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -49,6 +52,8 @@ export default function AccountDetailPage({ params }: { params: Promise<{ id: st
   const [newInvoice, setNewInvoice] = useState(false);
   const [logExpense, setLogExpense] = useState(false);
   const [uploadDoc, setUploadDoc] = useState(false);
+  const [reminderOpen, setReminderOpen] = useState(false);
+  const [remindTitle, setRemindTitle] = useState("");
   const [archiving, setArchiving] = useState(false);
 
   const acc = useApi<{ account: AccountDTO; finance: AccountFinance }>(`/api/accounts/${id}`);
@@ -105,6 +110,9 @@ export default function AccountDetailPage({ params }: { params: Promise<{ id: st
           <Button variant="ghost" onClick={archiveAccount} loading={archiving} aria-label="Archive account">
             <Archive className="size-4" /> <span className="hidden sm:inline">Archive</span>
           </Button>
+          <Button variant="secondary" onClick={() => { setRemindTitle(""); setReminderOpen(true); }} aria-label="Set reminder">
+            <BellRing className="size-4" /> <span className="hidden sm:inline">Remind</span>
+          </Button>
           <Button variant="primary" onClick={() => setAddContact(true)}>
             <Plus className="size-4" /> Add contact
           </Button>
@@ -139,7 +147,16 @@ export default function AccountDetailPage({ params }: { params: Promise<{ id: st
           {tab === "documents" && <Documents accountId={id} documents={documents.data?.documents ?? []} loading={documents.loading} onUpload={() => setUploadDoc(true)} onChanged={() => { documents.refresh(); acc.refresh(); history.refresh(); }} />}
           {tab === "invoices" && <Invoices accountId={id} invoices={invoices.data?.invoices ?? []} finance={finance} loading={invoices.loading} onNew={() => setNewInvoice(true)} onChanged={refreshMoney} />}
           {tab === "expenses" && <Expenses expenses={expenses.data?.expenses ?? []} finance={finance} loading={expenses.loading} onNew={() => setLogExpense(true)} />}
-          {tab === "activity" && (activity.loading ? <PageLoader /> : <Card className="p-6"><ActivityTimeline activities={activity.data?.activities ?? []} /></Card>)}
+          {tab === "activity" && (activity.loading ? <PageLoader /> : (
+            <Card className="p-6">
+              <NoteComposer
+                postUrl={`/api/accounts/${id}/activity`}
+                onAdded={() => { activity.refresh(); acc.refresh(); }}
+                onRemind={(t) => { setRemindTitle(t); setReminderOpen(true); }}
+              />
+              <ActivityTimeline activities={activity.data?.activities ?? []} />
+            </Card>
+          ))}
           {tab === "history" && (history.loading ? <PageLoader /> : <Card className="p-6"><AuditTimeline entries={history.data?.entries ?? []} showEntity /></Card>)}
         </div>
       </div>
@@ -155,6 +172,14 @@ export default function AccountDetailPage({ params }: { params: Promise<{ id: st
       <UploadDocumentModal accountId={id} open={uploadDoc} onClose={() => setUploadDoc(false)} onUploaded={() => { documents.refresh(); acc.refresh(); history.refresh(); }} />
       <NewInvoiceModal accountId={id} open={newInvoice} onClose={() => setNewInvoice(false)} onCreated={refreshMoney} />
       <LogExpenseModal accountId={id} open={logExpense} onClose={() => setLogExpense(false)} onCreated={refreshMoney} />
+      <ReminderModal
+        open={reminderOpen}
+        accountId={id}
+        entityName={account.name}
+        initialTitle={remindTitle}
+        onClose={() => setReminderOpen(false)}
+        onCreated={() => { activity.refresh(); acc.refresh(); }}
+      />
     </>
   );
 }

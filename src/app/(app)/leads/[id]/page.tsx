@@ -16,6 +16,8 @@ import {
   Plus,
   Archive,
   Loader2,
+  BellRing,
+  Webhook,
 } from "lucide-react";
 import { PageHeader } from "@/components/layout/Sidebar";
 import { useSession } from "@/components/layout/SessionContext";
@@ -23,6 +25,9 @@ import { ActivityTimeline } from "@/components/ActivityTimeline";
 import { AuditTimeline } from "@/components/AuditTimeline";
 import { AddLeadDrawer } from "@/components/leads/AddLeadDrawer";
 import { ConvertModal } from "@/components/leads/ConvertModal";
+import { NoteComposer } from "@/components/activity/NoteComposer";
+import { ReminderModal } from "@/components/reminders/ReminderModal";
+import { LeadWebhookModal } from "@/components/reminders/LeadWebhookModal";
 import { Avatar } from "@/components/ui/Avatar";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -61,6 +66,9 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
   const [converting, setConverting] = useState(false);
   const [lostOpen, setLostOpen] = useState(false);
   const [reach, setReach] = useState<(typeof REACH)[number] | null>(null);
+  const [reminderOpen, setReminderOpen] = useState(false);
+  const [remindTitle, setRemindTitle] = useState("");
+  const [webhookOpen, setWebhookOpen] = useState(false);
   const [rightTab, setRightTab] = useState<"activity" | "history">("activity");
   const [archiving, setArchiving] = useState(false);
   const [pendingStage, setPendingStage] = useState<PipelineStage | null>(null);
@@ -229,6 +237,18 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
                     </button>
                   ))}
                 </div>
+                <button
+                  onClick={() => { setRemindTitle(""); setReminderOpen(true); }}
+                  className="mt-2.5 inline-flex w-full items-center justify-center gap-2 rounded-[var(--radius-md)] border border-dashed border-line-strong py-2.5 text-[13px] font-semibold text-ink-soft transition-all hover:border-violet-400 hover:bg-violet-50 hover:text-violet-700"
+                >
+                  <BellRing className="size-4" /> Set reminder
+                </button>
+                <button
+                  onClick={() => setWebhookOpen(true)}
+                  className="mt-2 inline-flex w-full items-center justify-center gap-1.5 text-[12px] font-medium text-muted transition-colors hover:text-violet-700"
+                >
+                  <Webhook className="size-3.5" /> Customize webhook for this lead
+                </button>
               </Card>
             </div>
 
@@ -250,7 +270,11 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
               </div>
               {rightTab === "activity" ? (
                 <>
-                  <NoteComposer leadId={id} onAdded={() => { refresh(); history.refresh(); }} />
+                  <NoteComposer
+                    postUrl={`/api/leads/${id}/activities`}
+                    onAdded={() => { refresh(); history.refresh(); }}
+                    onRemind={(t) => { setRemindTitle(t); setReminderOpen(true); }}
+                  />
                   {lead.notes && (
                     <div className="mb-5 rounded-[var(--radius-md)] border border-line bg-canvas/60 p-3.5 text-[13px] leading-relaxed text-ink-soft">
                       {lead.notes}
@@ -298,60 +322,20 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
         }}
       />
       <LostModal open={lostOpen} leadId={id} name={lead.name} onClose={() => setLostOpen(false)} onDone={() => { setLostOpen(false); refresh(); history.refresh(); }} />
+      <ReminderModal
+        open={reminderOpen}
+        leadId={id}
+        entityName={lead.name}
+        initialTitle={remindTitle}
+        onClose={() => setReminderOpen(false)}
+        onCreated={() => { refresh(); history.refresh(); }}
+      />
+      <LeadWebhookModal open={webhookOpen} leadId={id} leadName={lead.name} onClose={() => setWebhookOpen(false)} />
     </>
   );
 }
 
 // (helper components below)
-
-function NoteComposer({ leadId, onAdded }: { leadId: string; onAdded: () => void }) {
-  const me = useSession();
-  const { toast } = useToast();
-  const [note, setNote] = useState("");
-  const [busy, setBusy] = useState(false);
-
-  async function add() {
-    const text = note.trim();
-    if (!text) return;
-    setBusy(true);
-    try {
-      await api.post(`/api/leads/${leadId}/activities`, { kind: "note", detail: text });
-      setNote("");
-      onAdded();
-    } catch (err) {
-      toast(err instanceof Error ? err.message : "Couldn't add note", "error");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <div className="mb-5 flex gap-3">
-      <Avatar name={me.name} size={32} className="mt-0.5" />
-      <div className="flex-1">
-        <Textarea
-          value={note}
-          onChange={(e) => setNote(e.target.value)}
-          onKeyDown={(e) => {
-            if ((e.metaKey || e.ctrlKey) && e.key === "Enter") add();
-          }}
-          placeholder="Add a progress note… (⌘/Ctrl + Enter to post)"
-          className="min-h-[56px] text-[13px]"
-        />
-        <div className="mt-2 flex items-center justify-end gap-2">
-          {note.trim() && (
-            <button type="button" onClick={() => setNote("")} className="text-[12.5px] font-medium text-muted hover:text-ink">
-              Clear
-            </button>
-          )}
-          <Button size="sm" variant="primary" onClick={add} loading={busy} disabled={!note.trim()}>
-            <Plus className="size-3.5" /> Add note
-          </Button>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 function Row({ icon, label, value, bold }: { icon?: React.ReactNode; label?: string; value: React.ReactNode; bold?: boolean }) {
   return (
