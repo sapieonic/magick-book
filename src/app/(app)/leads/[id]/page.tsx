@@ -66,6 +66,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
   const [lostOpen, setLostOpen] = useState(false);
   const [reach, setReach] = useState<(typeof REACH)[number] | null>(null);
   const [reminderOpen, setReminderOpen] = useState(false);
+  const [remindTitle, setRemindTitle] = useState("");
   const [webhookOpen, setWebhookOpen] = useState(false);
   const [rightTab, setRightTab] = useState<"activity" | "history">("activity");
   const [archiving, setArchiving] = useState(false);
@@ -236,7 +237,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
                   ))}
                 </div>
                 <button
-                  onClick={() => setReminderOpen(true)}
+                  onClick={() => { setRemindTitle(""); setReminderOpen(true); }}
                   className="mt-2.5 inline-flex w-full items-center justify-center gap-2 rounded-[var(--radius-md)] border border-dashed border-line-strong py-2.5 text-[13px] font-semibold text-ink-soft transition-all hover:border-violet-400 hover:bg-violet-50 hover:text-violet-700"
                 >
                   <BellRing className="size-4" /> Set reminder
@@ -268,7 +269,11 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
               </div>
               {rightTab === "activity" ? (
                 <>
-                  <NoteComposer leadId={id} onAdded={() => { refresh(); history.refresh(); }} />
+                  <NoteComposer
+                    leadId={id}
+                    onAdded={() => { refresh(); history.refresh(); }}
+                    onRemind={(t) => { setRemindTitle(t); setReminderOpen(true); }}
+                  />
                   {lead.notes && (
                     <div className="mb-5 rounded-[var(--radius-md)] border border-line bg-canvas/60 p-3.5 text-[13px] leading-relaxed text-ink-soft">
                       {lead.notes}
@@ -320,6 +325,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
         open={reminderOpen}
         leadId={id}
         entityName={lead.name}
+        initialTitle={remindTitle}
         onClose={() => setReminderOpen(false)}
         onCreated={() => { refresh(); history.refresh(); }}
       />
@@ -330,11 +336,17 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
 
 // (helper components below)
 
-function NoteComposer({ leadId, onAdded }: { leadId: string; onAdded: () => void }) {
+/** Matches a `/remind [text]` command typed into the composer (text = first line). */
+const REMIND_CMD = /^\/remind\b[ \t]*(.*)/i;
+
+function NoteComposer({ leadId, onAdded, onRemind }: { leadId: string; onAdded: () => void; onRemind: (title: string) => void }) {
   const me = useSession();
   const { toast } = useToast();
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
+
+  // When the note opens with `/remind`, the composer becomes a reminder command.
+  const remind = REMIND_CMD.exec(note);
 
   async function add() {
     const text = note.trim();
@@ -351,6 +363,12 @@ function NoteComposer({ leadId, onAdded }: { leadId: string; onAdded: () => void
     }
   }
 
+  function fireRemind() {
+    if (!remind) return;
+    onRemind(remind[1].trim()); // text after `/remind` prefills the reminder title
+    setNote("");
+  }
+
   return (
     <div className="mb-5 flex gap-3">
       <Avatar name={me.name} size={32} className="mt-0.5" />
@@ -359,20 +377,41 @@ function NoteComposer({ leadId, onAdded }: { leadId: string; onAdded: () => void
           value={note}
           onChange={(e) => setNote(e.target.value)}
           onKeyDown={(e) => {
-            if ((e.metaKey || e.ctrlKey) && e.key === "Enter") add();
+            if (e.key === "Enter" && !e.shiftKey && remind) {
+              e.preventDefault();
+              fireRemind();
+            } else if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+              add();
+            }
           }}
-          placeholder="Add a progress note… (⌘/Ctrl + Enter to post)"
+          placeholder="Add a progress note… (⌘/Ctrl + Enter to post · type /remind to set a reminder)"
           className="min-h-[56px] text-[13px]"
         />
         <div className="mt-2 flex items-center justify-end gap-2">
-          {note.trim() && (
-            <button type="button" onClick={() => setNote("")} className="text-[12.5px] font-medium text-muted hover:text-ink">
-              Clear
-            </button>
+          {remind ? (
+            <>
+              <span className="mr-auto inline-flex items-center gap-1.5 text-[12px] font-medium text-violet-600">
+                <BellRing className="size-3.5" /> Reminder mode · press Enter to set the time
+              </span>
+              <button type="button" onClick={() => setNote("")} className="text-[12.5px] font-medium text-muted hover:text-ink">
+                Cancel
+              </button>
+              <Button size="sm" variant="primary" onClick={fireRemind}>
+                <BellRing className="size-3.5" /> Set reminder
+              </Button>
+            </>
+          ) : (
+            <>
+              {note.trim() && (
+                <button type="button" onClick={() => setNote("")} className="text-[12.5px] font-medium text-muted hover:text-ink">
+                  Clear
+                </button>
+              )}
+              <Button size="sm" variant="primary" onClick={add} loading={busy} disabled={!note.trim()}>
+                <Plus className="size-3.5" /> Add note
+              </Button>
+            </>
           )}
-          <Button size="sm" variant="primary" onClick={add} loading={busy} disabled={!note.trim()}>
-            <Plus className="size-3.5" /> Add note
-          </Button>
         </div>
       </div>
     </div>

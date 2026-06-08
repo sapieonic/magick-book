@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Modal } from "@/components/ui/Overlay";
 import { Button } from "@/components/ui/Button";
 import { Input, Textarea, Field } from "@/components/ui/Field";
@@ -26,6 +26,7 @@ export function ReminderModal({
   leadId,
   accountId,
   entityName,
+  initialTitle = "",
 }: {
   open: boolean;
   onClose: () => void;
@@ -33,12 +34,20 @@ export function ReminderModal({
   leadId?: string;
   accountId?: string;
   entityName?: string;
+  /** Prefill the title — e.g. the text after `/remind` in a lead comment. */
+  initialTitle?: string;
 }) {
   const { toast } = useToast();
   const [title, setTitle] = useState("");
   const [notes, setNotes] = useState("");
   const [due, setDue] = useState(() => toLocalInput(PRESETS[0].at()));
   const [busy, setBusy] = useState(false);
+
+  // Seed the title each time the modal opens (state persists between opens).
+  useEffect(() => {
+    if (open) setTitle(initialTitle);
+  }, [open, initialTitle]);
+
   if (!open) return null;
 
   async function submit() {
