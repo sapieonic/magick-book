@@ -41,6 +41,14 @@ export function accountScope(user: IUser, opts?: ScopeOpts): Record<string, unkn
   return base;
 }
 
+/**
+ * Reminders are private to their creator — admins and standard users alike see
+ * only their own. Always pinned to (workspace, user).
+ */
+export function reminderScope(user: IUser, opts?: ScopeOpts): Record<string, unknown> {
+  return { workspaceId: user.workspaceId, userId: user._id, ...deletedFilter(opts) };
+}
+
 /** Whether a standard user may act on a record they own. */
 export function canEditOwned(user: IUser, ownerId: Types.ObjectId): boolean {
   if (isAdmin(user)) return true;

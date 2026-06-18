@@ -11,6 +11,8 @@ import type {
   DocumentKind,
   AuditAction,
   AuditEntity,
+  ReminderStatus,
+  ReminderHttpMethod,
 } from "./constants";
 
 export interface SessionUser {
@@ -51,6 +53,8 @@ export interface LeadDTO {
   ownerName: string;
   convertedAccountId: string | null;
   order: number;
+  /** Count of `note` activities on the lead — the "comments" shown on board cards. */
+  commentCount: number;
   lastActivityAt: string;
   createdAt: string;
   deletedAt: string | null;
@@ -113,8 +117,10 @@ export interface ActivityDTO {
   kind: ActivityKind;
   title: string;
   detail: string;
+  actorId: string;
   actorName: string;
   createdAt: string;
+  editedAt: string | null;
 }
 
 export interface DocumentDTO {
@@ -146,6 +152,35 @@ export interface AuditLogDTO {
   leadId: string | null;
   accountId: string | null;
   createdAt: string;
+}
+
+export interface ReminderDTO {
+  id: string;
+  title: string;
+  notes: string;
+  dueAt: string;
+  status: ReminderStatus;
+  /** Linked record, if any. */
+  leadId: string | null;
+  accountId: string | null;
+  entityLabel: string;
+  attempts: number;
+  sentAt: string | null;
+  lastError: string;
+  createdAt: string;
+}
+
+export interface ReminderHeaderDTO {
+  key: string;
+  value: string;
+}
+
+export interface ReminderSettingDTO {
+  enabled: boolean;
+  url: string;
+  method: ReminderHttpMethod;
+  headers: ReminderHeaderDTO[];
+  payloadTemplate: string;
 }
 
 export interface AccountFinance {

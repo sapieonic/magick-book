@@ -22,6 +22,7 @@ function lead(over: Partial<LeadDTO>): LeadDTO {
     ownerName: "Asha Owner",
     convertedAccountId: null,
     order: 0,
+    commentCount: 0,
     lastActivityAt: new Date().toISOString(),
     createdAt: new Date().toISOString(),
     deletedAt: null,
@@ -48,9 +49,24 @@ describe("LeadCard", () => {
     expect(screen.getByTitle("Asha Owner")).toHaveTextContent("AO");
   });
 
-  it("shows 'became an account' when converted", () => {
+  it("flags converted leads in the footer", () => {
     render(<LeadCard lead={lead({ convertedAccountId: "acc1" })} />);
-    expect(screen.getByText(/became an account/i)).toBeInTheDocument();
+    expect(screen.getByText(/account/i)).toBeInTheDocument();
+  });
+
+  it("shows the comment count when there are comments", () => {
+    render(<LeadCard lead={lead({ commentCount: 3 })} />);
+    expect(screen.getByTitle("3 comments")).toHaveTextContent("3");
+  });
+
+  it("singularises the comment count title", () => {
+    render(<LeadCard lead={lead({ commentCount: 1 })} />);
+    expect(screen.getByTitle("1 comment")).toBeInTheDocument();
+  });
+
+  it("omits the comment count when there are none", () => {
+    render(<LeadCard lead={lead({ commentCount: 0 })} />);
+    expect(screen.queryByTitle(/comment/)).not.toBeInTheDocument();
   });
 
   it("omits the value/tags row when there is nothing to show", () => {

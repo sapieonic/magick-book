@@ -1,7 +1,7 @@
 import { type NextRequest } from "next/server";
 import { ok, route, serializeLead } from "@/lib/api";
 import { connectDB } from "@/lib/db";
-import { Lead, type ILead } from "@/lib/models";
+import { Lead, Activity, type ILead } from "@/lib/models";
 import { requireUser } from "@/lib/auth/server";
 import { leadScope } from "@/lib/rbac";
 import { logActivity, ownerNameMap, audit } from "@/lib/services";
@@ -25,8 +25,18 @@ export const GET = route(async (req: NextRequest) => {
   }
 
   const leads = await Lead.find(filter).sort({ stage: 1, order: 1, createdAt: -1 }).lean<ILead[]>();
+
+  // Comment ("note") counts per lead, in one indexed group query, for the board card badges.
+  const noteCounts = await Activity.aggregate<{ _id: Types.ObjectId; count: number }>([
+    { $match: { leadId: { $in: leads.map((l) => l._id) }, kind: "note" } },
+    { $group: { _id: "$leadId", count: { $sum: 1 } } },
+  ]);
+  const commentCounts = new Map(noteCounts.map((c) => [String(c._id), c.count]));
+
   const names = await ownerNameMap(leads.map((l) => l.ownerId));
-  return ok({ leads: leads.map((l) => serializeLead(l, names.get(String(l.ownerId)) ?? "")) });
+  return ok({
+    leads: leads.map((l) => serializeLead(l, names.get(String(l.ownerId)) ?? "", commentCounts.get(String(l._id)) ?? 0)),
+  });
 });
 
 // POST /api/leads — create a lead.

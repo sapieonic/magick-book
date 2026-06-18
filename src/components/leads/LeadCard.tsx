@@ -1,8 +1,7 @@
 "use client";
 import type { CSSProperties } from "react";
-import { Phone, Mail } from "lucide-react";
-import { Avatar } from "@/components/ui/Avatar";
-import { formatINRCompact, initials, avatarTint, valueTier, cn } from "@/lib/utils";
+import { Phone, Mail, MessageSquare, CornerDownRight } from "lucide-react";
+import { formatINRCompact, initials, avatarTint, valueTier, relativeTime, absoluteTime, cn } from "@/lib/utils";
 import type { LeadDTO } from "@/lib/types";
 
 const TAG_TINT: Record<string, string> = {
@@ -26,6 +25,12 @@ export function LeadCard({ lead, dragging }: { lead: LeadDTO; dragging?: boolean
           borderLeftWidth: "3px",
         } as CSSProperties)
       : undefined;
+
+  const hasTags = lead.tags.length > 0;
+  const hasValue = lead.estValue > 0;
+  // The footer carries at-a-glance signals: comment count, conversion, last touch.
+  const showFooter = lead.commentCount > 0 || !!lead.convertedAccountId || !!lead.lastActivityAt;
+
   return (
     <div
       style={tierStyle}
@@ -41,7 +46,9 @@ export function LeadCard({ lead, dragging }: { lead: LeadDTO; dragging?: boolean
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 pr-12">
           <p className="truncate text-[14.5px] font-bold leading-tight text-ink">{lead.name}</p>
-          {lead.company && <p className="mt-1 truncate text-[12.5px] font-medium text-muted">{lead.company}</p>}
+          {(lead.title || lead.company) && (
+            <p className="mt-1 truncate text-[12.5px] font-medium text-muted">{[lead.title, lead.company].filter(Boolean).join(" · ")}</p>
+          )}
         </div>
         {lead.ownerName && (
           <span
@@ -54,7 +61,7 @@ export function LeadCard({ lead, dragging }: { lead: LeadDTO; dragging?: boolean
         )}
       </div>
 
-      {(lead.estValue > 0 || lead.tags.length > 0 || lead.convertedAccountId) && (
+      {(hasTags || hasValue) && (
         <div className="mt-4 flex flex-wrap items-center gap-1.5">
           {(lead.tags || []).map((t) => {
             const tagStr = t || "";
@@ -70,7 +77,7 @@ export function LeadCard({ lead, dragging }: { lead: LeadDTO; dragging?: boolean
               )}
             </span>
           )})}
-          {lead.estValue > 0 && (
+          {hasValue && (
             <span
               className="ml-auto rounded-full px-2.5 py-0.5 font-mono text-[12.5px] font-bold tnum shadow-sm"
               style={{ background: "var(--tier-bg)", color: "var(--tier)" }}
@@ -78,7 +85,34 @@ export function LeadCard({ lead, dragging }: { lead: LeadDTO; dragging?: boolean
               {formatINRCompact(lead.estValue)}
             </span>
           )}
-          {lead.convertedAccountId && <span className="text-[11px] font-bold text-success">→ became an account</span>}
+        </div>
+      )}
+
+      {showFooter && (
+        <div className="mt-3 flex items-center gap-3 border-t border-dashed border-line pt-2.5 text-[11px] text-faint">
+          {lead.commentCount > 0 && (
+            <span
+              className="inline-flex items-center gap-1 font-semibold text-muted"
+              title={`${lead.commentCount} ${lead.commentCount === 1 ? "comment" : "comments"}`}
+            >
+              <MessageSquare className="size-3.5" />
+              <span className="tnum">{lead.commentCount}</span>
+            </span>
+          )}
+          {lead.convertedAccountId && (
+            <span className="inline-flex items-center gap-1 font-semibold text-success">
+              <CornerDownRight className="size-3.5" /> account
+            </span>
+          )}
+          {lead.lastActivityAt && (
+            <time
+              dateTime={lead.lastActivityAt}
+              title={absoluteTime(lead.lastActivityAt)}
+              className="ml-auto tnum"
+            >
+              {relativeTime(lead.lastActivityAt)}
+            </time>
+          )}
         </div>
       )}
 

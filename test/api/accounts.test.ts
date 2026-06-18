@@ -27,6 +27,7 @@ let documentIdRoute: typeof import("@/app/api/accounts/[id]/documents/[docId]/ro
 let accountAuditRoute: typeof import("@/app/api/accounts/[id]/audit/route");
 let invoicesRoute: typeof import("@/app/api/accounts/[id]/invoices/route");
 let expensesRoute: typeof import("@/app/api/accounts/[id]/expenses/route");
+let activityRoute: typeof import("@/app/api/accounts/[id]/activity/route");
 
 let workspaceId: Types.ObjectId;
 let admin: IUser;
@@ -45,6 +46,7 @@ beforeAll(async () => {
   accountAuditRoute = await import("@/app/api/accounts/[id]/audit/route");
   invoicesRoute = await import("@/app/api/accounts/[id]/invoices/route");
   expensesRoute = await import("@/app/api/accounts/[id]/expenses/route");
+  activityRoute = await import("@/app/api/accounts/[id]/activity/route");
   await connectDB();
 });
 afterAll(stopTestDB);
@@ -312,6 +314,37 @@ describe("expenses sub-route", () => {
     const res = await expensesRoute.POST(jsonRequest(`/api/accounts/${acc._id}/expenses`, "POST", { amount: 100, category: "Nope" }), ctx({ id: String(acc._id) }));
     const { expense } = await res.json();
     expect(expense.category).toBe("Other");
+  });
+});
+
+describe("activity sub-route (notes)", () => {
+  it("adds a note and bumps lastActivityAt", async () => {
+    const acc = await makeAccount(admin);
+    const res = await activityRoute.POST(jsonRequest(`/api/accounts/${acc._id}/activity`, "POST", { kind: "note", detail: "Kicked off onboarding" }), ctx({ id: String(acc._id) }));
+    expect(res.status).toBe(201);
+    const { activity } = await res.json();
+    expect(activity.detail).toBe("Kicked off onboarding");
+    expect(activity.kind).toBe("note");
+    expect(await models.Activity.countDocuments({ accountId: acc._id, kind: "note" })).toBe(1);
+
+    const fresh = await activityRoute.GET(jsonRequest(`/api/accounts/${acc._id}/activity`, "GET"), ctx({ id: String(acc._id) }));
+    const { activities } = await fresh.json();
+    expect(activities[0].detail).toBe("Kicked off onboarding");
+  });
+
+  it("rejects an empty note and non-note kinds", async () => {
+    const acc = await makeAccount(admin);
+    const empty = await activityRoute.POST(jsonRequest(`/api/accounts/${acc._id}/activity`, "POST", { kind: "note", detail: "  " }), ctx({ id: String(acc._id) }));
+    expect(empty.status).toBe(400);
+    const wrong = await activityRoute.POST(jsonRequest(`/api/accounts/${acc._id}/activity`, "POST", { kind: "invoice", detail: "x" }), ctx({ id: String(acc._id) }));
+    expect(wrong.status).toBe(400);
+  });
+
+  it("won't let a standard user post to an account they can't see", async () => {
+    const acc = await makeAccount(admin); // owned by admin
+    session.user = standard;
+    const res = await activityRoute.POST(jsonRequest(`/api/accounts/${acc._id}/activity`, "POST", { kind: "note", detail: "sneaky" }), ctx({ id: String(acc._id) }));
+    expect(res.status).toBe(404);
   });
 });
 

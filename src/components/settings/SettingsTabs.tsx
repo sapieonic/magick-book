@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 
 const TABS = [
   { href: "/settings/team", label: "Team & roles" },
+  { href: "/settings/reminders", label: "Reminders" },
   { href: "/settings/audit", label: "Audit log" },
 ];
 

@@ -1,11 +1,11 @@
 // @vitest-environment jsdom
-import { describe, it, expect } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { describe, it, expect, vi } from "vitest";
+import { render, screen, fireEvent } from "@testing-library/react";
 import { ActivityTimeline } from "@/components/ActivityTimeline";
 import type { ActivityDTO } from "@/lib/types";
 
 function act(over: Partial<ActivityDTO>): ActivityDTO {
-  return { id: "1", kind: "call", title: "Call logged", detail: "", actorName: "", createdAt: new Date().toISOString(), ...over };
+  return { id: "1", kind: "call", title: "Call logged", detail: "", actorId: "", actorName: "", createdAt: new Date().toISOString(), editedAt: null, ...over };
 }
 
 describe("ActivityTimeline", () => {
@@ -35,5 +35,34 @@ describe("ActivityTimeline", () => {
       <ActivityTimeline activities={[act({ id: "1" }), act({ id: "2", kind: "note", detail: "n" })]} />,
     );
     expect(container.querySelectorAll("li")).toHaveLength(2);
+  });
+
+  it("marks an edited note with an 'edited' tag", () => {
+    render(<ActivityTimeline activities={[act({ kind: "note", detail: "x", editedAt: new Date().toISOString() })]} />);
+    expect(screen.getByText("· edited")).toBeInTheDocument();
+  });
+
+  it("shows an edit affordance only for the viewer's own notes", () => {
+    const onEdit = vi.fn(async () => {});
+    const { rerender } = render(
+      <ActivityTimeline activities={[act({ kind: "note", detail: "mine", actorId: "u1" })]} currentUserId="u1" onEdit={onEdit} />,
+    );
+    expect(screen.getByLabelText("Edit note")).toBeInTheDocument();
+
+    // Someone else's note is not editable.
+    rerender(
+      <ActivityTimeline activities={[act({ kind: "note", detail: "theirs", actorId: "u2" })]} currentUserId="u1" onEdit={onEdit} />,
+    );
+    expect(screen.queryByLabelText("Edit note")).not.toBeInTheDocument();
+  });
+
+  it("invokes onEdit with the edited text", async () => {
+    const onEdit = vi.fn(async () => {});
+    render(<ActivityTimeline activities={[act({ id: "n1", kind: "note", detail: "before", actorId: "u1" })]} currentUserId="u1" onEdit={onEdit} />);
+    fireEvent.click(screen.getByLabelText("Edit note"));
+    const box = screen.getByRole("textbox");
+    fireEvent.change(box, { target: { value: "after" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(onEdit).toHaveBeenCalledWith("n1", "after");
   });
 });
