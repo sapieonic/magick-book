@@ -24,6 +24,7 @@ function lead(over: Partial<LeadDTO>): LeadDTO {
     order: 0,
     lastActivityAt: new Date().toISOString(),
     createdAt: new Date().toISOString(),
+    deletedAt: null,
     ...over,
   };
 }

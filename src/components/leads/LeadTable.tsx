@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Archive, X } from "lucide-react";
 import { Avatar } from "@/components/ui/Avatar";
@@ -21,6 +21,7 @@ export function LeadTable({ leads, onChanged }: { leads: LeadDTO[]; onChanged?: 
   const { sort, toggle } = useSort("activity", "desc");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [archiving, setArchiving] = useState(false);
+  const selectAllRef = React.useRef<HTMLInputElement>(null);
 
   const sorted = useMemo(
     () =>
@@ -60,6 +61,12 @@ export function LeadTable({ leads, onChanged }: { leads: LeadDTO[]; onChanged?: 
   const pageIds = pageRows.map((l) => l.id);
   const allOnPageSelected = pageIds.length > 0 && pageIds.every((id) => selected.has(id));
   const someOnPageSelected = pageIds.some((id) => selected.has(id));
+
+  React.useEffect(() => {
+    if (selectAllRef.current) {
+      selectAllRef.current.indeterminate = !allOnPageSelected && someOnPageSelected;
+    }
+  }, [allOnPageSelected, someOnPageSelected]);
 
   function toggleRow(id: string) {
     setSelected((prev) => {
@@ -113,20 +120,18 @@ export function LeadTable({ leads, onChanged }: { leads: LeadDTO[]; onChanged?: 
 
   return (
     <div className="px-4 pb-6 sm:px-6 lg:px-8">
-      <div className="overflow-x-auto rounded-[var(--radius-lg)] border border-line bg-paper shadow-[var(--shadow-card)]">
-        <table className="w-full min-w-[800px]">
-          <thead>
-            <tr className="border-b border-line bg-canvas/60 text-left text-[11.5px] font-semibold uppercase tracking-wide text-muted">
+      <div className="max-h-[calc(100vh-280px)] overflow-x-auto overflow-y-auto rounded-[var(--radius-xl)] border border-line bg-paper shadow-sm ring-1 ring-black/5 dark:ring-white/5 relative">
+        <table className="w-full min-w-[900px] border-collapse text-left">
+          <thead className="sticky top-0 z-10 bg-canvas/90 backdrop-blur-md shadow-sm dark:bg-canvas/80">
+            <tr className="border-b border-line text-[11px] font-bold uppercase tracking-wider text-muted">
               <th className="w-10 px-5 py-3">
                 <input
                   type="checkbox"
                   aria-label="Select all on page"
                   checked={allOnPageSelected}
-                  ref={(el) => {
-                    if (el) el.indeterminate = !allOnPageSelected && someOnPageSelected;
-                  }}
+                  ref={selectAllRef}
                   onChange={toggleAllOnPage}
-                  className="size-4 cursor-pointer rounded border-line-strong accent-violet-600"
+                  className="size-4 cursor-pointer rounded border-line-strong accent-violet-600 transition-all hover:ring-2 hover:ring-violet-200"
                 />
               </th>
               <th className="px-5 py-3"><SortHeader label="Lead" sortKey="name" sort={sort} onToggle={toggle} /></th>
@@ -138,7 +143,7 @@ export function LeadTable({ leads, onChanged }: { leads: LeadDTO[]; onChanged?: 
               <th className="px-5 py-3 text-right"><SortHeader label="Activity" sortKey="activity" sort={sort} onToggle={toggle} align="right" /></th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-line">
+          <tbody className="divide-y divide-line bg-paper">
             {pageRows.map((l) => {
               const meta = STAGE_META[l.stage];
               const checked = selected.has(l.id);
@@ -146,7 +151,7 @@ export function LeadTable({ leads, onChanged }: { leads: LeadDTO[]; onChanged?: 
                 <tr
                   key={l.id}
                   onClick={() => router.push(`/leads/${l.id}`)}
-                  className="cursor-pointer transition-colors hover:bg-violet-50/40 data-[selected=true]:bg-violet-50/60"
+                  className="group cursor-pointer transition-all duration-150 hover:bg-violet-50/50 data-[selected=true]:bg-violet-50/80 dark:hover:bg-violet-900/20 dark:data-[selected=true]:bg-violet-900/40"
                   data-selected={checked}
                 >
                   <td className="px-5 py-3.5" onClick={(e) => e.stopPropagation()}>
@@ -155,11 +160,11 @@ export function LeadTable({ leads, onChanged }: { leads: LeadDTO[]; onChanged?: 
                       aria-label={`Select ${l.name}`}
                       checked={checked}
                       onChange={() => toggleRow(l.id)}
-                      className="size-4 cursor-pointer rounded border-line-strong accent-violet-600"
+                      className="size-4 cursor-pointer rounded border-line-strong accent-violet-600 transition-all hover:ring-2 hover:ring-violet-200"
                     />
                   </td>
-                  <td className="px-5 py-3.5 text-[13.5px] font-semibold text-ink">{l.name}</td>
-                  <td className="px-5 py-3.5 text-[13px] text-muted">{l.company || "—"}</td>
+                  <td className="px-5 py-3.5 text-[14px] font-bold text-ink group-hover:text-violet-700 dark:group-hover:text-violet-400 transition-colors">{l.name}</td>
+                  <td className="px-5 py-3.5 text-[13px] font-medium text-muted">{l.company || "—"}</td>
                   <td className="px-5 py-3.5">
                     <Badge tint={meta.tint} dot={meta.dot}>{meta.label}</Badge>
                   </td>

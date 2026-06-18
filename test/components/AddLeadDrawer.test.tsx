@@ -19,6 +19,7 @@ const created: LeadDTO = {
   source: "Website", stage: "new", estValue: 5000, notes: "", tags: [], lostReason: "",
   ownerId: "o", ownerName: "", convertedAccountId: null, order: 0,
   lastActivityAt: new Date().toISOString(), createdAt: new Date().toISOString(),
+  deletedAt: null,
 };
 
 function renderDrawer(props: Partial<React.ComponentProps<typeof AddLeadDrawer>> = {}) {

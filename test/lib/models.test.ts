@@ -86,7 +86,7 @@ describe("schema defaults", () => {
 
   it("rejects an out-of-enum lead stage", async () => {
     await expect(
-      models.Lead.create({ workspaceId: new Types.ObjectId(), ownerId: new Types.ObjectId(), name: "X", stage: "bogus" }),
+      models.Lead.create({ workspaceId: new Types.ObjectId(), ownerId: new Types.ObjectId(), name: "X", stage: "bogus" as any }),
     ).rejects.toThrow();
   });
 
