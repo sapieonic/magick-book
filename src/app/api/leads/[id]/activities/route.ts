@@ -4,6 +4,7 @@ import { connectDB } from "@/lib/db";
 import { Lead, Activity, type ILead, type IActivity } from "@/lib/models";
 import { requireUser } from "@/lib/auth/server";
 import { leadScope } from "@/lib/rbac";
+import { notifyLeadComment } from "@/lib/slack";
 import { CONTACT_METHODS, ACTIVITY_KINDS } from "@/lib/constants";
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -39,6 +40,15 @@ export const POST = route(async (req: NextRequest, ctx: Ctx) => {
     detail: b.detail?.trim(),
   });
   await Lead.updateOne({ _id: lead._id }, { lastActivityAt: new Date() });
+
+  await notifyLeadComment({
+    leadId: String(lead._id),
+    leadName: lead.name,
+    company: lead.company,
+    title: METHOD_TITLE[kind] ?? "Activity",
+    detail: b.detail?.trim(),
+    actorName: user.name,
+  });
 
   return ok({ activity: serializeActivity(created.toObject(), user.name) }, 201);
 });

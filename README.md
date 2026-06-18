@@ -194,6 +194,34 @@ in-memory demo.
   - **GitHub Actions** — a `schedule:` workflow (min ~5 min) that `curl`s the URL with the secret.
 - **Vercel Pro:** bump the `vercel.json` schedule to e.g. `*/5 * * * *`.
 
+## 💬 Slack notifications (lead lifecycle)
+
+MagickBook posts a message to a dedicated Slack channel whenever a lead's status
+shifts — so the team sees deals move in real time without watching the board:
+
+- **🎉 Converted** — a lead became an account (with deal value + the new account link).
+- **💔 Lost** — a lead was marked lost (with the reason).
+- **↗️ Lane move** — a lead changed pipeline stage (e.g. *Contacted → Qualified*).
+- **💬 Comment** — a note / call / email / WhatsApp / SMS was logged on a lead.
+
+Set up an [**Incoming Webhook**](https://api.slack.com/messaging/webhooks) for the
+target channel, then configure:
+
+```bash
+# required — enables notifications (when unset, the feature silently no-ops)
+SLACK_WEBHOOK_URL="https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXX"
+# optional — override the webhook's default channel by id
+SLACK_CHANNEL="C0B8DKZ7PGF"
+# optional — custom bot name + avatar shown in Slack
+SLACK_BOT_NAME="MagickBook CRM"
+SLACK_BOT_ICON=":crystal_ball:"          # emoji, or an https image URL
+```
+
+Deep-links back into the CRM reuse `APP_BASE_URL` / `NEXT_PUBLIC_APP_URL` (same as
+reminders). Delivery is fire-and-forget with an 8s timeout and never throws, so a
+Slack outage can't break a CRM action. Without `SLACK_WEBHOOK_URL` the app behaves
+exactly as before. Implemented in `src/lib/slack.ts`.
+
 ## 🗂️ Project structure
 
 ```
