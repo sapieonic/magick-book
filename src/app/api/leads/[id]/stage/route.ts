@@ -5,6 +5,7 @@ import { Lead, type ILead } from "@/lib/models";
 import { requireUser } from "@/lib/auth/server";
 import { leadScope, canEditOwned } from "@/lib/rbac";
 import { logActivity, audit } from "@/lib/services";
+import { notifyLeadLost, notifyLeadStageChanged } from "@/lib/slack";
 import { LEAD_STAGES, STAGE_META } from "@/lib/constants";
 import { Types } from "mongoose";
 
@@ -42,6 +43,14 @@ export const PATCH = route(async (req: NextRequest, ctx: Ctx) => {
       entity: "lead", entityId: lead._id, entityLabel: lead.name, action: "update", actor: user,
       changes: [{ field: "stage", from: lead.stage, to: stage }], leadId: lead._id,
     });
+
+    // Notify Slack: a lost lead reads differently from a routine lane move.
+    const slackBase = { leadId: String(lead._id), leadName: lead.name, company: lead.company, actorName: user.name };
+    if (stage === "lost") {
+      await notifyLeadLost({ ...slackBase, fromStage: lead.stage, lostReason: typeof b.lostReason === "string" ? b.lostReason : undefined, estValue: lead.estValue });
+    } else {
+      await notifyLeadStageChanged({ ...slackBase, fromStage: lead.stage, toStage: stage });
+    }
   }
 
   const fresh = await Lead.findById(lead._id).lean<ILead>();
