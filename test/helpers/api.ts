@@ -25,8 +25,8 @@ export function formRequest(url: string, form: FormData): NextRequest {
 }
 
 /** Next 16 dynamic-route context: params is async. */
-export function ctx(params: Record<string, string>) {
-  return { params: Promise.resolve(params) };
+export function ctx<T = Record<string, string>>(params: T) {
+  return { params: Promise.resolve(params) } as any;
 }
 
 /** Minimal IUser stand-in for the auth mock (matches what handlers read). */

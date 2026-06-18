@@ -57,7 +57,7 @@ describe("GET /api/dashboard", () => {
     await models.Account.create({ workspaceId, ownerId: admin._id, name: "A1", status: "active" });
     await models.Account.create({ workspaceId, ownerId: admin._id, name: "A2", status: "churned" });
 
-    const data = await (await dashboardRoute.GET(jsonRequest("/api/dashboard", "GET"))).json();
+    const data = await (await (dashboardRoute.GET as any)(jsonRequest("/api/dashboard", "GET"))).json();
     expect(data.openLeads).toBe(3); // new + 2 qualified (won/lost excluded)
     expect(data.qualified).toBe(2);
     expect(data.wonThisMonth).toBe(1);
@@ -78,7 +78,7 @@ describe("GET /api/dashboard", () => {
       { workspaceId, accountId: acc._id, number: 2, amount: 1000, status: "paid", issuedAt: lastMonth },
       { workspaceId, accountId: acc._id, number: 3, amount: 9999, status: "draft", issuedAt: now }, // drafts excluded
     ]);
-    const data = await (await dashboardRoute.GET(jsonRequest("/api/dashboard", "GET"))).json();
+    const data = await (await (dashboardRoute.GET as any)(jsonRequest("/api/dashboard", "GET"))).json();
     expect(data.revenueThisMonth).toBe(2000);
     expect(data.revenueDeltaPct).toBe(100); // (2000-1000)/1000
   });
@@ -89,7 +89,7 @@ describe("GET /api/dashboard", () => {
     await models.Lead.create({ workspaceId, ownerId: admin._id, name: "Stale Lead", stage: "qualified", lastActivityAt: daysAgo(5) });
     await models.Lead.create({ workspaceId, ownerId: admin._id, name: "Fresh Lead", stage: "qualified", lastActivityAt: new Date() });
 
-    const data = await (await dashboardRoute.GET(jsonRequest("/api/dashboard", "GET"))).json();
+    const data = await (await (dashboardRoute.GET as any)(jsonRequest("/api/dashboard", "GET"))).json();
     const kinds = data.attention.map((a: { kind: string }) => a.kind);
     expect(kinds).toContain("invoice_overdue");
     expect(kinds).toContain("lead_followup");
@@ -102,7 +102,7 @@ describe("GET /api/dashboard", () => {
     await models.Lead.create({ workspaceId, ownerId: admin._id, name: "AdminLead", stage: "new" });
     await models.Lead.create({ workspaceId, ownerId: standard._id, name: "StanLead", stage: "new" });
     session.user = standard;
-    const data = await (await dashboardRoute.GET(jsonRequest("/api/dashboard", "GET"))).json();
+    const data = await (await (dashboardRoute.GET as any)(jsonRequest("/api/dashboard", "GET"))).json();
     expect(data.openLeads).toBe(1);
   });
 });
@@ -118,7 +118,7 @@ describe("GET /api/money", () => {
     ]);
     await models.Expense.create({ workspaceId, accountId: acc._id, amount: 300, category: "Software", vendor: "X" });
 
-    const body = await (await moneyRoute.GET(jsonRequest("/api/money", "GET"))).json();
+    const body = await (await (moneyRoute.GET as any)(jsonRequest("/api/money", "GET"))).json();
     expect(body.totals.billed).toBe(1750); // 1000+500+250
     expect(body.totals.paid).toBe(1000);
     expect(body.totals.outstanding).toBe(750);
@@ -134,7 +134,7 @@ describe("GET /api/money", () => {
     await models.Invoice.create({ workspaceId, accountId: stanAcc._id, number: 2, amount: 7, status: "paid" });
 
     session.user = standard;
-    const body = await (await moneyRoute.GET(jsonRequest("/api/money", "GET"))).json();
+    const body = await (await (moneyRoute.GET as any)(jsonRequest("/api/money", "GET"))).json();
     expect(body.totals.paid).toBe(7);
     expect(body.invoices).toHaveLength(1);
   });

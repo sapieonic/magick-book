@@ -25,6 +25,7 @@ function lead(over: Partial<LeadDTO>): LeadDTO {
     commentCount: 0,
     lastActivityAt: new Date().toISOString(),
     createdAt: new Date().toISOString(),
+    deletedAt: null,
     ...over,
   };
 }

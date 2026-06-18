@@ -1,6 +1,6 @@
 "use client";
 import type { CSSProperties } from "react";
-import { Phone, MessageSquare, CornerDownRight } from "lucide-react";
+import { Phone, Mail, MessageSquare, CornerDownRight } from "lucide-react";
 import { formatINRCompact, initials, avatarTint, valueTier, relativeTime, absoluteTime, cn } from "@/lib/utils";
 import type { LeadDTO } from "@/lib/types";
 
@@ -20,6 +20,7 @@ export function LeadCard({ lead, dragging }: { lead: LeadDTO; dragging?: boolean
       ? ({
           "--tier": `var(--color-tier${tier})`,
           "--tier-bg": `var(--color-tier${tier}-bg)`,
+          "--tier-shadow": `color-mix(in srgb, var(--color-tier${tier}) 10%, transparent)`,
           borderLeftColor: "var(--tier)",
           borderLeftWidth: "3px",
         } as CSSProperties)
@@ -34,24 +35,24 @@ export function LeadCard({ lead, dragging }: { lead: LeadDTO; dragging?: boolean
     <div
       style={tierStyle}
       className={cn(
-        "group rounded-[var(--radius-md)] border border-line bg-paper p-3.5 shadow-[var(--shadow-card)] transition-all duration-150",
+        "group relative rounded-[var(--radius-lg)] border border-line bg-paper/95 p-4 shadow-sm transition-all duration-200 dark:bg-canvas/40 dark:backdrop-blur-md",
         dragging
-          ? "rotate-[1.5deg] scale-[1.02] shadow-[var(--shadow-pop)] ring-2 ring-violet-300"
+          ? "rotate-[2deg] scale-[1.03] shadow-[0_12px_24px_rgba(0,0,0,0.15)] ring-2 ring-violet-400 z-50 cursor-grabbing"
           : tier >= 0
-            ? "hover:-translate-y-0.5 hover:shadow-[var(--shadow-pop)] hover:ring-2 hover:ring-[var(--tier)]"
-            : "hover:-translate-y-0.5 hover:border-line-strong hover:shadow-[var(--shadow-pop)]",
+            ? "hover:-translate-y-1 hover:shadow-md hover:shadow-[var(--tier-shadow)] hover:ring-1 hover:ring-[var(--tier)]"
+            : "hover:-translate-y-1 hover:border-line-strong hover:shadow-md",
       )}
     >
       <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <p className="truncate text-[14px] font-semibold leading-tight text-ink">{lead.name}</p>
+        <div className="min-w-0 pr-12">
+          <p className="truncate text-[14.5px] font-bold leading-tight text-ink">{lead.name}</p>
           {(lead.title || lead.company) && (
-            <p className="mt-0.5 truncate text-[12px] text-muted">{[lead.title, lead.company].filter(Boolean).join(" · ")}</p>
+            <p className="mt-1 truncate text-[12.5px] font-medium text-muted">{[lead.title, lead.company].filter(Boolean).join(" · ")}</p>
           )}
         </div>
         {lead.ownerName && (
           <span
-            className="flex size-6 shrink-0 items-center justify-center rounded-full text-[10px] font-bold ring-2 ring-paper"
+            className="flex size-7 shrink-0 items-center justify-center rounded-full text-[11px] font-bold shadow-sm ring-2 ring-paper"
             style={{ background: tint.bg, color: tint.fg }}
             title={lead.ownerName}
           >
@@ -61,21 +62,24 @@ export function LeadCard({ lead, dragging }: { lead: LeadDTO; dragging?: boolean
       </div>
 
       {(hasTags || hasValue) && (
-        <div className="mt-3 flex flex-wrap items-center gap-1.5">
-          {lead.tags.map((t) => (
-            <span key={t} className={cn("rounded-full px-2 py-0.5 text-[10.5px] font-semibold", TAG_TINT[t.toLowerCase()] ?? "bg-violet-50 text-violet-700")}>
-              {t === "called" ? (
+        <div className="mt-4 flex flex-wrap items-center gap-1.5">
+          {(lead.tags || []).map((t) => {
+            const tagStr = t || "";
+            const tLower = tagStr.toLowerCase();
+            return (
+            <span key={tagStr} className={cn("rounded-full px-2.5 py-0.5 text-[10px] font-bold tracking-wide uppercase", TAG_TINT[tLower] ?? "bg-violet-50 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300")}>
+              {tLower === "called" ? (
                 <span className="inline-flex items-center gap-1">
                   <Phone className="size-3" /> called
                 </span>
               ) : (
-                t
+                tagStr
               )}
             </span>
-          ))}
+          )})}
           {hasValue && (
             <span
-              className="ml-auto rounded-full px-2 py-0.5 font-mono text-[12px] font-bold tnum"
+              className="ml-auto rounded-full px-2.5 py-0.5 font-mono text-[12.5px] font-bold tnum shadow-sm"
               style={{ background: "var(--tier-bg)", color: "var(--tier)" }}
             >
               {formatINRCompact(lead.estValue)}
@@ -111,6 +115,16 @@ export function LeadCard({ lead, dragging }: { lead: LeadDTO; dragging?: boolean
           )}
         </div>
       )}
+
+      {/* Quick Actions (Hover) */}
+      <div className="absolute top-3 right-3 flex items-center gap-1 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
+        <button onClick={(e) => { e.stopPropagation(); if (lead.email) window.location.href = `mailto:${lead.email}` }} className="rounded-full bg-paper/90 p-1.5 text-muted shadow-sm ring-1 ring-line hover:text-violet-600 backdrop-blur-sm" title="Email">
+          <Mail className="size-3.5" />
+        </button>
+        <button onClick={(e) => { e.stopPropagation(); if (lead.phone) window.location.href = `tel:${lead.phone}` }} className="rounded-full bg-paper/90 p-1.5 text-muted shadow-sm ring-1 ring-line hover:text-violet-600 backdrop-blur-sm" title="Call">
+          <Phone className="size-3.5" />
+        </button>
+      </div>
     </div>
   );
 }

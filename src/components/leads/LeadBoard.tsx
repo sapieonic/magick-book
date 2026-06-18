@@ -11,6 +11,7 @@ import {
   useDroppable,
   type DragStartEvent,
   type DragEndEvent,
+  type DragOverEvent,
 } from "@dnd-kit/core";
 import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
@@ -109,9 +110,40 @@ export function LeadBoard({ leads, onAdd, onChanged }: { leads: LeadDTO[]; onAdd
     }
   }
 
+  function onDragOver(e: DragOverEvent) {
+    const { active, over } = e;
+    if (!over) return;
+    const activeId = String(active.id);
+    const overId = String(over.id);
+
+    const fromStage = findStage(activeId);
+    const toStage = findStage(overId);
+
+    if (!fromStage || !toStage || fromStage === toStage || toStage === "lost") return;
+
+    setBoard((prev) => {
+      const lead = prev[fromStage].find((l) => l.id === activeId);
+      if (!lead) return prev;
+
+      const targetList = prev[toStage].filter((l) => l.id !== activeId);
+      let index = targetList.length;
+      if (!overId.startsWith("col:")) {
+        const oi = targetList.findIndex((l) => l.id === overId);
+        if (oi >= 0) index = oi;
+      }
+
+      const next = { ...prev };
+      next[fromStage] = prev[fromStage].filter((l) => l.id !== activeId);
+      const dest = [...targetList];
+      dest.splice(index, 0, { ...lead, stage: toStage as LeadDTO["stage"] });
+      next[toStage] = dest;
+      return next;
+    });
+  }
+
   return (
     <>
-      <DndContext sensors={sensors} collisionDetection={closestCorners} onDragStart={onDragStart} onDragEnd={onDragEnd}>
+      <DndContext sensors={sensors} collisionDetection={closestCorners} onDragStart={onDragStart} onDragOver={onDragOver} onDragEnd={onDragEnd}>
         <div className="flex gap-4 overflow-x-auto px-6 pb-6 lg:px-8">
           {PIPELINE_STAGES.map((stage) => (
             <Column
@@ -153,16 +185,18 @@ function Column({
   const lostZone = useDroppable({ id: "col:lost" });
 
   return (
-    <div className="flex w-[284px] shrink-0 flex-col">
-      <div className="mb-3 flex items-center justify-between px-1">
+    <div className="flex w-[296px] shrink-0 flex-col rounded-[var(--radius-xl)] bg-canvas/40 border border-line/40 backdrop-blur-xl shadow-sm dark:bg-canvas/10 dark:border-line-strong overflow-hidden relative">
+      {/* Top glowing accent line */}
+      <div className="absolute top-0 left-0 right-0 h-1" style={{ background: meta.dot, boxShadow: `0 0 10px ${meta.dot}` }} />
+
+      <div className="mb-1 flex items-center justify-between px-3 pt-4 pb-1">
         <div className="flex items-center gap-2">
-          <span className="size-2 rounded-full" style={{ background: meta.dot }} />
-          <h3 className="text-[13px] font-bold text-ink">{meta.label}</h3>
-          <span className={cn("rounded-full border px-1.5 py-0.5 text-[11px] font-bold tnum", meta.tint)}>
+          <h3 className="text-[13px] font-bold tracking-wide uppercase" style={{ color: meta.dot }}>{meta.label}</h3>
+          <span className="rounded-full bg-paper/60 px-2 py-0.5 text-[11.5px] font-bold tnum text-ink-soft shadow-inner dark:bg-canvas/40">
             {leads.length}
           </span>
         </div>
-        <button onClick={onAdd} className="rounded-md p-1 text-faint transition-colors hover:bg-violet-50 hover:text-violet-600" aria-label={`Add to ${meta.label}`}>
+        <button onClick={onAdd} className="rounded-full p-1.5 text-faint transition-colors hover:bg-violet-100 hover:text-violet-700 dark:hover:bg-violet-900/50 dark:hover:text-violet-300" aria-label={`Add to ${meta.label}`}>
           <Plus className="size-4" />
         </button>
       </div>
@@ -170,8 +204,8 @@ function Column({
       <div
         ref={setNodeRef}
         className={cn(
-          "flex min-h-[120px] flex-1 flex-col gap-2.5 rounded-[var(--radius-lg)] p-2 transition-colors",
-          isOver ? "bg-violet-50/70 ring-2 ring-inset ring-violet-200" : "bg-canvas/40",
+          "flex min-h-[150px] flex-1 flex-col gap-3 p-3 transition-colors",
+          isOver ? "bg-violet-50/50 ring-inset ring-2 ring-violet-200 dark:bg-violet-900/20 dark:ring-violet-700/50" : "",
         )}
       >
         <SortableContext items={leads.map((l) => l.id)} strategy={verticalListSortingStrategy}>
@@ -228,7 +262,6 @@ function LostModal({ lead, onClose, onDone }: { lead: LeadDTO | null; onClose: (
   const [busy, setBusy] = useState(false);
 
   useEffect(() => setReason(""), [lead]);
-  if (!lead) return null;
 
   async function submit(overrideReason?: string) {
     if (!lead) return;
@@ -247,7 +280,7 @@ function LostModal({ lead, onClose, onDone }: { lead: LeadDTO | null; onClose: (
   }
 
   return (
-    <Modal open onClose={onClose} title="Mark as lost" subtitle={`What happened with ${lead.name}?`} size="sm">
+    <Modal open={!!lead} onClose={onClose} title="Mark as lost" subtitle={`What happened with ${lead?.name ?? "this lead"}?`} size="sm">
       <Field label="Reason" hint="tap a common reason or write your own">
         <div className="mb-2.5 flex flex-wrap gap-1.5">
           {QUICK_REASONS.map((r) => {

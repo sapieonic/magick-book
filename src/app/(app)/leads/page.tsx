@@ -53,7 +53,7 @@ function LeadsInner() {
       <PageHeader>
         <h1 className="font-display text-[22px] font-bold tracking-tight text-ink">Leads</h1>
 
-        <div className="ml-1 flex items-center gap-1 rounded-[var(--radius-md)] border border-line bg-paper p-1">
+        <div className="ml-1 flex items-center gap-1 rounded-full border border-line/50 bg-canvas/60 p-1 backdrop-blur-md shadow-inner dark:border-line-strong dark:bg-canvas/30">
           {([
             ["board", LayoutGrid, "Board"],
             ["table", Rows3, "Table"],
@@ -64,12 +64,12 @@ function LeadsInner() {
               key={v}
               onClick={() => setView(v)}
               className={cn(
-                "inline-flex h-8 items-center gap-1.5 rounded-[var(--radius-sm)] px-3 text-[12.5px] font-semibold transition-all",
+                "relative inline-flex h-8 items-center gap-1.5 rounded-full px-3.5 text-[12.5px] font-semibold transition-all duration-200",
                 view === v
                   ? v === "lost"
-                    ? "bg-danger-bg text-danger"
-                    : "bg-violet-50 text-violet-700"
-                  : "text-muted hover:text-ink",
+                    ? "bg-danger text-white shadow-md shadow-danger/20"
+                    : "bg-paper text-ink shadow-sm ring-1 ring-line/50 dark:bg-violet-600 dark:text-white dark:ring-violet-500"
+                  : "text-muted hover:text-ink dark:hover:text-ink-soft",
               )}
             >
               <Icon className="size-4" /> {label}
@@ -85,15 +85,39 @@ function LeadsInner() {
           <input
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="Filter leads"
-            className="h-10 w-full rounded-[var(--radius-md)] border border-line bg-paper pl-9 pr-3 text-[13.5px] text-ink placeholder:text-faint focus:border-violet-400 focus:outline-none focus:ring-4 focus:ring-violet-100"
+            placeholder="Search leads... (Cmd+K)"
+            className="h-9 w-full rounded-[var(--radius-md)] border border-line bg-canvas/60 pl-9 pr-3 text-[13.5px] text-ink placeholder:text-faint transition-colors focus:border-violet-400 focus:bg-paper focus:outline-none focus:ring-4 focus:ring-violet-100 dark:bg-canvas/40"
           />
         </div>
 
-        <Button variant="primary" onClick={() => openAdd()} className="ml-auto sm:ml-0">
+        <Button variant="primary" onClick={() => openAdd()} className="ml-auto sm:ml-0 shadow-sm shadow-violet-500/20">
           <Plus className="size-4" /> New lead
         </Button>
       </PageHeader>
+
+      {/* Insights Summary Bar */}
+      <div className="px-6 lg:px-8 mt-5">
+        <div className="flex flex-wrap items-center gap-4 rounded-[var(--radius-lg)] border border-line bg-paper/60 p-4 shadow-sm backdrop-blur-md dark:bg-canvas/30 dark:border-line-strong">
+          <div className="flex-1 min-w-[150px]">
+            <p className="text-[12px] font-semibold tracking-wide uppercase text-muted mb-0.5">Total Pipeline</p>
+            <p className="font-display text-2xl font-bold tracking-tight text-ink">
+              {formatINRCompact(activeLeads.reduce((acc, l) => acc + l.estValue, 0))}
+            </p>
+          </div>
+          <div className="h-10 w-px bg-line hidden sm:block"></div>
+          <div className="flex-1 min-w-[120px]">
+            <p className="text-[12px] font-semibold tracking-wide uppercase text-muted mb-0.5">Active Leads</p>
+            <p className="font-display text-2xl font-bold tracking-tight text-ink">{activeLeads.length}</p>
+          </div>
+          <div className="h-10 w-px bg-line hidden sm:block"></div>
+          <div className="flex-1 min-w-[120px]">
+            <p className="text-[12px] font-semibold tracking-wide uppercase text-muted mb-0.5">Won (Active)</p>
+            <p className="font-display text-2xl font-bold tracking-tight text-success">
+              {activeLeads.filter((l) => l.stage === "won").length}
+            </p>
+          </div>
+        </div>
+      </div>
 
       <div className="pt-5">
         {error ? (
