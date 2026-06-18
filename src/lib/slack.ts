@@ -16,8 +16,9 @@ import { STAGE_META, type LeadStage } from "./constants";
  *   SLACK_BOT_NAME="MagickBook CRM"  (optional — custom bot/username shown in Slack)
  *   SLACK_BOT_ICON=:crystal_ball:    (optional — emoji or image URL for the bot avatar)
  *
- * Delivery is fire-and-forget and never throws, so a Slack outage can't break a
- * CRM mutation. Callers don't need to await it.
+ * Delivery is best-effort and never throws: routes await it (so it completes
+ * before a serverless function can be frozen), but a Slack outage or timeout can
+ * never fail the underlying CRM mutation.
  */
 
 const WEBHOOK_URL = process.env.SLACK_WEBHOOK_URL?.trim();
@@ -45,9 +46,31 @@ function accountUrl(accountId: string): string {
   return base ? `${base}/accounts/${accountId}` : "";
 }
 
-/** Render `<url|text>` as a Slack link, or just the text when we have no URL. */
+/**
+ * Escape user-supplied text for Slack mrkdwn. `&`, `<`, `>` are control chars —
+ * left raw they break `<url|text>` links and section rendering (and let a lead
+ * name / comment body inject its own clickable links into the channel).
+ */
+function esc(text: string): string {
+  return String(text ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+/** Clamp free-form text well under Slack's 3000-char section limit. */
+function truncate(text: string, max = 500): string {
+  return text.length > max ? text.slice(0, max - 1) + "…" : text;
+}
+
+/** Render free-form text as a Slack blockquote — every line prefixed + escaped. */
+function quote(text: string): string {
+  return esc(truncate(text))
+    .split("\n")
+    .map((l) => `>${l}`)
+    .join("\n");
+}
+
+/** Render `<url|text>` as a Slack link, or bold text when we have no URL. Escapes text. */
 function link(text: string, url: string): string {
-  return url ? `<${url}|${text}>` : `*${text}*`;
+  return url ? `<${url}|${esc(text)}>` : `*${esc(text)}*`;
 }
 
 const stageLabel = (s: string): string => STAGE_META[s as LeadStage]?.label ?? s;
@@ -97,7 +120,7 @@ async function post(message: SlackMessage): Promise<void> {
 function actorContext(actorName: string): SlackBlock {
   return {
     type: "context",
-    elements: [{ type: "mrkdwn", text: `By ${actorName || "someone"} · ${new Date().toLocaleString("en-IN")}` }],
+    elements: [{ type: "mrkdwn", text: `By ${esc(actorName) || "someone"} · ${new Date().toLocaleString("en-IN")}` }],
   };
 }
 
@@ -129,12 +152,12 @@ export function notifyLeadConverted(data: {
     `*Account:*\n${link(data.accountName, accountUrl(data.accountId))}`,
     `*Deal value:*\n${formatINR(data.estValue ?? 0)}`,
   ];
-  if (data.ownerName) fields.push(`*Owner:*\n${data.ownerName}`);
+  if (data.ownerName) fields.push(`*Owner:*\n${esc(data.ownerName)}`);
   return post({
     text: `🎉 Lead converted: ${who} → ${data.accountName}`,
     blocks: [
       header("🎉 Lead Converted to Account"),
-      section(`*${who}* is now an account — ${link(data.accountName, accountUrl(data.accountId))}.`, fields),
+      section(`${link(who, leadUrl(data.leadId))} is now an account — ${link(data.accountName, accountUrl(data.accountId))}.`, fields),
       actorContext(data.actorName),
     ],
   });
@@ -155,7 +178,7 @@ export function notifyLeadLost(data: {
     `*Was:*\n${stageLabel(data.fromStage)}`,
     `*Deal value:*\n${formatINR(data.estValue ?? 0)}`,
   ];
-  const reason = data.lostReason ? `\n>${data.lostReason}` : "";
+  const reason = data.lostReason ? `\n${quote(data.lostReason)}` : "";
   return post({
     text: `💔 Lead lost: ${who}`,
     blocks: [
@@ -197,12 +220,12 @@ export function notifyLeadComment(data: {
   actorName: string;
 }): Promise<void> {
   const who = data.company ? `${data.leadName} (${data.company})` : data.leadName;
-  const body = data.detail ? `\n>${data.detail}` : "";
+  const body = data.detail ? `\n${quote(data.detail)}` : "";
   return post({
     text: `💬 ${data.title} on ${who}`,
     blocks: [
-      header("💬 New Comment on Lead"),
-      section(`*${data.title}* on ${link(who, leadUrl(data.leadId))}${body}`),
+      header("💬 New Lead Activity"),
+      section(`*${esc(data.title)}* on ${link(who, leadUrl(data.leadId))}${body}`),
       actorContext(data.actorName),
     ],
   });

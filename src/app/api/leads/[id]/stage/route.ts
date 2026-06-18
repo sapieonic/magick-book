@@ -47,7 +47,7 @@ export const PATCH = route(async (req: NextRequest, ctx: Ctx) => {
     // Notify Slack: a lost lead reads differently from a routine lane move.
     const slackBase = { leadId: String(lead._id), leadName: lead.name, company: lead.company, actorName: user.name };
     if (stage === "lost") {
-      await notifyLeadLost({ ...slackBase, fromStage: lead.stage, lostReason: typeof b.lostReason === "string" ? b.lostReason : undefined, estValue: lead.estValue });
+      await notifyLeadLost({ ...slackBase, fromStage: lead.stage, lostReason: typeof b.lostReason === "string" ? b.lostReason.trim() || undefined : undefined, estValue: lead.estValue });
     } else {
       await notifyLeadStageChanged({ ...slackBase, fromStage: lead.stage, toStage: stage });
     }

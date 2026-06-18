@@ -126,4 +126,61 @@ describe("slack notifications", () => {
       slack.notifyLeadComment({ leadId: "l5", leadName: "Ana", title: "Call logged", actorName: "Neha" }),
     ).resolves.toBeUndefined();
   });
+
+  it("escapes mrkdwn control chars in user text so links/blocks can't be injected", async () => {
+    const fetchFn = mockFetch();
+    const slack = await load({ SLACK_WEBHOOK_URL: WEBHOOK, APP_BASE_URL: "https://crm.example.com" });
+
+    await slack.notifyLeadComment({
+      leadId: "l6",
+      leadName: "A & B <Corp>",
+      title: "Note added",
+      // An attacker-style body trying to smuggle a clickable link into the channel.
+      detail: "click <https://evil.test|here> & win",
+      actorName: "Riya",
+    });
+
+    const blocks = JSON.stringify(JSON.parse(fetchFn.mock.calls[0][1].body).blocks);
+    // Raw control chars must not survive into the rendered blocks…
+    expect(blocks).toContain("A &amp; B &lt;Corp&gt;");
+    expect(blocks).not.toContain("A & B <Corp>");
+    // …and the injected link must be neutralised (escaped, not a real <url|text>).
+    expect(blocks).toContain("&lt;https://evil.test|here&gt;");
+  });
+
+  it("renders a multi-line comment as a fully-quoted blockquote", async () => {
+    const fetchFn = mockFetch();
+    const slack = await load({ SLACK_WEBHOOK_URL: WEBHOOK });
+
+    await slack.notifyLeadComment({
+      leadId: "l7", leadName: "Liv", title: "Note added", detail: "line one\nline two", actorName: "Neha",
+    });
+
+    const blocks = JSON.stringify(JSON.parse(fetchFn.mock.calls[0][1].body).blocks);
+    // Both lines prefixed with the Slack quote marker (escaped as \n>).
+    expect(blocks).toContain(">line one");
+    expect(blocks).toContain(">line two");
+  });
+
+  it("uses icon_url when the bot icon is an image URL", async () => {
+    const fetchFn = mockFetch();
+    const slack = await load({ SLACK_WEBHOOK_URL: WEBHOOK, SLACK_BOT_ICON: "https://img.test/bot.png" });
+
+    await slack.notifyLeadStageChanged({ leadId: "l8", leadName: "Zoe", fromStage: "new", toStage: "contacted", actorName: "Riya" });
+
+    const body = JSON.parse(fetchFn.mock.calls[0][1].body);
+    expect(body.icon_url).toBe("https://img.test/bot.png");
+    expect(body.icon_emoji).toBeUndefined();
+  });
+
+  it("falls back to bold text (no link) when no base URL is configured", async () => {
+    const fetchFn = mockFetch();
+    const slack = await load({ SLACK_WEBHOOK_URL: WEBHOOK, APP_BASE_URL: undefined, NEXT_PUBLIC_APP_URL: undefined });
+
+    await slack.notifyLeadStageChanged({ leadId: "l9", leadName: "Kai", fromStage: "new", toStage: "qualified", actorName: "Neha" });
+
+    const blocks = JSON.stringify(JSON.parse(fetchFn.mock.calls[0][1].body).blocks);
+    expect(blocks).toContain("*Kai*");
+    expect(blocks).not.toContain("/leads/l9");
+  });
 });

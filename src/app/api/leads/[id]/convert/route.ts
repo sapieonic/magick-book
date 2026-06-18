@@ -74,6 +74,12 @@ export const POST = route(async (req: NextRequest, ctx: Ctx) => {
   await audit({ entity: "account", entityId: accId, entityLabel: accountName, action: "create", actor: user, accountId: accId, changes: [{ field: "fromLead", to: lead.name }] });
   await audit({ entity: "lead", entityId: lead._id, entityLabel: lead.name, action: "update", actor: user, changes: [{ field: "stage", from: lead.stage, to: "won" }, { field: "convertedAccount", to: accountName }], leadId: lead._id, accountId: accId });
 
+  // The account owner may differ from the converter when an ownerId was passed.
+  const ownerName =
+    String(ownerId) === String(user._id)
+      ? user.name
+      : (await User.findById(ownerId).select("name").lean<{ name: string }>())?.name ?? user.name;
+
   await notifyLeadConverted({
     leadId: String(lead._id),
     leadName: lead.name,
@@ -81,7 +87,7 @@ export const POST = route(async (req: NextRequest, ctx: Ctx) => {
     accountId: String(accId),
     accountName,
     estValue: lead.estValue,
-    ownerName: user.name,
+    ownerName,
     actorName: user.name,
   });
 
