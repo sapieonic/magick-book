@@ -217,11 +217,16 @@ body {
 @keyframes mb-shimmer {
   100% { transform: translateX(100%); }
 }
+@keyframes mb-pulse-soft {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.8; transform: scale(0.98); }
+}
 
 .animate-fade-up { animation: mb-fade-up 0.5s cubic-bezier(0.22, 1, 0.36, 1) both; }
 .animate-fade { animation: mb-fade 0.4s ease both; }
 .animate-scale-in { animation: mb-scale-in 0.28s cubic-bezier(0.22, 1, 0.36, 1) both; }
 .animate-slide-in { animation: mb-slide-in 0.34s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.animate-pulse-soft { animation: mb-pulse-soft 2s ease-in-out infinite; }
 
 /* Staggered list reveals */
 .stagger > * { animation: mb-fade-up 0.5s cubic-bezier(0.22, 1, 0.36, 1) both; }

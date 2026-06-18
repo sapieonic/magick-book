@@ -56,9 +56,18 @@ export function EmptyState({
   );
 }
 
-export function Card({ children, className }: { children: ReactNode; className?: string }) {
+export function Card({ children, className, premium = false, style }: { children: ReactNode; className?: string; premium?: boolean; style?: React.CSSProperties }) {
   return (
-    <div className={cn("rounded-[var(--radius-lg)] border border-line bg-paper shadow-[var(--shadow-card)]", className)}>
+    <div
+      className={cn(
+        "rounded-[var(--radius-lg)] border bg-paper transition-all duration-300",
+        premium
+          ? "border-line/80 shadow-[0_8px_30px_rgba(0,0,0,0.04)] backdrop-blur-sm hover:border-violet-400/40 hover:shadow-[0_8px_30px_rgba(0,0,0,0.08)] bg-gradient-to-br from-paper to-violet-50/20"
+          : "border-line shadow-[var(--shadow-card)]",
+        className
+      )}
+      style={style}
+    >
       {children}
     </div>
   );
