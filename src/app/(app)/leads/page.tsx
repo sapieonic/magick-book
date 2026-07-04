@@ -1,10 +1,12 @@
 "use client";
-import { Suspense, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { LayoutGrid, Rows3, Search, Plus, Ban, Archive, RotateCcw } from "lucide-react";
 import { PageHeader } from "@/components/layout/Sidebar";
+import { useSession } from "@/components/layout/SessionContext";
 import { LeadBoard } from "@/components/leads/LeadBoard";
 import { LeadTable } from "@/components/leads/LeadTable";
+import { OwnerFilter, type OwnerOption } from "@/components/leads/OwnerFilter";
 import { AddLeadDrawer } from "@/components/leads/AddLeadDrawer";
 import { Avatar } from "@/components/ui/Avatar";
 import { Badge } from "@/components/ui/Badge";
@@ -19,9 +21,16 @@ import type { PipelineStage } from "@/lib/constants";
 
 function LeadsInner() {
   const params = useSearchParams();
+  const router = useRouter();
+  const me = useSession();
   const initialQ = params.get("q") ?? "";
   const [view, setView] = useState<"board" | "table" | "lost" | "archived">("board");
   const [q, setQ] = useState(initialQ);
+  // Selected owner ids to filter by — Jira-style board filter, seeded from the URL so it's shareable.
+  const [ownerIds, setOwnerIds] = useState<string[]>(() => {
+    const raw = params.get("owner");
+    return raw ? raw.split(",").filter(Boolean) : [];
+  });
   const [adding, setAdding] = useState(false);
   const [presetStage, setPresetStage] = useState<PipelineStage | undefined>();
 
@@ -33,15 +42,44 @@ function LeadsInner() {
   const archivedApi = useApi<{ leads: LeadDTO[] }>(view === "archived" ? "/api/leads?archived=1" : null);
   const archivedLeads = archivedApi.data?.leads ?? [];
 
+  // Everyone who owns a lead in the current result set, with their lead counts — the
+  // pool of people you can filter by (derived from the board, like Jira's avatar row).
+  const owners = useMemo<OwnerOption[]>(() => {
+    const byId = new Map<string, OwnerOption>();
+    for (const l of leads) {
+      if (!l.ownerId || !l.ownerName) continue;
+      const existing = byId.get(l.ownerId);
+      if (existing) existing.count += 1;
+      else byId.set(l.ownerId, { id: l.ownerId, name: l.ownerName, count: 1 });
+    }
+    return [...byId.values()].sort((a, b) => a.name.localeCompare(b.name));
+  }, [leads]);
+
+  // Keep the owner filter reflected in the URL so a filtered board can be shared/bookmarked.
+  useEffect(() => {
+    const next = new URLSearchParams(params.toString());
+    if (ownerIds.length) next.set("owner", ownerIds.join(","));
+    else next.delete("owner");
+    const qs = next.toString();
+    router.replace(qs ? `?${qs}` : "?", { scroll: false });
+  }, [ownerIds]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const visibleLeads = useMemo(() => {
+    if (ownerIds.length === 0) return leads;
+    const set = new Set(ownerIds);
+    return leads.filter((l) => set.has(l.ownerId));
+  }, [leads, ownerIds]);
+
   // Lost leads live in their own view; the pipeline views (board/table) stay focused on active leads.
   const { activeLeads, lostLeads } = useMemo(() => {
     const lost: LeadDTO[] = [];
     const active: LeadDTO[] = [];
-    for (const l of leads) (l.stage === "lost" ? lost : active).push(l);
+    for (const l of visibleLeads) (l.stage === "lost" ? lost : active).push(l);
     return { activeLeads: active, lostLeads: lost };
-  }, [leads]);
+  }, [visibleLeads]);
 
   const shownLeads = view === "lost" ? lostLeads : activeLeads;
+  const filtering = q.trim().length > 0 || ownerIds.length > 0;
 
   function openAdd(stage?: PipelineStage) {
     setPresetStage(stage);
@@ -80,7 +118,13 @@ function LeadsInner() {
           ))}
         </div>
 
-        <div className="relative ml-auto hidden max-w-xs flex-1 sm:block">
+        {owners.length > 1 && (
+          <div className="ml-auto">
+            <OwnerFilter owners={owners} value={ownerIds} onChange={setOwnerIds} currentUserId={me.id} />
+          </div>
+        )}
+
+        <div className={cn("relative hidden max-w-xs flex-1 sm:block", owners.length > 1 ? "" : "ml-auto")}>
           <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-faint" />
           <input
             value={q}
@@ -137,8 +181,8 @@ function LeadsInner() {
             <div className="px-6 lg:px-8">
               <EmptyState
                 icon={<Ban className="size-6" />}
-                title={q ? "No lost leads match that filter" : "No lost leads"}
-                description={q ? "Try a different search." : "Leads you mark as lost will be archived here."}
+                title={filtering ? "No lost leads match those filters" : "No lost leads"}
+                description={filtering ? "Try adjusting your search or owner filter." : "Leads you mark as lost will be archived here."}
               />
             </div>
           ) : (
@@ -148,9 +192,9 @@ function LeadsInner() {
           <div className="px-6 lg:px-8">
             <EmptyState
               icon={<LayoutGrid className="size-6" />}
-              title={q ? "No leads match that filter" : "No leads yet"}
-              description={q ? "Try a different search." : "Add your first lead and start working the pipeline."}
-              action={!q && <Button variant="primary" onClick={() => openAdd()}><Plus className="size-4" /> New lead</Button>}
+              title={filtering ? "No leads match those filters" : "No leads yet"}
+              description={filtering ? "Try adjusting your search or owner filter." : "Add your first lead and start working the pipeline."}
+              action={!filtering && <Button variant="primary" onClick={() => openAdd()}><Plus className="size-4" /> New lead</Button>}
             />
           </div>
         ) : view === "board" ? (
