@@ -3,13 +3,9 @@ import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { Check, ChevronDown, Search, Users, X } from "lucide-react";
 import { Avatar } from "@/components/ui/Avatar";
 import { cn } from "@/lib/utils";
+import type { OwnerOption } from "@/lib/leadFilters";
 
-export interface OwnerOption {
-  id: string;
-  name: string;
-  /** How many leads this person owns in the current set — shown as a Jira-style count. */
-  count: number;
-}
+export type { OwnerOption };
 
 /**
  * Jira-style owner (assignee) filter. The trigger is an overlapping avatar stack;
@@ -56,13 +52,6 @@ export function OwnerFilter({
     else setQuery("");
   }, [open]);
 
-  // Drop any selected owners that are no longer present (e.g. after a refresh).
-  useEffect(() => {
-    const valid = new Set(owners.map((o) => o.id));
-    const pruned = value.filter((id) => valid.has(id));
-    if (pruned.length !== value.length) onChange(pruned);
-  }, [owners, value, onChange]);
-
   const selectedSet = useMemo(() => new Set(value), [value]);
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -92,11 +81,13 @@ export function OwnerFilter({
             : "border-line bg-canvas/60 text-muted hover:text-ink dark:bg-canvas/40",
         )}
       >
-        {selectedOwners.length > 0 ? (
+        {value.length > 0 ? (
           <>
-            <AvatarStack names={selectedOwners.map((o) => o.name)} />
+            {selectedOwners.length > 0 ? <AvatarStack owners={selectedOwners} /> : <Users className="size-4" />}
             <span className="hidden sm:inline">
-              {selectedOwners.length === 1 ? selectedOwners[0].name : `${selectedOwners.length} owners`}
+              {value.length === 1 && selectedOwners.length === 1
+                ? selectedOwners[0].name
+                : `${value.length} owner${value.length === 1 ? "" : "s"}`}
             </span>
           </>
         ) : (
@@ -201,14 +192,14 @@ export function OwnerFilter({
 }
 
 /** Overlapping avatars, capped at three with a "+N" bubble for the rest. */
-function AvatarStack({ names }: { names: string[] }) {
-  const shown = names.slice(0, 3);
-  const extra = names.length - shown.length;
+function AvatarStack({ owners }: { owners: OwnerOption[] }) {
+  const shown = owners.slice(0, 3);
+  const extra = owners.length - shown.length;
   return (
     <span className="flex items-center -space-x-1.5">
-      {shown.map((name, i) => (
-        <span key={i} className="rounded-full ring-2 ring-paper dark:ring-canvas">
-          <Avatar name={name} size={20} />
+      {shown.map((o) => (
+        <span key={o.id} className="rounded-full ring-2 ring-paper dark:ring-canvas">
+          <Avatar name={o.name} size={20} />
         </span>
       ))}
       {extra > 0 && (

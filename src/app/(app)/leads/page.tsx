@@ -1,12 +1,12 @@
 "use client";
 import { Suspense, useEffect, useMemo, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
-import { LayoutGrid, Rows3, Search, Plus, Ban, Archive, RotateCcw } from "lucide-react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { LayoutGrid, Rows3, Search, Plus, Ban, Archive, RotateCcw, X } from "lucide-react";
 import { PageHeader } from "@/components/layout/Sidebar";
 import { useSession } from "@/components/layout/SessionContext";
 import { LeadBoard } from "@/components/leads/LeadBoard";
 import { LeadTable } from "@/components/leads/LeadTable";
-import { OwnerFilter, type OwnerOption } from "@/components/leads/OwnerFilter";
+import { OwnerFilter } from "@/components/leads/OwnerFilter";
 import { AddLeadDrawer } from "@/components/leads/AddLeadDrawer";
 import { Avatar } from "@/components/ui/Avatar";
 import { Badge } from "@/components/ui/Badge";
@@ -16,21 +16,20 @@ import { useToast } from "@/components/ui/Toast";
 import { api, useApi } from "@/lib/client";
 import { STAGE_META } from "@/lib/constants";
 import { cn, formatINRCompact } from "@/lib/utils";
+import { deriveOwners, filterLeadsByOwners, parseOwnerParam, serializeOwnerParam } from "@/lib/leadFilters";
 import type { LeadDTO } from "@/lib/types";
 import type { PipelineStage } from "@/lib/constants";
 
 function LeadsInner() {
   const params = useSearchParams();
   const router = useRouter();
+  const pathname = usePathname();
   const me = useSession();
   const initialQ = params.get("q") ?? "";
   const [view, setView] = useState<"board" | "table" | "lost" | "archived">("board");
   const [q, setQ] = useState(initialQ);
   // Selected owner ids to filter by — Jira-style board filter, seeded from the URL so it's shareable.
-  const [ownerIds, setOwnerIds] = useState<string[]>(() => {
-    const raw = params.get("owner");
-    return raw ? raw.split(",").filter(Boolean) : [];
-  });
+  const [ownerIds, setOwnerIds] = useState<string[]>(() => parseOwnerParam(params.get("owner")));
   const [adding, setAdding] = useState(false);
   const [presetStage, setPresetStage] = useState<PipelineStage | undefined>();
 
@@ -44,31 +43,23 @@ function LeadsInner() {
 
   // Everyone who owns a lead in the current result set, with their lead counts — the
   // pool of people you can filter by (derived from the board, like Jira's avatar row).
-  const owners = useMemo<OwnerOption[]>(() => {
-    const byId = new Map<string, OwnerOption>();
-    for (const l of leads) {
-      if (!l.ownerId || !l.ownerName) continue;
-      const existing = byId.get(l.ownerId);
-      if (existing) existing.count += 1;
-      else byId.set(l.ownerId, { id: l.ownerId, name: l.ownerName, count: 1 });
-    }
-    return [...byId.values()].sort((a, b) => a.name.localeCompare(b.name));
-  }, [leads]);
+  const owners = useMemo(() => deriveOwners(leads), [leads]);
 
-  // Keep the owner filter reflected in the URL so a filtered board can be shared/bookmarked.
+  // Reflect both the search and owner filter in the URL so a filtered board is
+  // shareable/bookmarkable. Built from live state (not stale params) and guarded so
+  // a clean visit issues no redundant navigation. `replace` keeps history clean, and
+  // since the fetch keys only off `q`, an owner change never triggers a refetch.
   useEffect(() => {
-    const next = new URLSearchParams(params.toString());
-    if (ownerIds.length) next.set("owner", ownerIds.join(","));
-    else next.delete("owner");
+    const next = new URLSearchParams();
+    if (q.trim()) next.set("q", q.trim());
+    if (ownerIds.length) next.set("owner", serializeOwnerParam(ownerIds));
     const qs = next.toString();
-    router.replace(qs ? `?${qs}` : "?", { scroll: false });
-  }, [ownerIds]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (qs !== params.toString()) router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+  }, [q, ownerIds, params, pathname, router]);
 
-  const visibleLeads = useMemo(() => {
-    if (ownerIds.length === 0) return leads;
-    const set = new Set(ownerIds);
-    return leads.filter((l) => set.has(l.ownerId));
-  }, [leads, ownerIds]);
+  // Owner filter applies to whichever list a view renders (active/lost here, archived below).
+  const visibleLeads = useMemo(() => filterLeadsByOwners(leads, ownerIds), [leads, ownerIds]);
+  const visibleArchived = useMemo(() => filterLeadsByOwners(archivedLeads, ownerIds), [archivedLeads, ownerIds]);
 
   // Lost leads live in their own view; the pipeline views (board/table) stay focused on active leads.
   const { activeLeads, lostLeads } = useMemo(() => {
@@ -80,6 +71,13 @@ function LeadsInner() {
 
   const shownLeads = view === "lost" ? lostLeads : activeLeads;
   const filtering = q.trim().length > 0 || ownerIds.length > 0;
+  // Show the control whenever there's more than one owner to choose from, OR a filter is
+  // already active — so a stale/deep-linked selection always has a visible way to clear.
+  const showOwnerFilter = owners.length > 1 || ownerIds.length > 0;
+  const clearFilters = () => {
+    setQ("");
+    setOwnerIds([]);
+  };
 
   function openAdd(stage?: PipelineStage) {
     setPresetStage(stage);
@@ -118,13 +116,13 @@ function LeadsInner() {
           ))}
         </div>
 
-        {owners.length > 1 && (
+        {showOwnerFilter && (
           <div className="ml-auto">
             <OwnerFilter owners={owners} value={ownerIds} onChange={setOwnerIds} currentUserId={me.id} />
           </div>
         )}
 
-        <div className={cn("relative hidden max-w-xs flex-1 sm:block", owners.length > 1 ? "" : "ml-auto")}>
+        <div className={cn("relative hidden max-w-xs flex-1 sm:block", showOwnerFilter ? "" : "ml-auto")}>
           <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-faint" />
           <input
             value={q}
@@ -172,7 +170,7 @@ function LeadsInner() {
           archivedApi.loading ? (
             <PageLoader label="Loading archived leads…" />
           ) : (
-            <ArchivedLeads leads={archivedLeads} onChanged={archivedApi.refresh} />
+            <ArchivedLeads leads={visibleArchived} filtering={filtering} onClearFilters={clearFilters} onChanged={archivedApi.refresh} />
           )
         ) : loading ? (
           <PageLoader label="Loading your pipeline…" />
@@ -183,6 +181,7 @@ function LeadsInner() {
                 icon={<Ban className="size-6" />}
                 title={filtering ? "No lost leads match those filters" : "No lost leads"}
                 description={filtering ? "Try adjusting your search or owner filter." : "Leads you mark as lost will be archived here."}
+                action={filtering && <Button variant="secondary" onClick={clearFilters}><X className="size-4" /> Clear filters</Button>}
               />
             </div>
           ) : (
@@ -194,7 +193,13 @@ function LeadsInner() {
               icon={<LayoutGrid className="size-6" />}
               title={filtering ? "No leads match those filters" : "No leads yet"}
               description={filtering ? "Try adjusting your search or owner filter." : "Add your first lead and start working the pipeline."}
-              action={!filtering && <Button variant="primary" onClick={() => openAdd()}><Plus className="size-4" /> New lead</Button>}
+              action={
+                filtering ? (
+                  <Button variant="secondary" onClick={clearFilters}><X className="size-4" /> Clear filters</Button>
+                ) : (
+                  <Button variant="primary" onClick={() => openAdd()}><Plus className="size-4" /> New lead</Button>
+                )
+              }
             />
           </div>
         ) : view === "board" ? (
@@ -209,7 +214,17 @@ function LeadsInner() {
   );
 }
 
-function ArchivedLeads({ leads, onChanged }: { leads: LeadDTO[]; onChanged: () => void }) {
+function ArchivedLeads({
+  leads,
+  filtering,
+  onClearFilters,
+  onChanged,
+}: {
+  leads: LeadDTO[];
+  filtering: boolean;
+  onClearFilters: () => void;
+  onChanged: () => void;
+}) {
   const { toast } = useToast();
   const [busyId, setBusyId] = useState<string | null>(null);
 
@@ -229,7 +244,12 @@ function ArchivedLeads({ leads, onChanged }: { leads: LeadDTO[]; onChanged: () =
   if (leads.length === 0) {
     return (
       <div className="px-6 lg:px-8">
-        <EmptyState icon={<Archive className="size-6" />} title="Nothing archived" description="Leads you archive will show up here and can be restored." />
+        <EmptyState
+          icon={<Archive className="size-6" />}
+          title={filtering ? "No archived leads match those filters" : "Nothing archived"}
+          description={filtering ? "Try adjusting your search or owner filter." : "Leads you archive will show up here and can be restored."}
+          action={filtering && <Button variant="secondary" onClick={onClearFilters}><X className="size-4" /> Clear filters</Button>}
+        />
       </div>
     );
   }
