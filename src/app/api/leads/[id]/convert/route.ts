@@ -5,6 +5,7 @@ import { Lead, Account, Contact, Activity, User, type ILead } from "@/lib/models
 import { requireUser } from "@/lib/auth/server";
 import { leadScope, canEditOwned } from "@/lib/rbac";
 import { logActivity, audit } from "@/lib/services";
+import { notifyLeadConverted } from "@/lib/slack";
 import { Types } from "mongoose";
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -72,6 +73,23 @@ export const POST = route(async (req: NextRequest, ctx: Ctx) => {
   });
   await audit({ entity: "account", entityId: accId, entityLabel: accountName, action: "create", actor: user, accountId: accId, changes: [{ field: "fromLead", to: lead.name }] });
   await audit({ entity: "lead", entityId: lead._id, entityLabel: lead.name, action: "update", actor: user, changes: [{ field: "stage", from: lead.stage, to: "won" }, { field: "convertedAccount", to: accountName }], leadId: lead._id, accountId: accId });
+
+  // The account owner may differ from the converter when an ownerId was passed.
+  const ownerName =
+    String(ownerId) === String(user._id)
+      ? user.name
+      : (await User.findById(ownerId).select("name").lean<{ name: string }>())?.name ?? user.name;
+
+  await notifyLeadConverted({
+    leadId: String(lead._id),
+    leadName: lead.name,
+    company: lead.company,
+    accountId: String(accId),
+    accountName,
+    estValue: lead.estValue,
+    ownerName,
+    actorName: user.name,
+  });
 
   return ok(
     { account: serializeAccount(account.toObject(), { ownerName: user.name, primaryContact: primary.toObject(), contactCount: 1 }) },

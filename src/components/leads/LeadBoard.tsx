@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   DndContext,
@@ -46,6 +46,9 @@ export function LeadBoard({ leads, onAdd, onChanged }: { leads: LeadDTO[]; onAdd
   const [board, setBoard] = useState<Board>(() => buildBoard(leads));
   const [activeId, setActiveId] = useState<string | null>(null);
   const [lostLead, setLostLead] = useState<LeadDTO | null>(null);
+  // The card's original column, captured at drag start. `onDragOver` shuffles the
+  // board mid-drag, so by `onDragEnd` we can no longer recover the source from state.
+  const homeStageRef = useRef<string | null>(null);
 
   useEffect(() => setBoard(buildBoard(leads)), [leads]);
 
@@ -59,25 +62,37 @@ export function LeadBoard({ leads, onAdd, onChanged }: { leads: LeadDTO[]; onAdd
   }
 
   function onDragStart(e: DragStartEvent) {
-    setActiveId(String(e.active.id));
+    const id = String(e.active.id);
+    setActiveId(id);
+    // Snapshot the source column now — `onDragOver` mutates the board before drop.
+    homeStageRef.current = findStage(id);
   }
 
   async function onDragEnd(e: DragEndEvent) {
     const { active, over } = e;
     setActiveId(null);
-    if (!over) return;
-    const fromStage = findStage(String(active.id));
-    const toStage = findStage(String(over.id));
-    if (!fromStage || !toStage) return;
+    const fromStage = homeStageRef.current;
+    homeStageRef.current = null;
 
-    const lead = board[fromStage].find((l) => l.id === active.id);
-    if (!lead) return;
-
-    // Dropping onto the "lost" zone opens the reason modal instead of moving.
-    if (toStage === "lost") {
-      setLostLead(lead);
+    // Dropped nowhere — undo any mid-drag shuffling `onDragOver` applied.
+    if (!over || !fromStage) {
+      setBoard(buildBoard(leads));
       return;
     }
+
+    // Dropping onto the "lost" zone opens the reason modal instead of moving.
+    if (findStage(String(over.id)) === "lost") {
+      const lead = leads.find((l) => l.id === active.id);
+      setBoard(buildBoard(leads)); // revert any cross-column shuffle from onDragOver
+      if (lead) setLostLead(lead);
+      return;
+    }
+
+    // The card's current column — `onDragOver` may have already moved it cross-lane.
+    const toStage = findStage(String(active.id));
+    if (!toStage) return;
+    const lead = board[toStage].find((l) => l.id === active.id);
+    if (!lead) return;
 
     // Compute insert index within target column.
     const overId = String(over.id);
@@ -87,15 +102,18 @@ export function LeadBoard({ leads, onAdd, onChanged }: { leads: LeadDTO[]; onAdd
       const oi = targetList.findIndex((l) => l.id === overId);
       if (oi >= 0) index = oi;
     }
-    if (fromStage === toStage && board[fromStage].findIndex((l) => l.id === active.id) === index) return;
+
+    // No-op: dropped back in its home column at the same position.
+    const currentIndex = board[toStage].findIndex((l) => l.id === active.id);
+    if (fromStage === toStage && currentIndex === index) {
+      setBoard(buildBoard(leads));
+      return;
+    }
 
     // Optimistic update.
-    const next: Board = { ...board, [fromStage]: board[fromStage].filter((l) => l.id !== active.id) };
-    const moved = { ...lead, stage: toStage as LeadDTO["stage"], order: index };
-    const dest = [...(next[toStage] ?? []).filter((l) => l.id !== active.id)];
-    dest.splice(index, 0, moved);
-    next[toStage] = dest.map((l, i) => ({ ...l, order: i }));
-    if (fromStage !== toStage) next[fromStage] = next[fromStage].map((l, i) => ({ ...l, order: i }));
+    const dest = [...targetList];
+    dest.splice(index, 0, { ...lead, stage: toStage as LeadDTO["stage"], order: index });
+    const next: Board = { ...board, [toStage]: dest.map((l, i) => ({ ...l, order: i })) };
     setBoard(next);
 
     try {
