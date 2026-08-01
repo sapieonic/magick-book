@@ -6,28 +6,47 @@ import { PageHeader } from "@/components/layout/Sidebar";
 import { LeadBoard } from "@/components/leads/LeadBoard";
 import { LeadTable } from "@/components/leads/LeadTable";
 import { AddLeadDrawer } from "@/components/leads/AddLeadDrawer";
+import { CategoryBadge } from "@/components/leads/CategoryBadge";
 import { Avatar } from "@/components/ui/Avatar";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card, PageLoader, ErrorState, EmptyState } from "@/components/ui/Misc";
 import { useToast } from "@/components/ui/Toast";
 import { api, useApi } from "@/lib/client";
-import { STAGE_META } from "@/lib/constants";
+import { STAGE_META, formatCategoryLabel, DEFAULT_LEAD_CATEGORIES } from "@/lib/constants";
 import { cn, formatINRCompact } from "@/lib/utils";
 import type { LeadDTO } from "@/lib/types";
 import type { PipelineStage } from "@/lib/constants";
 
 function LeadsInner() {
   const params = useSearchParams();
+  const router = useRouter();
   const initialQ = params.get("q") ?? "";
+  const initialCategory = params.get("category") ?? "";
   const [view, setView] = useState<"board" | "table" | "lost" | "archived">("board");
   const [q, setQ] = useState(initialQ);
+  const [category, setCategory] = useState(initialCategory);
   const [adding, setAdding] = useState(false);
   const [presetStage, setPresetStage] = useState<PipelineStage | undefined>();
 
-  const url = `/api/leads${q.trim() ? `?q=${encodeURIComponent(q.trim())}` : ""}`;
+  const categoriesApi = useApi<{ categories: string[] }>("/api/workspace/categories");
+  const categoryOptions = categoriesApi.data?.categories ?? [];
+
+  const qs = new URLSearchParams();
+  if (q.trim()) qs.set("q", q.trim());
+  if (category.trim()) qs.set("category", category.trim());
+  const url = `/api/leads${qs.size ? `?${qs.toString()}` : ""}`;
   const { data, loading, error, refresh } = useApi<{ leads: LeadDTO[] }>(url);
   const leads = data?.leads ?? [];
+
+  function setCategoryFilter(next: string) {
+    setCategory(next);
+    const nextParams = new URLSearchParams(params.toString());
+    if (next) nextParams.set("category", next);
+    else nextParams.delete("category");
+    const s = nextParams.toString();
+    router.replace(s ? `/leads?${s}` : "/leads");
+  }
 
   // Archived leads come from a separate query, fetched only when that view is open.
   const archivedApi = useApi<{ leads: LeadDTO[] }>(view === "archived" ? "/api/leads?archived=1" : null);
@@ -90,10 +109,38 @@ function LeadsInner() {
           />
         </div>
 
+        <select
+          aria-label="Filter by category"
+          value={category}
+          onChange={(e) => setCategoryFilter(e.target.value)}
+          className="hidden h-9 rounded-[var(--radius-md)] border border-line bg-canvas/60 px-2.5 text-[13px] font-medium text-ink sm:block dark:bg-canvas/40"
+        >
+          <option value="">All categories</option>
+          {(category && !categoryOptions.includes(category) ? [...categoryOptions, category] : categoryOptions.length ? categoryOptions : [...DEFAULT_LEAD_CATEGORIES]).map((c) => (
+            <option key={c} value={c}>
+              {formatCategoryLabel(c)}
+            </option>
+          ))}
+        </select>
+
         <Button variant="primary" onClick={() => openAdd()} className="ml-auto sm:ml-0 shadow-sm shadow-violet-500/20">
           <Plus className="size-4" /> New lead
         </Button>
       </PageHeader>
+
+      {category && (
+        <div className="flex items-center gap-2 px-6 pt-3 lg:px-8">
+          <span className="text-[12.5px] text-muted">Showing</span>
+          <CategoryBadge category={category} />
+          <button
+            type="button"
+            onClick={() => setCategoryFilter("")}
+            className="text-[12.5px] font-semibold text-violet-700 hover:underline"
+          >
+            Clear filter
+          </button>
+        </div>
+      )}
 
       {/* Insights Summary Bar */}
       <div className="px-6 lg:px-8 mt-5">
@@ -199,6 +246,7 @@ function ArchivedLeads({ leads, onChanged }: { leads: LeadDTO[]; onChanged: () =
               <tr className="border-b border-line bg-canvas/60 text-left text-[11.5px] font-semibold uppercase tracking-wide text-muted">
                 <th className="px-5 py-3">Lead</th>
                 <th className="px-5 py-3">Company</th>
+                <th className="px-5 py-3">Category</th>
                 <th className="px-5 py-3">Stage</th>
                 <th className="px-5 py-3">Owner</th>
                 <th className="px-5 py-3 text-right">Est. value</th>
@@ -212,6 +260,7 @@ function ArchivedLeads({ leads, onChanged }: { leads: LeadDTO[]; onChanged: () =
                   <tr key={l.id}>
                     <td className="px-5 py-3.5 text-[13.5px] font-semibold text-ink">{l.name}</td>
                     <td className="px-5 py-3.5 text-[13px] text-muted">{l.company || "—"}</td>
+                    <td className="px-5 py-3.5"><CategoryBadge category={l.category} /></td>
                     <td className="px-5 py-3.5"><Badge tint={meta.tint} dot={meta.dot}>{meta.label}</Badge></td>
                     <td className="px-5 py-3.5">
                       {l.ownerName ? (

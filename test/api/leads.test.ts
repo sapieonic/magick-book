@@ -63,14 +63,24 @@ async function makeLead(owner: IUser, over: Record<string, unknown> = {}) {
 
 describe("POST /api/leads", () => {
   it("creates a lead and logs a lead_created activity", async () => {
-    const res = await leadsRoute.POST(jsonRequest("/api/leads", "POST", { name: "Priya", company: "Lumen", estValue: 5000, source: "Referral" }));
+    await models.Workspace.create({ _id: workspaceId, name: "WS", ownerId: admin._id, leadCategories: ["unclassified", "finance", "automobile"] });
+    const res = await leadsRoute.POST(jsonRequest("/api/leads", "POST", { name: "Priya", company: "Lumen", estValue: 5000, source: "Referral", category: "finance" }));
     expect(res.status).toBe(201);
     const { lead } = await res.json();
     expect(lead.name).toBe("Priya");
+    expect(lead.category).toBe("finance");
     expect(lead.ownerId).toBe(String(admin._id));
     const acts = await models.Activity.find({ leadId: lead.id }).lean();
     expect(acts).toHaveLength(1);
     expect(acts[0].kind).toBe("lead_created");
+  });
+
+  it("defaults category to unclassified when omitted or unknown", async () => {
+    await models.Workspace.create({ _id: workspaceId, name: "WS", ownerId: admin._id, leadCategories: ["unclassified", "finance"] });
+    const res = await leadsRoute.POST(jsonRequest("/api/leads", "POST", { name: "X", category: "nope" }));
+    expect(res.status).toBe(201);
+    const { lead } = await res.json();
+    expect(lead.category).toBe("unclassified");
   });
 
   it("rejects a blank name with 400", async () => {
@@ -136,12 +146,14 @@ describe("GET /api/leads/:id (detail + activities)", () => {
 
 describe("PATCH /api/leads/:id", () => {
   it("edits allowed fields", async () => {
+    await models.Workspace.create({ _id: workspaceId, name: "WS", ownerId: admin._id, leadCategories: ["unclassified", "healthcare"] });
     const lead = await makeLead(admin, { name: "Old" });
-    const res = await leadIdRoute.PATCH(jsonRequest(`/api/leads/${lead._id}`, "PATCH", { name: "New", estValue: 9000, source: "Event" }), ctx({ id: String(lead._id) }));
+    const res = await leadIdRoute.PATCH(jsonRequest(`/api/leads/${lead._id}`, "PATCH", { name: "New", estValue: 9000, source: "Event", category: "healthcare" }), ctx({ id: String(lead._id) }));
     const { lead: updated } = await res.json();
     expect(updated.name).toBe("New");
     expect(updated.estValue).toBe(9000);
     expect(updated.source).toBe("Event");
+    expect(updated.category).toBe("healthcare");
   });
 
   it("403 when a standard user edits a lead they don't own", async () => {

@@ -3,6 +3,7 @@ import { ok, fail, route } from "@/lib/api";
 import { connectDB } from "@/lib/db";
 import { Workspace, User } from "@/lib/models";
 import { requireUser, getSessionUser } from "@/lib/auth/server";
+import { DEFAULT_LEAD_CATEGORIES } from "@/lib/constants";
 
 // Create the user's workspace (onboarding step). Idempotent-ish: if the user
 // already belongs to a workspace, we just rename it.
@@ -26,7 +27,13 @@ export const POST = route(async (req: NextRequest) => {
     if (existingWs) {
       await User.updateOne({ _id: user._id }, { workspaceId: existingWs._id, role: "standard", status: "active" });
     } else {
-      const ws = await Workspace.create({ name, businessTypes, ownerId: user._id, domain });
+      const ws = await Workspace.create({
+        name,
+        businessTypes,
+        leadCategories: [...DEFAULT_LEAD_CATEGORIES],
+        ownerId: user._id,
+        domain,
+      });
       await User.updateOne({ _id: user._id }, { workspaceId: ws._id, role: "admin", status: "active" });
     }
   }

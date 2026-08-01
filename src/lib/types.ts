@@ -45,6 +45,7 @@ export interface LeadDTO {
   email: string;
   source: string;
   stage: LeadStage;
+  category: string;
   estValue: number;
   notes: string;
   tags: string[];

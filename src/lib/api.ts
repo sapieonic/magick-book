@@ -81,6 +81,7 @@ export function serializeLead(l: ILead, ownerName = "", commentCount = 0): LeadD
     email: l.email ?? "",
     source: l.source,
     stage: l.stage as LeadStage,
+    category: l.category || "unclassified",
     estValue: l.estValue ?? 0,
     notes: l.notes ?? "",
     tags: l.tags ?? [],

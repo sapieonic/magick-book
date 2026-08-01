@@ -1,6 +1,7 @@
 "use client";
 import type { CSSProperties } from "react";
 import { Phone, Mail, MessageSquare, CornerDownRight } from "lucide-react";
+import { CategoryBadge } from "@/components/leads/CategoryBadge";
 import { formatINRCompact, initials, avatarTint, valueTier, relativeTime, absoluteTime, cn } from "@/lib/utils";
 import type { LeadDTO } from "@/lib/types";
 
@@ -28,6 +29,8 @@ export function LeadCard({ lead, dragging }: { lead: LeadDTO; dragging?: boolean
 
   const hasTags = lead.tags.length > 0;
   const hasValue = lead.estValue > 0;
+  // Skip unclassified on the board — it clutters cards until something is actually classified.
+  const classified = !!lead.category && lead.category !== "unclassified";
   // The footer carries at-a-glance signals: comment count, conversion, last touch.
   const showFooter = lead.commentCount > 0 || !!lead.convertedAccountId || !!lead.lastActivityAt;
 
@@ -61,8 +64,9 @@ export function LeadCard({ lead, dragging }: { lead: LeadDTO; dragging?: boolean
         )}
       </div>
 
-      {(hasTags || hasValue) && (
+      {(classified || hasTags || hasValue) && (
         <div className="mt-4 flex flex-wrap items-center gap-1.5">
+          {classified && <CategoryBadge category={lead.category} hideUnclassified />}
           {(lead.tags || []).map((t) => {
             const tagStr = t || "";
             const tLower = tagStr.toLowerCase();

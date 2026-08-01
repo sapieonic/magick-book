@@ -6,6 +6,7 @@ import { requireUser } from "@/lib/auth/server";
 import { leadScope, canEditOwned } from "@/lib/rbac";
 import { ownerNameMap, audit, diffChanges } from "@/lib/services";
 import { LEAD_SOURCES, LEAD_STAGES } from "@/lib/constants";
+import { resolveLeadCategory } from "@/lib/lead-categories";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -60,11 +61,18 @@ export const PATCH = route(async (req: NextRequest, ctx: Ctx) => {
   }
   if (b.source && LEAD_SOURCES.includes(b.source)) patch.source = b.source;
   if (b.stage && LEAD_STAGES.includes(b.stage)) patch.stage = b.stage;
+  if (typeof b.category === "string") {
+    const resolved = await resolveLeadCategory(user.workspaceId, b.category, {
+      mode: "update",
+      current: lead.category,
+    });
+    if (resolved) patch.category = resolved;
+  }
   if (b.estValue !== undefined) patch.estValue = Number(b.estValue) || 0;
   if (Array.isArray(b.tags)) patch.tags = b.tags;
 
   const changes = diffChanges(lead as unknown as Record<string, unknown>, patch, [
-    "name", "company", "title", "phone", "email", "notes", "source", "stage", "estValue", "tags",
+    "name", "company", "title", "phone", "email", "notes", "source", "stage", "category", "estValue", "tags",
   ]);
   patch.lastActivityAt = new Date();
 

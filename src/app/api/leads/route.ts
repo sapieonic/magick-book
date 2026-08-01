@@ -6,6 +6,7 @@ import { requireUser } from "@/lib/auth/server";
 import { leadScope } from "@/lib/rbac";
 import { logActivity, ownerNameMap, audit } from "@/lib/services";
 import { LEAD_STAGES } from "@/lib/constants";
+import { resolveLeadCategory } from "@/lib/lead-categories";
 import { Types } from "mongoose";
 
 // GET /api/leads — all leads visible to the user (board + table).
@@ -13,6 +14,7 @@ export const GET = route(async (req: NextRequest) => {
   const user = await requireUser();
   await connectDB();
   const q = req.nextUrl.searchParams.get("q")?.trim();
+  const category = req.nextUrl.searchParams.get("category")?.trim().toLowerCase();
   const archived = req.nextUrl.searchParams.get("archived") === "1";
 
   const filter: Record<string, unknown> = leadScope(user, { archived });
@@ -23,6 +25,7 @@ export const GET = route(async (req: NextRequest) => {
       { email: { $regex: q, $options: "i" } },
     ];
   }
+  if (category) filter.category = category;
 
   const leads = await Lead.find(filter).sort({ stage: 1, order: 1, createdAt: -1 }).lean<ILead[]>();
 
@@ -47,6 +50,7 @@ export const POST = route(async (req: NextRequest) => {
   if (!b.name?.trim()) return ok({ error: "Contact name is required" }, 400);
 
   const stage = LEAD_STAGES.includes(b.stage) ? b.stage : "new";
+  const category = (await resolveLeadCategory(user.workspaceId, b.category, { mode: "create" }))!;
   const lead = await Lead.create({
     workspaceId: user.workspaceId,
     ownerId: user._id,
@@ -57,6 +61,7 @@ export const POST = route(async (req: NextRequest) => {
     email: b.email?.trim(),
     source: b.source || "Website",
     stage,
+    category,
     estValue: Number(b.estValue) || 0,
     notes: b.notes?.trim(),
     tags: Array.isArray(b.tags) ? b.tags : [],

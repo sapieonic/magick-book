@@ -24,6 +24,7 @@ import { useSession } from "@/components/layout/SessionContext";
 import { ActivityTimeline } from "@/components/ActivityTimeline";
 import { AuditTimeline } from "@/components/AuditTimeline";
 import { AddLeadDrawer } from "@/components/leads/AddLeadDrawer";
+import { CategoryBadge } from "@/components/leads/CategoryBadge";
 import { ConvertModal } from "@/components/leads/ConvertModal";
 import { NoteComposer } from "@/components/activity/NoteComposer";
 import { ReminderModal } from "@/components/reminders/ReminderModal";
@@ -136,6 +137,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
           <ChevronRight className="size-3.5 text-faint" />
           <span className="truncate font-display text-[20px] font-bold tracking-tight text-ink">{lead.name}</span>
           <Badge tint={meta.tint} dot={meta.dot} className="ml-1">{meta.label}</Badge>
+          <CategoryBadge category={lead.category} className="ml-0.5" />
         </nav>
         <div className="ml-auto flex shrink-0 items-center gap-2">
           <Button variant="ghost" onClick={archiveLead} loading={archiving} aria-label="Archive lead">
@@ -219,6 +221,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
                   {lead.phone && <Row icon={<Phone className="size-3.5" />} value={lead.phone} />}
                   {lead.email && <Row icon={<Mail className="size-3.5" />} value={lead.email} />}
                   <Row label="Source" value={lead.source} />
+                  <Row label="Category" value={<CategoryBadge category={lead.category} />} />
                   <Row label="Owner" value={lead.ownerName} />
                   {lead.estValue > 0 && <Row label="Est." value={<span className="font-mono font-semibold tnum">{formatINR(lead.estValue)}</span>} bold />}
                 </dl>
