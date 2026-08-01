@@ -140,6 +140,7 @@ export function serializeInvoice(i: IInvoice, accountName?: string): InvoiceDTO 
     accountName,
     issuedAt: iso(i.issuedAt) ?? "",
     dueAt: iso(i.dueAt),
+    paidAt: iso(i.paidAt),
     amount: i.amount,
     status: i.status as InvoiceStatus,
     hasFile: Boolean(i.fileKey),

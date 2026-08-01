@@ -3,6 +3,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { Receipt, Wallet, X } from "lucide-react";
 import { PageHeader } from "@/components/layout/Sidebar";
+import { MoneyCharts } from "@/components/money/MoneyCharts";
 import { Badge } from "@/components/ui/Badge";
 import { Card, PageLoader, ErrorState, EmptyState } from "@/components/ui/Misc";
 import { useApi } from "@/lib/client";
@@ -112,52 +113,57 @@ export default function MoneyPage() {
             </div>
 
             {tab === "invoices" ? (
-              invoices.length === 0 ? (
-                <EmptyState
-                  icon={<Receipt className="size-6" />}
-                  title={
-                    filter === "paid"
-                      ? "No paid invoices"
-                      : filter === "outstanding"
-                        ? "No outstanding invoices"
-                        : "No invoices yet"
-                  }
-                  description={
-                    filter === "paid"
-                      ? "Once invoices are marked paid they'll show up here."
-                      : filter === "outstanding"
-                        ? "Nothing awaiting payment — every issued invoice is settled."
-                        : "Bill an account from its Invoices tab."
-                  }
-                />
-              ) : (
-                <Card className="overflow-hidden">
-                  <div className="overflow-x-auto">
-                  <table className="w-full min-w-[620px]">
-                    <thead>
-                      <tr className="border-b border-line bg-canvas/60 text-left text-[11.5px] font-semibold uppercase tracking-wide text-muted">
-                        <th className="px-5 py-3">Invoice</th>
-                        <th className="px-5 py-3">Account</th>
-                        <th className="px-5 py-3">Issued</th>
-                        <th className="px-5 py-3 text-right">Amount</th>
-                        <th className="px-5 py-3">Status</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-line">
-                      {invoices.map((inv) => (
-                        <tr key={inv.id} className="text-[13px]">
-                          <td className="px-5 py-3.5 font-mono font-semibold text-ink">#{inv.number}</td>
-                          <td className="px-5 py-3.5"><Link href={`/accounts/${inv.accountId}`} className="font-medium text-ink-soft hover:text-violet-700">{inv.accountName}</Link></td>
-                          <td className="px-5 py-3.5 text-muted">{format(new Date(inv.issuedAt), "MMM dd, yyyy")}</td>
-                          <td className="px-5 py-3.5 text-right font-mono font-semibold text-ink tnum">{formatINR(inv.amount)}</td>
-                          <td className="px-5 py-3.5"><Badge tint={INVOICE_STATUS_META[inv.status].tint}>{INVOICE_STATUS_META[inv.status].label}</Badge></td>
+              <div className="space-y-5">
+                {/* Charts use the full invoice set, not the active KPI filter. */}
+                {(data.invoices?.length ?? 0) > 0 && <MoneyCharts invoices={data.invoices} />}
+
+                {invoices.length === 0 ? (
+                  <EmptyState
+                    icon={<Receipt className="size-6" />}
+                    title={
+                      filter === "paid"
+                        ? "No paid invoices"
+                        : filter === "outstanding"
+                          ? "No outstanding invoices"
+                          : "No invoices yet"
+                    }
+                    description={
+                      filter === "paid"
+                        ? "Once invoices are marked paid they'll show up here."
+                        : filter === "outstanding"
+                          ? "Nothing awaiting payment — every issued invoice is settled."
+                          : "Bill an account from its Invoices tab."
+                    }
+                  />
+                ) : (
+                  <Card className="overflow-hidden">
+                    <div className="overflow-x-auto">
+                    <table className="w-full min-w-[620px]">
+                      <thead>
+                        <tr className="border-b border-line bg-canvas/60 text-left text-[11.5px] font-semibold uppercase tracking-wide text-muted">
+                          <th className="px-5 py-3">Invoice</th>
+                          <th className="px-5 py-3">Account</th>
+                          <th className="px-5 py-3">Issued</th>
+                          <th className="px-5 py-3 text-right">Amount</th>
+                          <th className="px-5 py-3">Status</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                  </div>
-                </Card>
-              )
+                      </thead>
+                      <tbody className="divide-y divide-line">
+                        {invoices.map((inv) => (
+                          <tr key={inv.id} className="text-[13px]">
+                            <td className="px-5 py-3.5 font-mono font-semibold text-ink">#{inv.number}</td>
+                            <td className="px-5 py-3.5"><Link href={`/accounts/${inv.accountId}`} className="font-medium text-ink-soft hover:text-violet-700">{inv.accountName}</Link></td>
+                            <td className="px-5 py-3.5 text-muted">{format(new Date(inv.issuedAt), "MMM dd, yyyy")}</td>
+                            <td className="px-5 py-3.5 text-right font-mono font-semibold text-ink tnum">{formatINR(inv.amount)}</td>
+                            <td className="px-5 py-3.5"><Badge tint={INVOICE_STATUS_META[inv.status].tint}>{INVOICE_STATUS_META[inv.status].label}</Badge></td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    </div>
+                  </Card>
+                )}
+              </div>
             ) : expenses.length === 0 ? (
               <EmptyState icon={<Wallet className="size-6" />} title="No expenses yet" description="Log costs from an account's Expenses tab." />
             ) : (

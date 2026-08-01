@@ -138,4 +138,23 @@ describe("GET /api/money", () => {
     expect(body.totals.paid).toBe(7);
     expect(body.invoices).toHaveLength(1);
   });
+
+  it("excludes soft-deleted invoices and expenses from totals", async () => {
+    const acc = await models.Account.create({ workspaceId, ownerId: admin._id, name: "A", status: "active" });
+    await models.Invoice.create([
+      { workspaceId, accountId: acc._id, number: 1, amount: 1000, status: "paid" },
+      { workspaceId, accountId: acc._id, number: 2, amount: 500, status: "sent", deletedAt: new Date(), deletedBy: admin._id },
+    ]);
+    await models.Expense.create([
+      { workspaceId, accountId: acc._id, amount: 100, category: "Software", vendor: "X" },
+      { workspaceId, accountId: acc._id, amount: 999, category: "Travel", vendor: "Y", deletedAt: new Date(), deletedBy: admin._id },
+    ]);
+
+    const body = await (await (moneyRoute.GET as any)(jsonRequest("/api/money", "GET"))).json();
+    expect(body.invoices).toHaveLength(1);
+    expect(body.expenses).toHaveLength(1);
+    expect(body.totals.paid).toBe(1000);
+    expect(body.totals.outstanding).toBe(0);
+    expect(body.totals.expenses).toBe(100);
+  });
 });

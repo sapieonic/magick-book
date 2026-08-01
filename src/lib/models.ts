@@ -122,6 +122,8 @@ export interface IInvoice extends SoftDelete {
   dueAt?: Date;
   amount: number;
   status: (typeof INVOICE_STATUSES)[number];
+  /** When the invoice was marked paid. Cleared if status leaves paid. */
+  paidAt?: Date | null;
   // Externally-generated invoice document persisted in S3.
   fileKey?: string;
   fileName?: string;
@@ -331,6 +333,7 @@ const InvoiceSchema = new Schema<IInvoice>(
     dueAt: Date,
     amount: { type: Number, required: true },
     status: { type: String, enum: INVOICE_STATUSES, default: "draft", index: true },
+    paidAt: { type: Date, default: null },
     fileKey: String,
     fileName: String,
     fileType: String,

@@ -288,7 +288,18 @@ describe("invoices sub-route", () => {
     const { invoice } = await res.json();
     expect(invoice.number).toBe(1001);
     expect(invoice.amount).toBe(5000);
+    expect(invoice.paidAt).toBeNull();
     expect(await models.Activity.countDocuments({ accountId: acc._id, kind: "invoice" })).toBe(1);
+  });
+
+  it("stamps paidAt when created already paid", async () => {
+    const acc = await makeAccount(admin);
+    const res = await invoicesRoute.POST(jsonRequest(`/api/accounts/${acc._id}/invoices`, "POST", { amount: 2500, status: "paid" }), ctx({ id: String(acc._id) }));
+    expect(res.status).toBe(201);
+    const { invoice } = await res.json();
+    expect(invoice.status).toBe("paid");
+    expect(invoice.paidAt).toBeTruthy();
+    expect((await models.Invoice.findById(invoice.id).lean())?.paidAt).toBeTruthy();
   });
 
   it("rejects a non-positive amount", async () => {
