@@ -165,7 +165,7 @@ export async function seedDatabase({ force = false }: { force?: boolean } = {}):
     others: [{ name: "Rohit K.", title: "Founder", email: "rohit@lumen.in" }],
   });
 
-  await makeAccount({
+  const brightline = await makeAccount({
     name: "Brightline",
     domain: "brightline.io",
     industry: "SaaS",
@@ -195,7 +195,7 @@ export async function seedDatabase({ force = false }: { force?: boolean } = {}):
     primary: { name: "Dev Mehta", title: "Owner", email: "dev@novafoods.in", phone: "+91 98200 55330" },
   });
 
-  await makeAccount({
+  const pine = await makeAccount({
     name: "Pine & Co",
     domain: "pine.co",
     industry: "Consulting",
@@ -231,11 +231,15 @@ export async function seedDatabase({ force = false }: { force?: boolean } = {}):
   await Invoice.insertMany([
     { workspaceId: wsId, accountId: acme._id, number: 1042, issuedAt: ago(28 * DAY), dueAt: ago(14 * DAY), amount: 110000, status: "overdue" },
     { workspaceId: wsId, accountId: acme._id, number: 1040, issuedAt: ago(32 * DAY), dueAt: ago(18 * DAY), amount: 55000, status: "sent" },
-    { workspaceId: wsId, accountId: acme._id, number: 1038, issuedAt: ago(42 * DAY), dueAt: ago(28 * DAY), amount: 95000, status: "paid" },
-    { workspaceId: wsId, accountId: acme._id, number: 1031, issuedAt: ago(70 * DAY), dueAt: ago(56 * DAY), amount: 140000, status: "paid" },
-    // A couple for other accounts so the global Money view isn't single-account.
-    { workspaceId: wsId, accountId: lumen._id, number: 1039, issuedAt: ago(20 * DAY), dueAt: ago(6 * DAY), amount: 40000, status: "paid" },
+    { workspaceId: wsId, accountId: acme._id, number: 1038, issuedAt: ago(42 * DAY), dueAt: ago(28 * DAY), amount: 95000, status: "paid", paidAt: ago(30 * DAY) },
+    { workspaceId: wsId, accountId: acme._id, number: 1031, issuedAt: ago(70 * DAY), dueAt: ago(56 * DAY), amount: 140000, status: "paid", paidAt: ago(58 * DAY) },
+    // Spread paid invoices across accounts/months for the Money charts.
+    { workspaceId: wsId, accountId: lumen._id, number: 1039, issuedAt: ago(20 * DAY), dueAt: ago(6 * DAY), amount: 40000, status: "paid", paidAt: ago(12 * DAY) },
     { workspaceId: wsId, accountId: lumen._id, number: 1043, issuedAt: ago(5 * DAY), dueAt: ago(-9 * DAY), amount: 40000, status: "sent" },
+    { workspaceId: wsId, accountId: brightline._id, number: 1035, issuedAt: ago(100 * DAY), dueAt: ago(86 * DAY), amount: 120000, status: "paid", paidAt: ago(90 * DAY) },
+    { workspaceId: wsId, accountId: brightline._id, number: 1041, issuedAt: ago(45 * DAY), dueAt: ago(10 * DAY), amount: 120000, status: "overdue" },
+    { workspaceId: wsId, accountId: pine._id, number: 1036, issuedAt: ago(55 * DAY), dueAt: ago(41 * DAY), amount: 60000, status: "paid", paidAt: ago(40 * DAY) },
+    { workspaceId: wsId, accountId: pine._id, number: 1044, issuedAt: ago(8 * DAY), dueAt: ago(-6 * DAY), amount: 60000, status: "sent" },
   ]);
 
   // ---- Expenses (for Acme — mirrors the wireframe expense list) -------

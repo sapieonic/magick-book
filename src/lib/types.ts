@@ -96,6 +96,7 @@ export interface InvoiceDTO {
   accountName?: string;
   issuedAt: string;
   dueAt: string | null;
+  paidAt: string | null;
   amount: number;
   status: InvoiceStatus;
   hasFile: boolean;

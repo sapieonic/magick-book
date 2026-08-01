@@ -50,6 +50,7 @@ export const POST = route(async (req: NextRequest, ctx: Ctx) => {
     dueAt,
     amount,
     status,
+    paidAt: status === "paid" ? new Date() : null,
   });
   await Account.updateOne({ _id: acc._id }, { lastActivityAt: new Date() });
   await logActivity({

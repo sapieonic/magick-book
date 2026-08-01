@@ -60,12 +60,23 @@ async function makeInvoice(over: Record<string, unknown> = {}) {
 }
 
 describe("PATCH /api/invoices/:id", () => {
-  it("marks an invoice paid", async () => {
+  it("marks an invoice paid and stamps paidAt", async () => {
     const { inv } = await makeInvoice();
     const res = await invoiceRoute.PATCH(jsonRequest(`/api/invoices/${inv._id}`, "PATCH", { status: "paid" }), ctx({ id: String(inv._id) }));
     const { invoice } = await res.json();
     expect(invoice.status).toBe("paid");
-    expect((await models.Invoice.findById(inv._id).lean())?.status).toBe("paid");
+    expect(invoice.paidAt).toBeTruthy();
+    const fresh = await models.Invoice.findById(inv._id).lean();
+    expect(fresh?.status).toBe("paid");
+    expect(fresh?.paidAt).toBeTruthy();
+  });
+
+  it("clears paidAt when status leaves paid", async () => {
+    const { inv } = await makeInvoice({ status: "paid", paidAt: new Date() });
+    const res = await invoiceRoute.PATCH(jsonRequest(`/api/invoices/${inv._id}`, "PATCH", { status: "sent" }), ctx({ id: String(inv._id) }));
+    const { invoice } = await res.json();
+    expect(invoice.status).toBe("sent");
+    expect(invoice.paidAt).toBeNull();
   });
 
   it("remind is a no-op that returns reminded:true without changing status", async () => {

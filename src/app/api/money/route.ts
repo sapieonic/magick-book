@@ -15,8 +15,8 @@ export const GET = route(async () => {
   const nameMap = new Map(accounts.map((a) => [String(a._id), a.name]));
 
   const [invoices, expenses] = await Promise.all([
-    Invoice.find({ accountId: { $in: accIds } }).sort({ issuedAt: -1 }).lean<IInvoice[]>(),
-    Expense.find({ accountId: { $in: accIds } }).sort({ date: -1 }).lean<IExpense[]>(),
+    Invoice.find({ accountId: { $in: accIds }, deletedAt: null }).sort({ issuedAt: -1 }).lean<IInvoice[]>(),
+    Expense.find({ accountId: { $in: accIds }, deletedAt: null }).sort({ date: -1 }).lean<IExpense[]>(),
   ]);
 
   const billed = invoices.filter((i) => i.status !== "draft").reduce((s, i) => s + i.amount, 0);

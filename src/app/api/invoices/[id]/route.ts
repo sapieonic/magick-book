@@ -29,7 +29,12 @@ export const PATCH = route(async (req: NextRequest, ctx: Ctx) => {
   }
 
   if (b.status && INVOICE_STATUSES.includes(b.status)) {
-    await Invoice.updateOne({ _id: inv._id }, { status: b.status });
+    const patch: { status: typeof b.status; paidAt?: Date | null } = { status: b.status };
+    // Stamp paidAt on the transition into paid; clear it if status leaves paid.
+    if (b.status === "paid" && inv.status !== "paid") patch.paidAt = new Date();
+    else if (b.status !== "paid" && inv.status === "paid") patch.paidAt = null;
+
+    await Invoice.updateOne({ _id: inv._id }, patch);
     await audit({
       entity: "invoice", entityId: inv._id, entityLabel: `Invoice #${inv.number}`, action: "update", actor: user,
       changes: [{ field: "status", from: inv.status, to: b.status }], accountId: inv.accountId,

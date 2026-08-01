@@ -114,13 +114,15 @@ describe("serializeAccount", () => {
 });
 
 describe("serializeInvoice", () => {
-  it("hasFile reflects fileKey presence and dueAt may be null", () => {
-    const withFile = { _id: oid(), number: 1001, accountId: oid(), issuedAt: DATE, dueAt: DATE, amount: 5000, status: "sent", fileKey: "k", fileName: "f.pdf" } as unknown as IInvoice;
+  it("hasFile reflects fileKey presence and dueAt/paidAt may be null", () => {
+    const withFile = { _id: oid(), number: 1001, accountId: oid(), issuedAt: DATE, dueAt: DATE, paidAt: DATE, amount: 5000, status: "paid", fileKey: "k", fileName: "f.pdf" } as unknown as IInvoice;
     const withoutFile = { _id: oid(), number: 1002, accountId: oid(), issuedAt: DATE, amount: 100, status: "draft" } as unknown as IInvoice;
     expect(serializeInvoice(withFile, "Acct").hasFile).toBe(true);
     expect(serializeInvoice(withFile).fileName).toBe("f.pdf");
+    expect(serializeInvoice(withFile).paidAt).toBe(ISO);
     expect(serializeInvoice(withoutFile).hasFile).toBe(false);
     expect(serializeInvoice(withoutFile).dueAt).toBeNull();
+    expect(serializeInvoice(withoutFile).paidAt).toBeNull();
     expect(serializeInvoice(withoutFile).fileName).toBeNull();
     expect(serializeInvoice(withFile, "Acct").accountName).toBe("Acct");
   });
