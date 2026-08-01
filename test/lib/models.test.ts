@@ -43,7 +43,7 @@ describe("model validation", () => {
 });
 
 describe("schema defaults", () => {
-  it("Lead defaults stage=new, source=Website, estValue=0, tags=[]", async () => {
+  it("Lead defaults stage=new, source=Website, category=unclassified, estValue=0, tags=[]", async () => {
     const lead = await models.Lead.create({
       workspaceId: new Types.ObjectId(),
       ownerId: new Types.ObjectId(),
@@ -51,6 +51,7 @@ describe("schema defaults", () => {
     });
     expect(lead.stage).toBe("new");
     expect(lead.source).toBe("Website");
+    expect(lead.category).toBe("unclassified");
     expect(lead.estValue).toBe(0);
     expect(lead.tags).toEqual([]);
     expect(lead.order).toBe(0);

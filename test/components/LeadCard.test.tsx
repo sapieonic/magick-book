@@ -14,6 +14,7 @@ function lead(over: Partial<LeadDTO>): LeadDTO {
     email: "",
     source: "Website",
     stage: "new",
+    category: "unclassified",
     estValue: 0,
     notes: "",
     tags: [],
@@ -69,7 +70,17 @@ describe("LeadCard", () => {
     expect(screen.queryByTitle(/comment/)).not.toBeInTheDocument();
   });
 
-  it("omits the value/tags row when there is nothing to show", () => {
+  it("shows a classified category badge on the board", () => {
+    render(<LeadCard lead={lead({ category: "finance", estValue: 0, tags: [] })} />);
+    expect(screen.getByText("Finance")).toBeInTheDocument();
+  });
+
+  it("hides the Unclassified badge on dense board cards", () => {
+    render(<LeadCard lead={lead({ category: "unclassified", estValue: 0, tags: [] })} />);
+    expect(screen.queryByText("Unclassified")).not.toBeInTheDocument();
+  });
+
+  it("omits the value chip when estValue is zero", () => {
     const { container } = render(<LeadCard lead={lead({ estValue: 0, tags: [], convertedAccountId: null })} />);
     expect(container.textContent).not.toContain("₹");
   });

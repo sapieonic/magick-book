@@ -36,6 +36,7 @@ describe("serializeLead", () => {
       email: "p@l.com",
       source: "Referral",
       stage: "qualified",
+      category: "finance",
       estValue: 50000,
       notes: "hot",
       tags: ["hot"],
@@ -54,6 +55,7 @@ describe("serializeLead", () => {
     expect(dto.lastActivityAt).toBe(ISO);
     expect(dto.createdAt).toBe(ISO);
     expect(dto.stage).toBe("qualified");
+    expect(dto.category).toBe("finance");
     expect(dto.tags).toEqual(["hot"]);
     expect(dto.commentCount).toBe(4);
   });
@@ -63,6 +65,7 @@ describe("serializeLead", () => {
     const dto = serializeLead(lead);
     expect(dto.company).toBe("");
     expect(dto.estValue).toBe(0);
+    expect(dto.category).toBe("unclassified");
     expect(dto.tags).toEqual([]);
     expect(dto.ownerName).toBe("");
     expect(dto.convertedAccountId).toBeNull();

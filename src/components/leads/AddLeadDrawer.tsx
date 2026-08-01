@@ -4,11 +4,28 @@ import { Drawer } from "@/components/ui/Overlay";
 import { Button } from "@/components/ui/Button";
 import { Input, Textarea, Select, Field } from "@/components/ui/Field";
 import { useToast } from "@/components/ui/Toast";
-import { api } from "@/lib/client";
-import { LEAD_SOURCES, PIPELINE_STAGES, STAGE_META } from "@/lib/constants";
+import { api, useApi } from "@/lib/client";
+import {
+  LEAD_SOURCES,
+  PIPELINE_STAGES,
+  STAGE_META,
+  DEFAULT_LEAD_CATEGORIES,
+  DEFAULT_LEAD_CATEGORY,
+  formatCategoryLabel,
+} from "@/lib/constants";
 import type { LeadDTO } from "@/lib/types";
 
-const empty = { name: "", company: "", phone: "", email: "", source: "Website", stage: "new", estValue: "", notes: "" };
+const empty = {
+  name: "",
+  company: "",
+  phone: "",
+  email: "",
+  source: "Website",
+  stage: "new",
+  category: DEFAULT_LEAD_CATEGORY,
+  estValue: "",
+  notes: "",
+};
 
 function fromLead(lead: LeadDTO) {
   return {
@@ -18,6 +35,7 @@ function fromLead(lead: LeadDTO) {
     email: lead.email,
     source: lead.source,
     stage: lead.stage,
+    category: lead.category || DEFAULT_LEAD_CATEGORY,
     estValue: lead.estValue ? String(lead.estValue) : "",
     notes: lead.notes,
   };
@@ -40,6 +58,12 @@ export function AddLeadDrawer({
 }) {
   const { toast } = useToast();
   const isEdit = !!lead;
+  const { data: catData } = useApi<{ categories: string[] }>("/api/workspace/categories");
+  const categories = catData?.categories?.length ? catData.categories : [...DEFAULT_LEAD_CATEGORIES];
+  // Keep a removed-but-still-assigned category selectable while editing.
+  const categoryOptions =
+    lead?.category && !categories.includes(lead.category) ? [...categories, lead.category] : categories;
+
   const [form, setForm] = useState(() => (lead ? fromLead(lead) : { ...empty, stage: defaultStage ?? "new" }));
   const [busy, setBusy] = useState(false);
   const [errors, setErrors] = useState<{ name?: string; phone?: string; email?: string; estValue?: string }>({});
@@ -149,16 +173,26 @@ export function AddLeadDrawer({
               ))}
             </Select>
           </Field>
-          <Field label="Stage">
-            <Select value={form.stage} onChange={(e) => set("stage", e.target.value)}>
-              {PIPELINE_STAGES.map((s) => (
-                <option key={s} value={s}>
-                  {STAGE_META[s].label}
+          <Field label="Category">
+            <Select value={form.category} onChange={(e) => set("category", e.target.value)}>
+              {categoryOptions.map((c) => (
+                <option key={c} value={c}>
+                  {formatCategoryLabel(c)}
                 </option>
               ))}
             </Select>
           </Field>
         </div>
+
+        <Field label="Stage">
+          <Select value={form.stage} onChange={(e) => set("stage", e.target.value)}>
+            {PIPELINE_STAGES.map((s) => (
+              <option key={s} value={s}>
+                {STAGE_META[s].label}
+              </option>
+            ))}
+          </Select>
+        </Field>
 
         <Field label="Est. value" hint="optional" error={errors.estValue}>
           <div className="relative">

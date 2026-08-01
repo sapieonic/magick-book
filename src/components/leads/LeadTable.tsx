@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Time } from "@/components/ui/Time";
 import { SortHeader, useSort, sortRows, usePagination, Pagination } from "@/components/ui/Table";
+import { CategoryBadge } from "@/components/leads/CategoryBadge";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { useToast } from "@/components/ui/Toast";
 import { api } from "@/lib/client";
@@ -30,6 +31,7 @@ export function LeadTable({ leads, onChanged }: { leads: LeadDTO[]; onChanged?: 
         company: (l) => l.company,
         // Sort stages along the pipeline (New → Won), not alphabetically by label.
         stage: (l) => (PIPELINE_STAGES as readonly string[]).indexOf(l.stage),
+        category: (l) => l.category || "",
         owner: (l) => l.ownerName,
         estValue: (l) => l.estValue,
         activity: (l) => {
@@ -136,6 +138,7 @@ export function LeadTable({ leads, onChanged }: { leads: LeadDTO[]; onChanged?: 
               </th>
               <th className="px-5 py-3"><SortHeader label="Lead" sortKey="name" sort={sort} onToggle={toggle} /></th>
               <th className="px-5 py-3"><SortHeader label="Company" sortKey="company" sort={sort} onToggle={toggle} /></th>
+              <th className="px-5 py-3"><SortHeader label="Category" sortKey="category" sort={sort} onToggle={toggle} /></th>
               <th className="px-5 py-3"><SortHeader label="Stage" sortKey="stage" sort={sort} onToggle={toggle} /></th>
               <th className="px-5 py-3"><SortHeader label="Owner" sortKey="owner" sort={sort} onToggle={toggle} /></th>
               <th className="px-5 py-3 text-right"><SortHeader label="Est. value" sortKey="estValue" sort={sort} onToggle={toggle} align="right" /></th>
@@ -165,6 +168,9 @@ export function LeadTable({ leads, onChanged }: { leads: LeadDTO[]; onChanged?: 
                   </td>
                   <td className="px-5 py-3.5 text-[14px] font-bold text-ink group-hover:text-violet-700 dark:group-hover:text-violet-400 transition-colors">{l.name}</td>
                   <td className="px-5 py-3.5 text-[13px] font-medium text-muted">{l.company || "—"}</td>
+                  <td className="px-5 py-3.5">
+                    <CategoryBadge category={l.category} />
+                  </td>
                   <td className="px-5 py-3.5">
                     <Badge tint={meta.tint} dot={meta.dot}>{meta.label}</Badge>
                   </td>

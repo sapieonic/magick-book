@@ -2,6 +2,8 @@ import mongoose, { Schema, model, models, type Types } from "mongoose";
 import {
   LEAD_STAGES,
   LEAD_SOURCES,
+  DEFAULT_LEAD_CATEGORIES,
+  DEFAULT_LEAD_CATEGORY,
   ACCOUNT_STATUSES,
   INVOICE_STATUSES,
   EXPENSE_CATEGORIES,
@@ -33,6 +35,8 @@ export interface IWorkspace {
   _id: Types.ObjectId;
   name: string;
   businessTypes: string[];
+  /** Admin-managed lead classification list (includes "unclassified"). */
+  leadCategories: string[];
   ownerId: Types.ObjectId;
   domain?: string; // email domain that auto-joins this workspace (e.g. "magickvoice.com")
   createdAt: Date;
@@ -64,6 +68,8 @@ export interface ILead extends SoftDelete {
   email?: string;
   source: string;
   stage: (typeof LEAD_STAGES)[number];
+  /** Workspace taxonomy value; defaults to "unclassified". */
+  category: string;
   estValue: number;
   notes?: string;
   tags: string[];
@@ -236,6 +242,7 @@ const WorkspaceSchema = new Schema<IWorkspace>(
   {
     name: { type: String, required: true },
     businessTypes: { type: [String], default: [] },
+    leadCategories: { type: [String], default: () => [...DEFAULT_LEAD_CATEGORIES] },
     ownerId: { type: Schema.Types.ObjectId, ref: "User" },
     domain: { type: String, index: true },
   },
@@ -268,6 +275,7 @@ const LeadSchema = new Schema<ILead>(
     email: String,
     source: { type: String, enum: LEAD_SOURCES, default: "Website" },
     stage: { type: String, enum: LEAD_STAGES, default: "new", index: true },
+    category: { type: String, default: DEFAULT_LEAD_CATEGORY, index: true },
     estValue: { type: Number, default: 0 },
     notes: String,
     tags: { type: [String], default: [] },

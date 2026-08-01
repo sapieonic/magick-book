@@ -8,13 +8,14 @@ import { LeadBoard } from "@/components/leads/LeadBoard";
 import { LeadTable } from "@/components/leads/LeadTable";
 import { OwnerFilter } from "@/components/leads/OwnerFilter";
 import { AddLeadDrawer } from "@/components/leads/AddLeadDrawer";
+import { CategoryBadge } from "@/components/leads/CategoryBadge";
 import { Avatar } from "@/components/ui/Avatar";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card, PageLoader, ErrorState, EmptyState } from "@/components/ui/Misc";
 import { useToast } from "@/components/ui/Toast";
 import { api, useApi } from "@/lib/client";
-import { STAGE_META } from "@/lib/constants";
+import { STAGE_META, formatCategoryLabel, DEFAULT_LEAD_CATEGORIES } from "@/lib/constants";
 import { cn, formatINRCompact } from "@/lib/utils";
 import { deriveOwners, filterLeadsByOwners, parseOwnerParam, serializeOwnerParam } from "@/lib/leadFilters";
 import type { LeadDTO } from "@/lib/types";
@@ -28,12 +29,20 @@ function LeadsInner() {
   const initialQ = params.get("q") ?? "";
   const [view, setView] = useState<"board" | "table" | "lost" | "archived">("board");
   const [q, setQ] = useState(initialQ);
+  const [category, setCategory] = useState(() => params.get("category") ?? "");
   // Selected owner ids to filter by — Jira-style board filter, seeded from the URL so it's shareable.
   const [ownerIds, setOwnerIds] = useState<string[]>(() => parseOwnerParam(params.get("owner")));
   const [adding, setAdding] = useState(false);
   const [presetStage, setPresetStage] = useState<PipelineStage | undefined>();
 
-  const url = `/api/leads${q.trim() ? `?q=${encodeURIComponent(q.trim())}` : ""}`;
+  const categoriesApi = useApi<{ categories: string[] }>("/api/workspace/categories");
+  const categoryOptions = categoriesApi.data?.categories ?? [];
+
+  // Server-side filters: search + category. Owner filter stays client-side (see below).
+  const apiQs = new URLSearchParams();
+  if (q.trim()) apiQs.set("q", q.trim());
+  if (category.trim()) apiQs.set("category", category.trim());
+  const url = `/api/leads${apiQs.size ? `?${apiQs.toString()}` : ""}`;
   const { data, loading, error, refresh } = useApi<{ leads: LeadDTO[] }>(url);
   const leads = data?.leads ?? [];
 
@@ -45,17 +54,17 @@ function LeadsInner() {
   // pool of people you can filter by (derived from the board, like Jira's avatar row).
   const owners = useMemo(() => deriveOwners(leads), [leads]);
 
-  // Reflect both the search and owner filter in the URL so a filtered board is
+  // Reflect search, owner, and category filters in the URL so a filtered board is
   // shareable/bookmarkable. Built from live state (not stale params) and guarded so
-  // a clean visit issues no redundant navigation. `replace` keeps history clean, and
-  // since the fetch keys only off `q`, an owner change never triggers a refetch.
+  // a clean visit issues no redundant navigation. `replace` keeps history clean.
   useEffect(() => {
     const next = new URLSearchParams();
     if (q.trim()) next.set("q", q.trim());
     if (ownerIds.length) next.set("owner", serializeOwnerParam(ownerIds));
+    if (category.trim()) next.set("category", category.trim());
     const qs = next.toString();
     if (qs !== params.toString()) router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
-  }, [q, ownerIds, params, pathname, router]);
+  }, [q, ownerIds, category, params, pathname, router]);
 
   // Owner filter applies to whichever list a view renders (active/lost here, archived below).
   const visibleLeads = useMemo(() => filterLeadsByOwners(leads, ownerIds), [leads, ownerIds]);
@@ -70,19 +79,27 @@ function LeadsInner() {
   }, [visibleLeads]);
 
   const shownLeads = view === "lost" ? lostLeads : activeLeads;
-  const filtering = q.trim().length > 0 || ownerIds.length > 0;
+  const filtering = q.trim().length > 0 || ownerIds.length > 0 || category.trim().length > 0;
   // Show the control whenever there's more than one owner to choose from, OR a filter is
   // already active — so a stale/deep-linked selection always has a visible way to clear.
   const showOwnerFilter = owners.length > 1 || ownerIds.length > 0;
   const clearFilters = () => {
     setQ("");
     setOwnerIds([]);
+    setCategory("");
   };
 
   function openAdd(stage?: PipelineStage) {
     setPresetStage(stage);
     setAdding(true);
   }
+
+  const categorySelectOptions =
+    category && !categoryOptions.includes(category)
+      ? [...categoryOptions, category]
+      : categoryOptions.length
+        ? categoryOptions
+        : [...DEFAULT_LEAD_CATEGORIES];
 
   return (
     <>
@@ -132,10 +149,38 @@ function LeadsInner() {
           />
         </div>
 
+        <select
+          aria-label="Filter by category"
+          value={category}
+          onChange={(e) => setCategory(e.target.value)}
+          className="hidden h-9 rounded-[var(--radius-md)] border border-line bg-canvas/60 px-2.5 text-[13px] font-medium text-ink sm:block dark:bg-canvas/40"
+        >
+          <option value="">All categories</option>
+          {categorySelectOptions.map((c) => (
+            <option key={c} value={c}>
+              {formatCategoryLabel(c)}
+            </option>
+          ))}
+        </select>
+
         <Button variant="primary" onClick={() => openAdd()} className="ml-auto sm:ml-0 shadow-sm shadow-violet-500/20">
           <Plus className="size-4" /> New lead
         </Button>
       </PageHeader>
+
+      {category && (
+        <div className="flex items-center gap-2 px-6 pt-3 lg:px-8">
+          <span className="text-[12.5px] text-muted">Showing</span>
+          <CategoryBadge category={category} />
+          <button
+            type="button"
+            onClick={() => setCategory("")}
+            className="text-[12.5px] font-semibold text-violet-700 hover:underline"
+          >
+            Clear category
+          </button>
+        </div>
+      )}
 
       {/* Insights Summary Bar */}
       <div className="px-6 lg:px-8 mt-5">
@@ -180,7 +225,7 @@ function LeadsInner() {
               <EmptyState
                 icon={<Ban className="size-6" />}
                 title={filtering ? "No lost leads match those filters" : "No lost leads"}
-                description={filtering ? "Try adjusting your search or owner filter." : "Leads you mark as lost will be archived here."}
+                description={filtering ? "Try adjusting your search, owner, or category filter." : "Leads you mark as lost will be archived here."}
                 action={filtering && <Button variant="secondary" onClick={clearFilters}><X className="size-4" /> Clear filters</Button>}
               />
             </div>
@@ -192,7 +237,7 @@ function LeadsInner() {
             <EmptyState
               icon={<LayoutGrid className="size-6" />}
               title={filtering ? "No leads match those filters" : "No leads yet"}
-              description={filtering ? "Try adjusting your search or owner filter." : "Add your first lead and start working the pipeline."}
+              description={filtering ? "Try adjusting your search, owner, or category filter." : "Add your first lead and start working the pipeline."}
               action={
                 filtering ? (
                   <Button variant="secondary" onClick={clearFilters}><X className="size-4" /> Clear filters</Button>
@@ -247,7 +292,7 @@ function ArchivedLeads({
         <EmptyState
           icon={<Archive className="size-6" />}
           title={filtering ? "No archived leads match those filters" : "Nothing archived"}
-          description={filtering ? "Try adjusting your search or owner filter." : "Leads you archive will show up here and can be restored."}
+          description={filtering ? "Try adjusting your search, owner, or category filter." : "Leads you archive will show up here and can be restored."}
           action={filtering && <Button variant="secondary" onClick={onClearFilters}><X className="size-4" /> Clear filters</Button>}
         />
       </div>
@@ -263,6 +308,7 @@ function ArchivedLeads({
               <tr className="border-b border-line bg-canvas/60 text-left text-[11.5px] font-semibold uppercase tracking-wide text-muted">
                 <th className="px-5 py-3">Lead</th>
                 <th className="px-5 py-3">Company</th>
+                <th className="px-5 py-3">Category</th>
                 <th className="px-5 py-3">Stage</th>
                 <th className="px-5 py-3">Owner</th>
                 <th className="px-5 py-3 text-right">Est. value</th>
@@ -276,6 +322,7 @@ function ArchivedLeads({
                   <tr key={l.id}>
                     <td className="px-5 py-3.5 text-[13.5px] font-semibold text-ink">{l.name}</td>
                     <td className="px-5 py-3.5 text-[13px] text-muted">{l.company || "—"}</td>
+                    <td className="px-5 py-3.5"><CategoryBadge category={l.category} /></td>
                     <td className="px-5 py-3.5"><Badge tint={meta.tint} dot={meta.dot}>{meta.label}</Badge></td>
                     <td className="px-5 py-3.5">
                       {l.ownerName ? (

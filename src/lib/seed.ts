@@ -1,6 +1,7 @@
 import { Types } from "mongoose";
 import { connectDBForSeed } from "./db-seed-helper";
 import { Workspace, User, Lead, Account, Contact, Invoice, Expense, Activity } from "./models";
+import { DEFAULT_LEAD_CATEGORIES } from "./constants";
 
 const DAY = 86400000;
 const HOUR = 3600000;
@@ -72,6 +73,7 @@ export async function seedDatabase({ force = false }: { force?: boolean } = {}):
     _id: wsId,
     name: "Acme & Co",
     businessTypes: ["Sales calls", "Collections"],
+    leadCategories: [...DEFAULT_LEAD_CATEGORIES],
     ownerId: riya._id,
     domain: "acme.in",
   });
@@ -254,6 +256,7 @@ export async function seedDatabase({ force = false }: { force?: boolean } = {}):
     email?: string;
     source?: string;
     stage: "new" | "contacted" | "qualified" | "proposal" | "won" | "lost";
+    category?: string;
     estValue?: number;
     tags?: string[];
     owner: Types.ObjectId;
@@ -273,6 +276,7 @@ export async function seedDatabase({ force = false }: { force?: boolean } = {}):
       email: opts.email,
       source: opts.source ?? "Website",
       stage: opts.stage,
+      category: opts.category ?? "unclassified",
       estValue: opts.estValue ?? 0,
       tags: opts.tags ?? [],
       order: opts.order,
@@ -291,6 +295,7 @@ export async function seedDatabase({ force = false }: { force?: boolean } = {}):
     email: "priya@lumen.in",
     source: "Website",
     stage: "qualified",
+    category: "finance",
     estValue: 120000,
     tags: ["hot"],
     owner: riya._id,
@@ -300,14 +305,14 @@ export async function seedDatabase({ force = false }: { force?: boolean } = {}):
     notes: "Budget confirmed on call. Ready for proposal.",
   });
 
-  await makeLead({ name: "Dev Mehta", company: "Nova Foods", phone: "+91 98200 55330", stage: "new", estValue: 80000, owner: neha._id, order: 0, createdDaysAgo: 2 });
-  const aishaLead = await makeLead({ name: "Aisha Khan", company: "Orbit Media", phone: "+91 99001 23456", stage: "contacted", tags: ["called"], owner: riya._id, order: 0, createdDaysAgo: 6, lastActivityMs: 1 * DAY });
-  await makeLead({ name: "Sam Toh", company: "Pine & Co", phone: "+91 90011 44556", stage: "contacted", estValue: 200000, owner: riya._id, order: 1, createdDaysAgo: 8 });
-  await makeLead({ name: "Leo Park", company: "Wavelength", email: "leo@wavelength.io", stage: "qualified", estValue: 90000, owner: karan._id, order: 1, createdDaysAgo: 7 });
-  const mayaLead = await makeLead({ name: "Maya Iyer", company: "Brightline", phone: "+91 99887 22110", stage: "proposal", estValue: 340000, owner: karan._id, order: 0, createdDaysAgo: 12, lastActivityMs: 2 * DAY, notes: "Proposal sent — following up." });
-  await makeLead({ name: "Acme Logistics", company: "Acme Logistics", stage: "won", estValue: 85000, owner: riya._id, order: 0, createdDaysAgo: 80, convertedAccountId: acme._id });
+  await makeLead({ name: "Dev Mehta", company: "Nova Foods", phone: "+91 98200 55330", stage: "new", category: "healthcare", estValue: 80000, owner: neha._id, order: 0, createdDaysAgo: 2 });
+  const aishaLead = await makeLead({ name: "Aisha Khan", company: "Orbit Media", phone: "+91 99001 23456", stage: "contacted", category: "collection", tags: ["called"], owner: riya._id, order: 0, createdDaysAgo: 6, lastActivityMs: 1 * DAY });
+  await makeLead({ name: "Sam Toh", company: "Pine & Co", phone: "+91 90011 44556", stage: "contacted", category: "insurance", estValue: 200000, owner: riya._id, order: 1, createdDaysAgo: 8 });
+  await makeLead({ name: "Leo Park", company: "Wavelength", email: "leo@wavelength.io", stage: "qualified", category: "automobile", estValue: 90000, owner: karan._id, order: 1, createdDaysAgo: 7 });
+  const mayaLead = await makeLead({ name: "Maya Iyer", company: "Brightline", phone: "+91 99887 22110", stage: "proposal", category: "finance", estValue: 340000, owner: karan._id, order: 0, createdDaysAgo: 12, lastActivityMs: 2 * DAY, notes: "Proposal sent — following up." });
+  await makeLead({ name: "Acme Logistics", company: "Acme Logistics", stage: "won", category: "automobile", estValue: 85000, owner: riya._id, order: 0, createdDaysAgo: 80, convertedAccountId: acme._id });
   // a few more "new" so the column count feels alive
-  await makeLead({ name: "Ravi Shah", company: "Delta Traders", phone: "+91 90090 12121", stage: "new", estValue: 60000, owner: riya._id, order: 1, createdDaysAgo: 1 });
+  await makeLead({ name: "Ravi Shah", company: "Delta Traders", phone: "+91 90090 12121", stage: "new", category: "collection", estValue: 60000, owner: riya._id, order: 1, createdDaysAgo: 1 });
   await makeLead({ name: " To be Triaged", company: "Kettle Foods", stage: "new", owner: neha._id, order: 2, createdDaysAgo: 1 });
 
   // ---- Activity timeline for the Priya lead (page 7) ------------------

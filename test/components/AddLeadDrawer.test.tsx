@@ -6,7 +6,14 @@ import userEvent from "@testing-library/user-event";
 // Mock the network layer rather than hitting real endpoints.
 const { post, patch } = vi.hoisted(() => ({ post: vi.fn(), patch: vi.fn() }));
 vi.mock("@/lib/client", () => ({
-  api: { post, patch, get: vi.fn(), delete: vi.fn() },
+  api: { post, patch, get: vi.fn(), delete: vi.fn(), put: vi.fn() },
+  useApi: () => ({
+    data: { categories: ["unclassified", "automobile", "finance"] },
+    loading: false,
+    error: null,
+    refresh: vi.fn(),
+    setData: vi.fn(),
+  }),
   ApiError: class extends Error {},
 }));
 
@@ -16,7 +23,7 @@ import type { LeadDTO } from "@/lib/types";
 
 const created: LeadDTO = {
   id: "new1", name: "Priya", company: "Lumen", title: "", phone: "", email: "",
-  source: "Website", stage: "new", estValue: 5000, notes: "", tags: [], lostReason: "",
+  source: "Website", stage: "new", category: "unclassified", estValue: 5000, notes: "", tags: [], lostReason: "",
   ownerId: "o", ownerName: "", convertedAccountId: null, order: 0, commentCount: 0,
   lastActivityAt: new Date().toISOString(), createdAt: new Date().toISOString(),
   deletedAt: null,
