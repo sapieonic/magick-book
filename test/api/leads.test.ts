@@ -197,6 +197,16 @@ describe("PATCH /api/leads/:id/stage", () => {
     const res = await stageRoute.PATCH(jsonRequest(`/api/leads/${lead._id}/stage`, "PATCH", { stage: "bogus" }), ctx({ id: String(lead._id) }));
     expect(res.status).toBe(400);
   });
+
+  it("moves a lead into the parked holding lane", async () => {
+    const lead = await makeLead(admin, { stage: "contacted" });
+    const res = await stageRoute.PATCH(jsonRequest(`/api/leads/${lead._id}/stage`, "PATCH", { stage: "parked" }), ctx({ id: String(lead._id) }));
+    const { lead: updated } = await res.json();
+    expect(updated.stage).toBe("parked");
+    const acts = await models.Activity.find({ leadId: lead._id, kind: "stage_change" }).lean();
+    expect(acts).toHaveLength(1);
+    expect(acts[0].title).toBe("Parked");
+  });
 });
 
 describe("POST /api/leads/:id/convert", () => {

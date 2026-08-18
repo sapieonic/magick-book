@@ -11,7 +11,7 @@ import { CategoryBadge } from "@/components/leads/CategoryBadge";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { useToast } from "@/components/ui/Toast";
 import { api } from "@/lib/client";
-import { STAGE_META, PIPELINE_STAGES } from "@/lib/constants";
+import { STAGE_META, BOARD_STAGES } from "@/lib/constants";
 import { formatINRCompact } from "@/lib/utils";
 import type { LeadDTO } from "@/lib/types";
 
@@ -29,8 +29,11 @@ export function LeadTable({ leads, onChanged }: { leads: LeadDTO[]; onChanged?: 
       sortRows(leads, sort, {
         name: (l) => l.name,
         company: (l) => l.company,
-        // Sort stages along the pipeline (New → Won), not alphabetically by label.
-        stage: (l) => (PIPELINE_STAGES as readonly string[]).indexOf(l.stage),
+        // Sort stages along the board (New → Won → Parked), not alphabetically by label.
+        stage: (l) => {
+          const i = (BOARD_STAGES as readonly string[]).indexOf(l.stage);
+          return i >= 0 ? i : BOARD_STAGES.length;
+        },
         category: (l) => l.category || "",
         owner: (l) => l.ownerName,
         estValue: (l) => l.estValue,

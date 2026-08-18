@@ -62,8 +62,8 @@ export function Card({ children, className, premium = false, style }: { children
       className={cn(
         "rounded-[var(--radius-lg)] border bg-paper transition-all duration-300",
         premium
-          ? "border-line/80 shadow-[0_8px_30px_rgba(0,0,0,0.04)] backdrop-blur-sm hover:border-violet-400/40 hover:shadow-[0_8px_30px_rgba(0,0,0,0.08)] bg-gradient-to-br from-paper to-violet-50/20"
-          : "border-line shadow-[var(--shadow-card)]",
+          ? "border-line/80 shadow-[0_8px_30px_rgba(0,0,0,0.04)] backdrop-blur-sm hover:border-violet-400/40 hover:shadow-[0_8px_30px_rgba(0,0,0,0.08)] bg-gradient-to-br from-paper to-violet-50/20 dark:shadow-[0_8px_30px_rgba(0,0,0,0.35)]"
+          : "border-line shadow-[var(--shadow-card)] dark:border-white/10",
         className
       )}
       style={style}

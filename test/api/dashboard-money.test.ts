@@ -53,15 +53,18 @@ describe("GET /api/dashboard", () => {
       { workspaceId, ownerId: admin._id, name: "L3", stage: "qualified", estValue: 3000 },
       { workspaceId, ownerId: admin._id, name: "L4", stage: "won", estValue: 5000, lastActivityAt: new Date() },
       { workspaceId, ownerId: admin._id, name: "L5", stage: "lost", estValue: 100 },
+      { workspaceId, ownerId: admin._id, name: "L6", stage: "parked", estValue: 9999 },
     ]);
     await models.Account.create({ workspaceId, ownerId: admin._id, name: "A1", status: "active" });
     await models.Account.create({ workspaceId, ownerId: admin._id, name: "A2", status: "churned" });
 
     const data = await (await (dashboardRoute.GET as any)(jsonRequest("/api/dashboard", "GET"))).json();
-    expect(data.openLeads).toBe(3); // new + 2 qualified (won/lost excluded)
+    expect(data.openLeads).toBe(3); // new + 2 qualified (won/lost/parked excluded)
     expect(data.qualified).toBe(2);
     expect(data.wonThisMonth).toBe(1);
     expect(data.activeAccounts).toBe(1);
+    expect(data.pipeline.map((p: { stage: string }) => p.stage)).toEqual(["new", "contacted", "qualified", "proposal", "won"]);
+    expect(data.pipeline.find((p: { stage: string }) => p.stage === "parked")).toBeUndefined();
 
     const qualifiedBucket = data.pipeline.find((p: { stage: string }) => p.stage === "qualified");
     expect(qualifiedBucket.count).toBe(2);

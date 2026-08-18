@@ -38,19 +38,20 @@ export function LeadCard({ lead, dragging }: { lead: LeadDTO; dragging?: boolean
     <div
       style={tierStyle}
       className={cn(
-        "group relative rounded-[var(--radius-lg)] border border-line bg-paper/95 p-4 shadow-sm transition-all duration-200 dark:bg-canvas/40 dark:backdrop-blur-md",
+        "group relative rounded-[var(--radius-lg)] border border-line bg-paper p-4 shadow-[var(--shadow-card)] transition-all duration-200",
+        "dark:border-white/10 dark:shadow-[0_10px_28px_rgba(0,0,0,0.45),inset_0_1px_0_rgba(255,255,255,0.07)]",
         dragging
           ? "rotate-[2deg] scale-[1.03] shadow-[0_12px_24px_rgba(0,0,0,0.15)] ring-2 ring-violet-400 z-50 cursor-grabbing"
           : tier >= 0
             ? "hover:-translate-y-1 hover:shadow-md hover:shadow-[var(--tier-shadow)] hover:ring-1 hover:ring-[var(--tier)]"
-            : "hover:-translate-y-1 hover:border-line-strong hover:shadow-md",
+            : "hover:-translate-y-1 hover:border-line-strong hover:shadow-md dark:hover:border-white/20",
       )}
     >
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 pr-12">
           <p className="truncate text-[14.5px] font-bold leading-tight text-ink">{lead.name}</p>
           {(lead.title || lead.company) && (
-            <p className="mt-1 truncate text-[12.5px] font-medium text-muted">{[lead.title, lead.company].filter(Boolean).join(" · ")}</p>
+            <p className="mt-1 truncate text-[12.5px] font-medium text-ink-soft">{[lead.title, lead.company].filter(Boolean).join(" · ")}</p>
           )}
         </div>
         {lead.ownerName && (
@@ -93,7 +94,7 @@ export function LeadCard({ lead, dragging }: { lead: LeadDTO; dragging?: boolean
       )}
 
       {showFooter && (
-        <div className="mt-3 flex items-center gap-3 border-t border-dashed border-line pt-2.5 text-[11px] text-faint">
+        <div className="mt-3 flex items-center gap-3 border-t border-dashed border-line pt-2.5 text-[11px] text-muted">
           {lead.commentCount > 0 && (
             <span
               className="inline-flex items-center gap-1 font-semibold text-muted"
@@ -122,10 +123,10 @@ export function LeadCard({ lead, dragging }: { lead: LeadDTO; dragging?: boolean
 
       {/* Quick Actions (Hover) */}
       <div className="absolute top-3 right-3 flex items-center gap-1 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
-        <button onClick={(e) => { e.stopPropagation(); if (lead.email) window.location.href = `mailto:${lead.email}` }} className="rounded-full bg-paper/90 p-1.5 text-muted shadow-sm ring-1 ring-line hover:text-violet-600 backdrop-blur-sm" title="Email">
+        <button onClick={(e) => { e.stopPropagation(); if (lead.email) window.location.href = `mailto:${lead.email}` }} className="rounded-full bg-paper p-1.5 text-muted shadow-sm ring-1 ring-line hover:text-violet-600 dark:ring-white/10" title="Email">
           <Mail className="size-3.5" />
         </button>
-        <button onClick={(e) => { e.stopPropagation(); if (lead.phone) window.location.href = `tel:${lead.phone}` }} className="rounded-full bg-paper/90 p-1.5 text-muted shadow-sm ring-1 ring-line hover:text-violet-600 backdrop-blur-sm" title="Call">
+        <button onClick={(e) => { e.stopPropagation(); if (lead.phone) window.location.href = `tel:${lead.phone}` }} className="rounded-full bg-paper p-1.5 text-muted shadow-sm ring-1 ring-line hover:text-violet-600 dark:ring-white/10" title="Call">
           <Phone className="size-3.5" />
         </button>
       </div>

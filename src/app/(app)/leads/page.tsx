@@ -15,11 +15,11 @@ import { Button } from "@/components/ui/Button";
 import { Card, PageLoader, ErrorState, EmptyState } from "@/components/ui/Misc";
 import { useToast } from "@/components/ui/Toast";
 import { api, useApi } from "@/lib/client";
-import { STAGE_META, formatCategoryLabel, DEFAULT_LEAD_CATEGORIES } from "@/lib/constants";
+import { STAGE_META, formatCategoryLabel, DEFAULT_LEAD_CATEGORIES, isActiveLeadStage } from "@/lib/constants";
 import { cn, formatINRCompact } from "@/lib/utils";
 import { deriveOwners, filterLeadsByOwners, parseOwnerParam, serializeOwnerParam } from "@/lib/leadFilters";
 import type { LeadDTO } from "@/lib/types";
-import type { PipelineStage } from "@/lib/constants";
+import type { BoardStage } from "@/lib/constants";
 
 function LeadsInner() {
   const params = useSearchParams();
@@ -33,7 +33,7 @@ function LeadsInner() {
   // Selected owner ids to filter by — Jira-style board filter, seeded from the URL so it's shareable.
   const [ownerIds, setOwnerIds] = useState<string[]>(() => parseOwnerParam(params.get("owner")));
   const [adding, setAdding] = useState(false);
-  const [presetStage, setPresetStage] = useState<PipelineStage | undefined>();
+  const [presetStage, setPresetStage] = useState<BoardStage | undefined>();
 
   const categoriesApi = useApi<{ categories: string[] }>("/api/workspace/categories");
   const categoryOptions = categoriesApi.data?.categories ?? [];
@@ -70,7 +70,8 @@ function LeadsInner() {
   const visibleLeads = useMemo(() => filterLeadsByOwners(leads, ownerIds), [leads, ownerIds]);
   const visibleArchived = useMemo(() => filterLeadsByOwners(archivedLeads, ownerIds), [archivedLeads, ownerIds]);
 
-  // Lost leads live in their own view; the pipeline views (board/table) stay focused on active leads.
+  // Lost leads live in their own view. Parked leads stay on the board in a holding lane
+  // (excluded from Active / pipeline stats) so they can be collapsed out of the way.
   const { activeLeads, lostLeads } = useMemo(() => {
     const lost: LeadDTO[] = [];
     const active: LeadDTO[] = [];
@@ -89,7 +90,7 @@ function LeadsInner() {
     setCategory("");
   };
 
-  function openAdd(stage?: PipelineStage) {
+  function openAdd(stage?: BoardStage) {
     setPresetStage(stage);
     setAdding(true);
   }
@@ -184,17 +185,17 @@ function LeadsInner() {
 
       {/* Insights Summary Bar */}
       <div className="px-6 lg:px-8 mt-5">
-        <div className="flex flex-wrap items-center gap-4 rounded-[var(--radius-lg)] border border-line bg-paper/60 p-4 shadow-sm backdrop-blur-md dark:bg-canvas/30 dark:border-line-strong">
+        <div className="flex flex-wrap items-center gap-4 rounded-[var(--radius-lg)] border border-line bg-paper p-4 shadow-[var(--shadow-card)] dark:border-white/10">
           <div className="flex-1 min-w-[150px]">
             <p className="text-[12px] font-semibold tracking-wide uppercase text-muted mb-0.5">Total Pipeline</p>
             <p className="font-display text-2xl font-bold tracking-tight text-ink">
-              {formatINRCompact(activeLeads.reduce((acc, l) => acc + l.estValue, 0))}
+              {formatINRCompact(activeLeads.filter((l) => isActiveLeadStage(l.stage)).reduce((acc, l) => acc + l.estValue, 0))}
             </p>
           </div>
           <div className="h-10 w-px bg-line hidden sm:block"></div>
           <div className="flex-1 min-w-[120px]">
             <p className="text-[12px] font-semibold tracking-wide uppercase text-muted mb-0.5">Active Leads</p>
-            <p className="font-display text-2xl font-bold tracking-tight text-ink">{activeLeads.length}</p>
+            <p className="font-display text-2xl font-bold tracking-tight text-ink">{activeLeads.filter((l) => isActiveLeadStage(l.stage)).length}</p>
           </div>
           <div className="h-10 w-px bg-line hidden sm:block"></div>
           <div className="flex-1 min-w-[120px]">
@@ -203,6 +204,17 @@ function LeadsInner() {
               {activeLeads.filter((l) => l.stage === "won").length}
             </p>
           </div>
+          {activeLeads.some((l) => l.stage === "parked") && (
+            <>
+              <div className="h-10 w-px bg-line hidden sm:block"></div>
+              <div className="flex-1 min-w-[120px]">
+                <p className="text-[12px] font-semibold tracking-wide uppercase text-muted mb-0.5">Parked</p>
+                <p className="font-display text-2xl font-bold tracking-tight text-ink-soft">
+                  {activeLeads.filter((l) => l.stage === "parked").length}
+                </p>
+              </div>
+            </>
+          )}
         </div>
       </div>
 

@@ -106,7 +106,7 @@ function Kpi({ label, value, loading, accent, delay }: { label: string; value?: 
               {value ?? 0}
             </p>
             {/* Decorative mini sparkline */}
-            <div className="flex h-7 w-16 items-end gap-[2px] opacity-30 mix-blend-multiply group-hover:opacity-50 transition-opacity">
+            <div className="flex h-7 w-16 items-end gap-[2px] opacity-30 mix-blend-multiply group-hover:opacity-50 transition-opacity dark:mix-blend-screen dark:opacity-45">
               {bars.map((h, i) => (
                 <div key={i} className={cn("w-full rounded-t-sm", bgColors[accent])} style={{ height: `${h}%` }} />
               ))}
@@ -177,7 +177,7 @@ function RevenueCard({ data, loading }: { data: DashboardData | null; loading: b
   return (
     <Card premium className="relative flex h-full min-h-[320px] flex-col overflow-hidden p-6 animate-fade-up" style={{ animationDelay: '250ms' }}>
       {/* Decorative Mesh background */}
-      <div className="pointer-events-none absolute inset-0 opacity-[0.15] mix-blend-multiply">
+      <div className="pointer-events-none absolute inset-0 opacity-[0.15] mix-blend-multiply dark:mix-blend-screen dark:opacity-[0.22]">
         <div className="absolute -right-12 -top-12 h-48 w-48 rounded-full bg-brand-to blur-[40px]"></div>
         <div className="absolute -bottom-12 -left-12 h-48 w-48 rounded-full bg-brand-from blur-[40px]"></div>
       </div>

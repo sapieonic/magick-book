@@ -1,12 +1,33 @@
 // Shared domain enums + display metadata. Single source of truth used by both
 // the data layer and the UI so labels/colors never drift.
 
-export const LEAD_STAGES = ["new", "contacted", "qualified", "proposal", "won", "lost"] as const;
+export const LEAD_STAGES = ["new", "contacted", "qualified", "proposal", "won", "parked", "lost"] as const;
 export type LeadStage = (typeof LEAD_STAGES)[number];
 
-/** Stages shown as pipeline columns (lost is handled separately). */
+/** Sequential pipeline columns (lost is a separate view; parked is a holding lane). */
 export const PIPELINE_STAGES = ["new", "contacted", "qualified", "proposal", "won"] as const;
 export type PipelineStage = (typeof PIPELINE_STAGES)[number];
+
+/** Kanban columns, including the Parked holding lane after the sequential funnel. */
+export const BOARD_STAGES = ["new", "contacted", "qualified", "proposal", "won", "parked"] as const;
+export type BoardStage = (typeof BOARD_STAGES)[number];
+
+/** Board columns that collapse to a slim rail so the pipeline stays compact. */
+export const COLLAPSIBLE_STAGES = ["won", "parked"] as const;
+export type CollapsibleStage = (typeof COLLAPSIBLE_STAGES)[number];
+
+/** Stages still working the funnel (excludes parked holding + lost). */
+export function isActiveLeadStage(stage: string): boolean {
+  return stage !== "lost" && stage !== "parked";
+}
+
+export function isBoardStage(stage: string): stage is BoardStage {
+  return (BOARD_STAGES as readonly string[]).includes(stage);
+}
+
+export function isCollapsibleStage(stage: string): stage is CollapsibleStage {
+  return (COLLAPSIBLE_STAGES as readonly string[]).includes(stage);
+}
 
 export const STAGE_META: Record<LeadStage, { label: string; tint: string; dot: string }> = {
   new: { label: "New", tint: "bg-violet-50 text-violet-700 border-violet-200", dot: "#b0a3f8" },
@@ -14,6 +35,7 @@ export const STAGE_META: Record<LeadStage, { label: string; tint: string; dot: s
   qualified: { label: "Qualified", tint: "bg-violet-100 text-violet-700 border-violet-300", dot: "#6d5cf5" },
   proposal: { label: "Proposal", tint: "bg-warn-bg text-warn border-warn/30", dot: "#c8810a" },
   won: { label: "Won", tint: "bg-success-bg text-success border-success/30", dot: "#15a05a" },
+  parked: { label: "Parked", tint: "bg-line text-ink-soft border-line-strong", dot: "#c4a574" },
   lost: { label: "Lost", tint: "bg-danger-bg text-danger border-danger/30", dot: "#d6483f" },
 };
 

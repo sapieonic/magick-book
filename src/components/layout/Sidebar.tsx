@@ -32,7 +32,7 @@ export function Sidebar() {
   }
 
   return (
-    <aside className="sticky top-0 z-30 hidden h-screen w-[84px] shrink-0 flex-col items-center border-r border-line bg-paper/80 py-4 backdrop-blur-sm md:flex">
+    <aside className="sticky top-0 z-30 hidden h-screen w-[84px] shrink-0 flex-col items-center border-r border-line bg-paper/80 py-4 backdrop-blur-sm md:flex dark:border-white/10 dark:bg-paper">
       <Link href="/dashboard" className="brand-gradient flex size-11 items-center justify-center rounded-[var(--radius-md)] shadow-[var(--shadow-violet)]">
         <span className="font-display text-[22px] font-extrabold text-white">M</span>
       </Link>
@@ -128,7 +128,7 @@ export function PageHeader({
   className?: string;
 }) {
   return (
-    <header className={cn("sticky top-0 z-20 border-b border-line bg-canvas/85 backdrop-blur-md", className)}>
+    <header className={cn("sticky top-0 z-20 border-b border-line bg-canvas/85 backdrop-blur-md dark:border-white/10", className)}>
       <div className="flex h-[68px] items-center gap-3 px-4 sm:gap-4 sm:px-6 lg:px-8">{children}</div>
     </header>
   );
