@@ -18,6 +18,7 @@ import {
   Loader2,
   BellRing,
   Webhook,
+  CirclePause,
 } from "lucide-react";
 import { PageHeader } from "@/components/layout/Sidebar";
 import { useSession } from "@/components/layout/SessionContext";
@@ -39,7 +40,7 @@ import { useToast } from "@/components/ui/Toast";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { api, useApi } from "@/lib/client";
 import { PIPELINE_STAGES, STAGE_META } from "@/lib/constants";
-import type { PipelineStage } from "@/lib/constants";
+import type { BoardStage, PipelineStage } from "@/lib/constants";
 import { formatINR, cn } from "@/lib/utils";
 import type { LeadDTO, ActivityDTO, AuditLogDTO } from "@/lib/types";
 
@@ -72,7 +73,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
   const [webhookOpen, setWebhookOpen] = useState(false);
   const [rightTab, setRightTab] = useState<"activity" | "history">("activity");
   const [archiving, setArchiving] = useState(false);
-  const [pendingStage, setPendingStage] = useState<PipelineStage | null>(null);
+  const [pendingStage, setPendingStage] = useState<BoardStage | null>(null);
 
   if (loading) return <PageLoader label="Loading lead…" />;
   if (error || !data) return <div className="p-8"><ErrorState message={error ?? "Lead not found"} onRetry={refresh} /></div>;
@@ -81,7 +82,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
   const meta = STAGE_META[lead.stage];
   const converted = !!lead.convertedAccountId;
 
-  async function moveStage(stage: PipelineStage) {
+  async function moveStage(stage: BoardStage) {
     if (pendingStage || lead.stage === stage) return;
     setPendingStage(stage);
     try {
@@ -197,9 +198,22 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
               );
             })}
             <button
+              onClick={() => moveStage("parked")}
+              disabled={converted || lead.stage === "parked" || lead.stage === "lost" || pendingStage !== null}
+              className={cn(
+                "ml-auto inline-flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-[12.5px] font-semibold transition-all disabled:opacity-40",
+                lead.stage === "parked"
+                  ? "border-[#c4a574]/50 bg-line text-ink-soft"
+                  : "border-line-strong text-muted hover:border-[#c4a574]/50 hover:bg-line hover:text-ink-soft",
+              )}
+            >
+              {pendingStage === "parked" ? <Loader2 className="size-3.5 animate-spin" /> : <CirclePause className="size-3.5" />}
+              {lead.stage === "parked" ? "Parked" : "Park"}
+            </button>
+            <button
               onClick={() => setLostOpen(true)}
               disabled={converted || lead.stage === "lost" || pendingStage !== null}
-              className="ml-auto inline-flex items-center gap-1.5 rounded-full border border-line-strong px-3.5 py-1.5 text-[12.5px] font-semibold text-muted transition-all hover:border-danger/40 hover:bg-danger-bg hover:text-danger disabled:opacity-40"
+              className="inline-flex items-center gap-1.5 rounded-full border border-line-strong px-3.5 py-1.5 text-[12.5px] font-semibold text-muted transition-all hover:border-danger/40 hover:bg-danger-bg hover:text-danger disabled:opacity-40"
             >
               <Ban className="size-3.5" /> {lead.stage === "lost" ? "Lost" : "Mark lost"}
             </button>

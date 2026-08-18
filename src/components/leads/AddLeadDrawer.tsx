@@ -7,7 +7,7 @@ import { useToast } from "@/components/ui/Toast";
 import { api, useApi } from "@/lib/client";
 import {
   LEAD_SOURCES,
-  PIPELINE_STAGES,
+  BOARD_STAGES,
   STAGE_META,
   DEFAULT_LEAD_CATEGORIES,
   DEFAULT_LEAD_CATEGORY,
@@ -186,7 +186,7 @@ export function AddLeadDrawer({
 
         <Field label="Stage">
           <Select value={form.stage} onChange={(e) => set("stage", e.target.value)}>
-            {PIPELINE_STAGES.map((s) => (
+            {BOARD_STAGES.map((s) => (
               <option key={s} value={s}>
                 {STAGE_META[s].label}
               </option>

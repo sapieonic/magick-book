@@ -83,4 +83,9 @@ describe("AddLeadDrawer composer", () => {
     await user.click(screen.getByRole("button", { name: "Save lead" }));
     expect(await screen.findByText("Boom")).toBeInTheDocument();
   });
+
+  it("offers Parked as a stage option", () => {
+    renderDrawer();
+    expect(screen.getByRole("option", { name: "Parked" })).toBeInTheDocument();
+  });
 });

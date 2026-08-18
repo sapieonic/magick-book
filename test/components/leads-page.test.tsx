@@ -288,3 +288,18 @@ describe("Leads page — filter applies across views", () => {
     expect(screen.getByRole("button", { name: /Clear filters/i })).toBeInTheDocument();
   });
 });
+
+describe("Leads page — parked leads stay on the board but out of active stats", () => {
+  it("keeps parked leads on the board and counts them separately from Active Leads", () => {
+    setup({
+      leads: [
+        lead({ id: "1", ownerId: "a", stage: "new", estValue: 1000 }),
+        lead({ id: "2", ownerId: "a", stage: "parked", estValue: 5000, name: "On hold" }),
+      ],
+    });
+    renderPage();
+    expect(boardIds()).toEqual(["1", "2"]);
+    expect(screen.getByText("Active Leads").parentElement).toHaveTextContent("1");
+    expect(screen.getByText("Parked").parentElement).toHaveTextContent("1");
+  });
+});

@@ -94,49 +94,49 @@
   --color-violet-100: #2a2450;
   --color-violet-200: #39316b;
   --color-violet-300: #4f4699;
-  --color-violet-400: #8d78f3;
-  --color-violet-500: #6d5cf5;
-  --color-violet-600: #a08fff;
-  --color-violet-700: #c3b8fb;
-  --color-violet-800: #d8d0fc;
-  --color-violet-900: #ebe7fd;
+  --color-violet-400: #9b89ff;
+  --color-violet-500: #8b7cff;
+  --color-violet-600: #b4a6ff;
+  --color-violet-700: #d0c6ff;
+  --color-violet-800: #e2dcfb;
+  --color-violet-900: #f1edff;
 
-  /* Neutrals — warm charcoal paper */
-  --color-canvas: #15141a;
-  --color-paper: #1e1d24;
-  --color-ink: #f4f2ef;
-  --color-ink-soft: #c6c3cd;
-  --color-muted: #908d9a;
-  --color-faint: #67646f;
-  --color-line: #2a2832;
-  --color-line-strong: #393640;
+  /* Neutrals — lifted charcoal so paper cards read against the canvas */
+  --color-canvas: #0e0d14;
+  --color-paper: #22212c;
+  --color-ink: #f7f5f2;
+  --color-ink-soft: #d5d1db;
+  --color-muted: #b0acb8;
+  --color-faint: #8a8694;
+  --color-line: #353240;
+  --color-line-strong: #4c4858;
 
   /* Status — brightened foregrounds, deep tinted backgrounds */
-  --color-success: #34d27f;
+  --color-success: #3ee089;
   --color-success-bg: #15301f;
-  --color-warn: #e3a740;
+  --color-warn: #f0b24a;
   --color-warn-bg: #332810;
-  --color-danger: #f3756b;
+  --color-danger: #ff8a82;
   --color-danger-bg: #3a1d1b;
-  --color-info: #5aa0f0;
+  --color-info: #6aafff;
   --color-info-bg: #16273d;
 
   /* Lead value tiers — brightened accents, deep tinted backgrounds */
-  --color-tier0: #94a3b8;
+  --color-tier0: #a8b4c8;
   --color-tier0-bg: #21262f;
-  --color-tier1: #5aa0f0;
+  --color-tier1: #6aafff;
   --color-tier1-bg: #16273d;
-  --color-tier2: #a08fff;
+  --color-tier2: #b4a6ff;
   --color-tier2-bg: #2a2450;
-  --color-tier3: #e3a740;
+  --color-tier3: #f0b24a;
   --color-tier3-bg: #332810;
-  --color-tier4: #34d27f;
+  --color-tier4: #3ee089;
   --color-tier4-bg: #15301f;
 
   /* Shadows read as depth, so lean on near-black on the dark canvas */
-  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3), 0 4px 16px rgba(0, 0, 0, 0.35);
-  --shadow-pop: 0 8px 30px rgba(0, 0, 0, 0.55), 0 2px 8px rgba(0, 0, 0, 0.4);
-  --shadow-violet: 0 6px 20px rgba(109, 92, 245, 0.4);
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.45), 0 10px 28px rgba(0, 0, 0, 0.4);
+  --shadow-pop: 0 12px 36px rgba(0, 0, 0, 0.6), 0 2px 8px rgba(0, 0, 0, 0.45);
+  --shadow-violet: 0 8px 24px rgba(139, 124, 255, 0.42);
 }
 
 * {
@@ -162,11 +162,14 @@ body {
   background-size: 22px 22px;
 }
 :root[data-theme="dark"] body {
-  background-image: radial-gradient(
-    circle at 1px 1px,
-    rgba(255, 255, 255, 0.022) 1px,
-    transparent 0
-  );
+  background-image:
+    radial-gradient(ellipse 90% 55% at 12% -8%, rgba(139, 124, 255, 0.16), transparent 55%),
+    radial-gradient(ellipse 70% 45% at 92% -4%, rgba(47, 154, 232, 0.1), transparent 50%),
+    radial-gradient(
+      circle at 1px 1px,
+      rgba(255, 255, 255, 0.045) 1px,
+      transparent 0
+    );
 }
 
 ::selection {
@@ -280,8 +283,10 @@ body {
 :root[data-theme="dark"] .bg-canvas\/60 { background-color: color-mix(in oklab, var(--color-canvas) 60%, transparent); }
 :root[data-theme="dark"] .bg-canvas\/50 { background-color: color-mix(in oklab, var(--color-canvas) 50%, transparent); }
 :root[data-theme="dark"] .bg-canvas\/40 { background-color: color-mix(in oklab, var(--color-canvas) 40%, transparent); }
+:root[data-theme="dark"] .bg-canvas\/10 { background-color: color-mix(in oklab, var(--color-canvas) 10%, transparent); }
 :root[data-theme="dark"] .bg-paper\/90 { background-color: color-mix(in oklab, var(--color-paper) 90%, transparent); }
 :root[data-theme="dark"] .bg-paper\/80 { background-color: color-mix(in oklab, var(--color-paper) 80%, transparent); }
+:root[data-theme="dark"] .bg-paper\/70 { background-color: color-mix(in oklab, var(--color-paper) 70%, transparent); }
 :root[data-theme="dark"] .bg-paper\/60 { background-color: color-mix(in oklab, var(--color-paper) 60%, transparent); }
 :root[data-theme="dark"] .bg-violet-50\/70 { background-color: color-mix(in oklab, var(--color-violet-50) 70%, transparent); }
 :root[data-theme="dark"] .bg-violet-50\/60 { background-color: color-mix(in oklab, var(--color-violet-50) 60%, transparent); }

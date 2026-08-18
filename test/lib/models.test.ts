@@ -91,6 +91,16 @@ describe("schema defaults", () => {
     ).rejects.toThrow();
   });
 
+  it("accepts parked as a lead stage", async () => {
+    const lead = await models.Lead.create({
+      workspaceId: new Types.ObjectId(),
+      ownerId: new Types.ObjectId(),
+      name: "On hold",
+      stage: "parked",
+    });
+    expect(lead.stage).toBe("parked");
+  });
+
   it("Activity requires kind and title", async () => {
     await expect(models.Activity.create({ workspaceId: new Types.ObjectId() })).rejects.toThrow();
   });

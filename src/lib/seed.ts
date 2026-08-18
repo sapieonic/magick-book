@@ -1,7 +1,7 @@
 import { Types } from "mongoose";
 import { connectDBForSeed } from "./db-seed-helper";
 import { Workspace, User, Lead, Account, Contact, Invoice, Expense, Activity } from "./models";
-import { DEFAULT_LEAD_CATEGORIES } from "./constants";
+import { DEFAULT_LEAD_CATEGORIES, type LeadStage } from "./constants";
 
 const DAY = 86400000;
 const HOUR = 3600000;
@@ -259,7 +259,7 @@ export async function seedDatabase({ force = false }: { force?: boolean } = {}):
     phone?: string;
     email?: string;
     source?: string;
-    stage: "new" | "contacted" | "qualified" | "proposal" | "won" | "lost";
+    stage: LeadStage;
     category?: string;
     estValue?: number;
     tags?: string[];
@@ -318,6 +318,29 @@ export async function seedDatabase({ force = false }: { force?: boolean } = {}):
   // a few more "new" so the column count feels alive
   await makeLead({ name: "Ravi Shah", company: "Delta Traders", phone: "+91 90090 12121", stage: "new", category: "collection", estValue: 60000, owner: riya._id, order: 1, createdDaysAgo: 1 });
   await makeLead({ name: " To be Triaged", company: "Kettle Foods", stage: "new", owner: neha._id, order: 2, createdDaysAgo: 1 });
+  await makeLead({
+    name: "Hari Nair",
+    company: "Northwind Mills",
+    phone: "+91 98450 11022",
+    stage: "parked",
+    category: "finance",
+    estValue: 150000,
+    owner: riya._id,
+    order: 0,
+    createdDaysAgo: 40,
+    notes: "Budget freeze — revisit next quarter.",
+  });
+  await makeLead({
+    name: "Meera Joshi",
+    company: "Kite Labs",
+    email: "meera@kitelabs.in",
+    stage: "parked",
+    category: "healthcare",
+    estValue: 45000,
+    owner: neha._id,
+    order: 1,
+    createdDaysAgo: 21,
+  });
 
   // ---- Activity timeline for the Priya lead (page 7) ------------------
   await Activity.insertMany([

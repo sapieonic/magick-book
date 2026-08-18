@@ -29,8 +29,8 @@ export const GET = route(async () => {
     Invoice.find({ accountId: { $in: accIds }, deletedAt: null }).lean<IInvoice[]>(),
   ]);
 
-  // KPIs
-  const openLeads = leads.filter((l) => l.stage !== "won" && l.stage !== "lost").length;
+  // KPIs — "open" is the working funnel (excludes won, parked holding, and lost).
+  const openLeads = leads.filter((l) => l.stage !== "won" && l.stage !== "lost" && l.stage !== "parked").length;
   const qualified = leads.filter((l) => l.stage === "qualified").length;
   const wonThisMonth = leads.filter((l) => l.stage === "won" && new Date(l.lastActivityAt) >= monthStart).length;
   const activeAccounts = accounts.filter((a) => a.status === "active").length;

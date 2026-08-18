@@ -15,37 +15,84 @@ import {
 } from "@dnd-kit/core";
 import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Plus, Ban } from "lucide-react";
+import { Plus, Ban, ChevronRight, ChevronsLeft } from "lucide-react";
 import { LeadCard } from "./LeadCard";
 import { Modal } from "@/components/ui/Overlay";
 import { Button } from "@/components/ui/Button";
 import { Textarea, Field } from "@/components/ui/Field";
 import { useToast } from "@/components/ui/Toast";
 import { api } from "@/lib/client";
-import { PIPELINE_STAGES, STAGE_META, type PipelineStage } from "@/lib/constants";
+import {
+  BOARD_STAGES,
+  STAGE_META,
+  isCollapsibleStage,
+  type BoardStage,
+} from "@/lib/constants";
 import { cn } from "@/lib/utils";
 import type { LeadDTO } from "@/lib/types";
 
 type Board = Record<string, LeadDTO[]>;
 
+const COLLAPSE_KEY = "mb.leads.board.collapsed";
+const DEFAULT_COLLAPSED = ["parked"] as const;
+
 function buildBoard(leads: LeadDTO[]): Board {
   const board: Board = {};
-  for (const s of PIPELINE_STAGES) board[s] = [];
+  for (const s of BOARD_STAGES) board[s] = [];
   for (const l of leads) {
-    // Lost leads (and any non-pipeline stage) aren't shown on the board.
-    if (!(PIPELINE_STAGES as readonly string[]).includes(l.stage)) continue;
+    // Lost leads (and any non-board stage) aren't shown on the board.
+    if (!(BOARD_STAGES as readonly string[]).includes(l.stage)) continue;
     board[l.stage].push(l);
   }
-  for (const s of PIPELINE_STAGES) board[s].sort((a, b) => a.order - b.order || +new Date(a.createdAt) - +new Date(b.createdAt));
+  for (const s of BOARD_STAGES) board[s].sort((a, b) => a.order - b.order || +new Date(a.createdAt) - +new Date(b.createdAt));
   return board;
 }
 
-export function LeadBoard({ leads, onAdd, onChanged }: { leads: LeadDTO[]; onAdd: (stage: PipelineStage) => void; onChanged: () => void }) {
+function readCollapsed(): Set<string> {
+  if (typeof window === "undefined") return new Set(DEFAULT_COLLAPSED);
+  try {
+    const raw = localStorage.getItem(COLLAPSE_KEY);
+    if (!raw) return new Set(DEFAULT_COLLAPSED);
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return new Set(DEFAULT_COLLAPSED);
+    return new Set(parsed.filter((s: unknown) => typeof s === "string" && isCollapsibleStage(s)));
+  } catch {
+    return new Set(DEFAULT_COLLAPSED);
+  }
+}
+
+function useCollapsedColumns() {
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set(DEFAULT_COLLAPSED));
+
+  useEffect(() => {
+    setCollapsed(readCollapsed());
+  }, []);
+
+  function toggle(stage: string) {
+    if (!isCollapsibleStage(stage)) return;
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(stage)) next.delete(stage);
+      else next.add(stage);
+      try {
+        localStorage.setItem(COLLAPSE_KEY, JSON.stringify([...next]));
+      } catch {
+        /* ignore quota / private mode */
+      }
+      return next;
+    });
+  }
+
+  return { collapsed, toggle };
+}
+
+export function LeadBoard({ leads, onAdd, onChanged }: { leads: LeadDTO[]; onAdd: (stage: BoardStage) => void; onChanged: () => void }) {
   const router = useRouter();
   const { toast } = useToast();
   const [board, setBoard] = useState<Board>(() => buildBoard(leads));
   const [activeId, setActiveId] = useState<string | null>(null);
   const [lostLead, setLostLead] = useState<LeadDTO | null>(null);
+  const { collapsed, toggle } = useCollapsedColumns();
   // The card's original column, captured at drag start. `onDragOver` shuffles the
   // board mid-drag, so by `onDragEnd` we can no longer recover the source from state.
   const homeStageRef = useRef<string | null>(null);
@@ -57,7 +104,7 @@ export function LeadBoard({ leads, onAdd, onChanged }: { leads: LeadDTO[]; onAdd
 
   function findStage(id: string): string | null {
     if (id.startsWith("col:")) return id.slice(4);
-    for (const s of PIPELINE_STAGES) if (board[s].some((l) => l.id === id)) return s;
+    for (const s of BOARD_STAGES) if (board[s].some((l) => l.id === id)) return s;
     return null;
   }
 
@@ -119,7 +166,7 @@ export function LeadBoard({ leads, onAdd, onChanged }: { leads: LeadDTO[]; onAdd
     try {
       await api.patch(`/api/leads/${lead.id}/stage`, { stage: toStage, order: index });
       if (fromStage !== toStage) {
-        toast(`${lead.name} → ${STAGE_META[toStage as PipelineStage].label}`, "success");
+        toast(`${lead.name} → ${STAGE_META[toStage as BoardStage].label}`, "success");
         onChanged();
       }
     } catch (err) {
@@ -163,7 +210,7 @@ export function LeadBoard({ leads, onAdd, onChanged }: { leads: LeadDTO[]; onAdd
     <>
       <DndContext sensors={sensors} collisionDetection={closestCorners} onDragStart={onDragStart} onDragOver={onDragOver} onDragEnd={onDragEnd}>
         <div className="flex gap-4 overflow-x-auto px-6 pb-6 lg:px-8">
-          {PIPELINE_STAGES.map((stage) => (
+          {BOARD_STAGES.map((stage) => (
             <Column
               key={stage}
               stage={stage}
@@ -172,6 +219,8 @@ export function LeadBoard({ leads, onAdd, onChanged }: { leads: LeadDTO[]; onAdd
               onOpen={(id) => router.push(`/leads/${id}`)}
               onDropLost={stage === "won" ? setLostLead : undefined}
               activeId={activeId}
+              collapsed={collapsed.has(stage)}
+              onToggleCollapse={isCollapsibleStage(stage) ? () => toggle(stage) : undefined}
             />
           ))}
         </div>
@@ -190,33 +239,99 @@ function Column({
   onOpen,
   onDropLost,
   activeId,
+  collapsed,
+  onToggleCollapse,
 }: {
-  stage: PipelineStage;
+  stage: BoardStage;
   leads: LeadDTO[];
   onAdd: () => void;
   onOpen: (id: string) => void;
   onDropLost?: (lead: LeadDTO) => void;
   activeId: string | null;
+  collapsed: boolean;
+  onToggleCollapse?: () => void;
 }) {
   const meta = STAGE_META[stage];
   const { setNodeRef, isOver } = useDroppable({ id: `col:${stage}` });
   const lostZone = useDroppable({ id: "col:lost" });
+  const holding = stage === "parked";
+
+  if (collapsed) {
+    return (
+      <div
+        ref={setNodeRef}
+        data-testid={`col-${stage}`}
+        data-collapsed="true"
+        className={cn(
+          "group/col relative flex min-h-[220px] w-[52px] shrink-0 flex-col items-center overflow-hidden rounded-[var(--radius-xl)] border backdrop-blur-xl transition-colors",
+          holding ? "ml-2 border-dashed" : "",
+          isOver
+            ? "border-violet-400 bg-violet-50/70 ring-2 ring-violet-300/60 dark:bg-violet-900/40 dark:ring-violet-500/40"
+            : "border-line bg-paper shadow-[var(--shadow-card)] dark:border-white/10 dark:bg-paper",
+        )}
+      >
+        <div className="absolute top-0 left-0 right-0 h-1" style={{ background: meta.dot, boxShadow: `0 0 12px ${meta.dot}` }} />
+        <button
+          type="button"
+          onClick={onToggleCollapse}
+          aria-expanded={false}
+          aria-label={`Expand ${meta.label}`}
+          className="mt-3 rounded-full p-1 text-muted transition-colors hover:bg-violet-100 hover:text-violet-700 dark:hover:bg-violet-900/50 dark:hover:text-violet-300"
+        >
+          <ChevronRight className="size-4" />
+        </button>
+        <div className="flex flex-1 items-center justify-center py-2">
+          <span
+            className="[writing-mode:vertical-rl] rotate-180 text-[12px] font-bold uppercase tracking-[0.18em]"
+            style={{ color: meta.dot }}
+          >
+            {meta.label}
+          </span>
+        </div>
+        <span className="mb-3 rounded-full bg-canvas px-1.5 py-0.5 text-[11px] font-bold tnum text-ink-soft shadow-inner dark:bg-canvas">
+          {leads.length}
+        </span>
+      </div>
+    );
+  }
 
   return (
-    <div className="flex w-[296px] shrink-0 flex-col rounded-[var(--radius-xl)] bg-canvas/40 border border-line/40 backdrop-blur-xl shadow-sm dark:bg-canvas/10 dark:border-line-strong overflow-hidden relative">
+    <div
+      data-testid={`col-${stage}`}
+      data-collapsed="false"
+      className={cn(
+        "relative flex w-[296px] shrink-0 flex-col overflow-hidden rounded-[var(--radius-xl)] border backdrop-blur-xl",
+        holding
+          ? "ml-2 border-dashed border-line-strong bg-canvas/60 dark:border-white/15 dark:bg-paper/80"
+          : "border-line bg-paper/80 shadow-[var(--shadow-card)] dark:border-white/10 dark:bg-paper",
+      )}
+    >
       {/* Top glowing accent line */}
-      <div className="absolute top-0 left-0 right-0 h-1" style={{ background: meta.dot, boxShadow: `0 0 10px ${meta.dot}` }} />
+      <div className="absolute top-0 left-0 right-0 h-1" style={{ background: meta.dot, boxShadow: `0 0 14px ${meta.dot}` }} />
 
       <div className="mb-1 flex items-center justify-between px-3 pt-4 pb-1">
         <div className="flex items-center gap-2">
           <h3 className="text-[13px] font-bold tracking-wide uppercase" style={{ color: meta.dot }}>{meta.label}</h3>
-          <span className="rounded-full bg-paper/60 px-2 py-0.5 text-[11.5px] font-bold tnum text-ink-soft shadow-inner dark:bg-canvas/40">
+          <span className="rounded-full bg-canvas px-2 py-0.5 text-[11.5px] font-bold tnum text-ink-soft shadow-inner dark:bg-canvas">
             {leads.length}
           </span>
         </div>
-        <button onClick={onAdd} className="rounded-full p-1.5 text-faint transition-colors hover:bg-violet-100 hover:text-violet-700 dark:hover:bg-violet-900/50 dark:hover:text-violet-300" aria-label={`Add to ${meta.label}`}>
-          <Plus className="size-4" />
-        </button>
+        <div className="flex items-center gap-0.5">
+          {onToggleCollapse && (
+            <button
+              type="button"
+              onClick={onToggleCollapse}
+              aria-expanded={true}
+              aria-label={`Collapse ${meta.label}`}
+              className="rounded-full p-1.5 text-faint transition-colors hover:bg-violet-100 hover:text-violet-700 dark:hover:bg-violet-900/50 dark:hover:text-violet-300"
+            >
+              <ChevronsLeft className="size-4" />
+            </button>
+          )}
+          <button onClick={onAdd} className="rounded-full p-1.5 text-faint transition-colors hover:bg-violet-100 hover:text-violet-700 dark:hover:bg-violet-900/50 dark:hover:text-violet-300" aria-label={`Add to ${meta.label}`}>
+            <Plus className="size-4" />
+          </button>
+        </div>
       </div>
 
       <div
