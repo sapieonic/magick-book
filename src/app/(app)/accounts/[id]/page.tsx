@@ -424,6 +424,7 @@ function Documents({ accountId, documents, loading, onUpload, onChanged }: { acc
 
 function Invoices({ invoices, finance, loading, onNew, onChanged }: { accountId: string; invoices: InvoiceDTO[]; finance: AccountFinance; loading: boolean; onNew: () => void; onChanged: () => void }) {
   const { toast } = useToast();
+  const confirm = useConfirm();
   const [busyId, setBusyId] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const uploadTarget = useRef<string | null>(null);
@@ -470,6 +471,25 @@ function Invoices({ invoices, finance, loading, onNew, onChanged }: { accountId:
 
   function viewDoc(invId: string) {
     window.open(`/api/invoices/${invId}/document`, "_blank", "noopener");
+  }
+
+  async function remove(inv: InvoiceDTO) {
+    if (!(await confirm({
+      title: `Remove invoice #${inv.number}?`,
+      description: `${formatINR(inv.amount)} will drop off this account's billed, paid, and outstanding totals. The invoice number is kept and won't be reused.`,
+      confirmLabel: "Remove invoice",
+      tone: "danger",
+    }))) return;
+    setBusyId(inv.id);
+    try {
+      await api.delete(`/api/invoices/${inv.id}`);
+      toast(`Invoice #${inv.number} removed.`, "info");
+      onChanged();
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Could not remove", "error");
+    } finally {
+      setBusyId(null);
+    }
   }
 
   return (
@@ -521,13 +541,21 @@ function Invoices({ invoices, finance, loading, onNew, onChanged }: { accountId:
                     )}
                   </td>
                   <td className="px-5 py-3.5 text-right">
-                    {inv.status === "overdue" ? (
-                      <button disabled={busyId === inv.id} onClick={() => act(inv, "remind")} className="text-[12.5px] font-semibold text-violet-600 hover:underline disabled:opacity-50">remind</button>
-                    ) : inv.status === "sent" ? (
-                      <button disabled={busyId === inv.id} onClick={() => act(inv, "paid")} className="text-[12.5px] font-semibold text-violet-600 hover:underline disabled:opacity-50">mark paid</button>
-                    ) : (
-                      <span className="text-[12.5px] text-faint">—</span>
-                    )}
+                    <div className="inline-flex items-center justify-end gap-2">
+                      {inv.status === "overdue" ? (
+                        <button disabled={busyId === inv.id} onClick={() => act(inv, "remind")} className="text-[12.5px] font-semibold text-violet-600 hover:underline disabled:opacity-50">remind</button>
+                      ) : inv.status === "sent" ? (
+                        <button disabled={busyId === inv.id} onClick={() => act(inv, "paid")} className="text-[12.5px] font-semibold text-violet-600 hover:underline disabled:opacity-50">mark paid</button>
+                      ) : null}
+                      <button
+                        disabled={busyId === inv.id}
+                        onClick={() => remove(inv)}
+                        className="rounded-md p-1.5 text-muted transition-colors hover:bg-danger-bg hover:text-danger disabled:opacity-50"
+                        aria-label={`Remove invoice #${inv.number}`}
+                      >
+                        <Trash2 className="size-4" />
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}

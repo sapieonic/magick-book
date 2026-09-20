@@ -13,7 +13,7 @@ const MAX_BYTES = 15 * 1024 * 1024; // 15 MB
 const ALLOWED = new Set(["application/pdf", "image/png", "image/jpeg"]);
 
 async function loadScoped(userScope: Record<string, unknown>, id: string, workspaceId: Types.ObjectId) {
-  const invoice = await Invoice.findOne({ _id: id, workspaceId }).lean<IInvoice>();
+  const invoice = await Invoice.findOne({ _id: id, workspaceId, deletedAt: null }).lean<IInvoice>();
   if (!invoice) throw new HttpError("Invoice not found", 404);
   const account = await Account.findOne({ _id: invoice.accountId, ...userScope }).lean<IAccount>();
   if (!account) throw new HttpError("Invoice not found", 404);
