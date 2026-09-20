@@ -31,6 +31,7 @@ let models: typeof import("@/lib/models");
 let invoiceRoute: typeof import("@/app/api/invoices/[id]/route");
 let documentRoute: typeof import("@/app/api/invoices/[id]/document/route");
 let accountInvoicesRoute: typeof import("@/app/api/accounts/[id]/invoices/route");
+let services: typeof import("@/lib/services");
 
 let workspaceId: Types.ObjectId;
 let admin: IUser;
@@ -43,6 +44,7 @@ beforeAll(async () => {
   invoiceRoute = await import("@/app/api/invoices/[id]/route");
   documentRoute = await import("@/app/api/invoices/[id]/document/route");
   accountInvoicesRoute = await import("@/app/api/accounts/[id]/invoices/route");
+  services = await import("@/lib/services");
   await connectDB();
 });
 afterAll(stopTestDB);
@@ -166,12 +168,21 @@ describe("invoice document route — S3 configured", () => {
     expect((await models.Invoice.findById(inv._id).lean())?.fileKey).toBeUndefined();
   });
 
-  it("returns 404 for document ops on an archived invoice", async () => {
+  it("returns 404 for document GET/POST/DELETE on an archived invoice", async () => {
     const { inv } = await makeInvoice({ fileKey: "k", fileName: "f.pdf" });
     s3State.configured = true;
     await invoiceRoute.DELETE(jsonRequest(`/api/invoices/${inv._id}`, "DELETE"), ctx({ id: String(inv._id) }));
-    const res = await documentRoute.GET(jsonRequest(`/api/invoices/${inv._id}/document`, "GET"), ctx({ id: String(inv._id) }));
-    expect(res.status).toBe(404);
+
+    const get = await documentRoute.GET(jsonRequest(`/api/invoices/${inv._id}/document`, "GET"), ctx({ id: String(inv._id) }));
+    expect(get.status).toBe(404);
+
+    const form = new FormData();
+    form.set("file", new File([new Uint8Array([1, 2, 3])], "inv.pdf", { type: "application/pdf" }));
+    const post = await documentRoute.POST(formRequest(`/api/invoices/${inv._id}/document`, form), ctx({ id: String(inv._id) }));
+    expect(post.status).toBe(404);
+
+    const del = await documentRoute.DELETE(jsonRequest(`/api/invoices/${inv._id}/document`, "DELETE"), ctx({ id: String(inv._id) }));
+    expect(del.status).toBe(404);
   });
 });
 
@@ -184,13 +195,18 @@ describe("DELETE + restore /api/invoices/:id (soft-delete)", () => {
     const archived = await models.Invoice.findById(inv._id).lean();
     expect(archived?.deletedAt).toBeInstanceOf(Date);
     expect(String(archived?.deletedBy)).toBe(String(admin._id));
-    // Document stays on disk; we only stamp deletedAt (never deleteOne).
+    // Soft-delete keeps the Mongo row (never deleteOne) so the number stays reserved.
     expect(await models.Invoice.countDocuments({ _id: inv._id })).toBe(1);
 
     const listed = await accountInvoicesRoute.GET(jsonRequest(`/api/accounts/${acc._id}/invoices`, "GET"), ctx({ id: String(acc._id) }));
     expect((await listed.json()).invoices).toHaveLength(0);
 
+    const fin = await services.accountFinance(acc._id);
+    expect(fin.billed).toBe(0);
+    expect(fin.outstanding).toBe(0);
+
     expect(await models.AuditLog.countDocuments({ entity: "invoice", action: "delete", entityId: inv._id })).toBe(1);
+    expect(await models.Activity.countDocuments({ accountId: acc._id, kind: "invoice", title: `Invoice #${inv.number} removed` })).toBe(1);
 
     // Live PATCH is hidden once archived.
     const livePatch = await invoiceRoute.PATCH(jsonRequest(`/api/invoices/${inv._id}`, "PATCH", { status: "paid" }), ctx({ id: String(inv._id) }));
@@ -204,6 +220,8 @@ describe("DELETE + restore /api/invoices/:id (soft-delete)", () => {
     const listedAgain = await accountInvoicesRoute.GET(jsonRequest(`/api/accounts/${acc._id}/invoices`, "GET"), ctx({ id: String(acc._id) }));
     expect((await listedAgain.json()).invoices).toHaveLength(1);
     expect(await models.AuditLog.countDocuments({ entity: "invoice", action: "restore", entityId: inv._id })).toBe(1);
+    expect(await models.Activity.countDocuments({ accountId: acc._id, kind: "invoice", title: `Invoice #${inv.number} restored` })).toBe(1);
+    expect((await services.accountFinance(acc._id)).billed).toBe(5000);
   });
 
   it("does not reuse the archived invoice's number", async () => {
@@ -243,5 +261,32 @@ describe("DELETE + restore /api/invoices/:id (soft-delete)", () => {
     const { inv } = await makeInvoice();
     const res = await invoiceRoute.PATCH(jsonRequest(`/api/invoices/${inv._id}`, "PATCH", { action: "restore" }), ctx({ id: String(inv._id) }));
     expect(res.status).toBe(404);
+  });
+
+  it("404 on a second delete of the same invoice", async () => {
+    const { inv } = await makeInvoice();
+    await invoiceRoute.DELETE(jsonRequest(`/api/invoices/${inv._id}`, "DELETE"), ctx({ id: String(inv._id) }));
+    const res = await invoiceRoute.DELETE(jsonRequest(`/api/invoices/${inv._id}`, "DELETE"), ctx({ id: String(inv._id) }));
+    expect(res.status).toBe(404);
+  });
+
+  it("restore keeps the attached file metadata", async () => {
+    const { inv } = await makeInvoice({ fileKey: "k", fileName: "f.pdf" });
+    await invoiceRoute.DELETE(jsonRequest(`/api/invoices/${inv._id}`, "DELETE"), ctx({ id: String(inv._id) }));
+    const restored = await invoiceRoute.PATCH(jsonRequest(`/api/invoices/${inv._id}`, "PATCH", { action: "restore" }), ctx({ id: String(inv._id) }));
+    expect(restored.status).toBe(200);
+    const { invoice } = await restored.json();
+    expect(invoice.hasFile).toBe(true);
+    expect(invoice.fileName).toBe("f.pdf");
+    expect((await models.Invoice.findById(inv._id).lean())?.fileKey).toBe("k");
+  });
+
+  it("lets a standard user restore an invoice on an account they own", async () => {
+    const acc = await models.Account.create({ workspaceId, ownerId: standard._id, name: "StanAcc", status: "active" });
+    const inv = await models.Invoice.create({ workspaceId, accountId: acc._id, number: 2002, amount: 400, status: "sent", deletedAt: new Date(), deletedBy: standard._id });
+    session.user = standard;
+    const res = await invoiceRoute.PATCH(jsonRequest(`/api/invoices/${inv._id}`, "PATCH", { action: "restore" }), ctx({ id: String(inv._id) }));
+    expect(res.status).toBe(200);
+    expect((await models.Invoice.findById(inv._id).lean())?.deletedAt ?? null).toBeNull();
   });
 });

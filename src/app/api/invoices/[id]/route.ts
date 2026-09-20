@@ -4,8 +4,9 @@ import { connectDB } from "@/lib/db";
 import { Invoice, Account, type IInvoice, type IAccount, type IUser } from "@/lib/models";
 import { requireUser } from "@/lib/auth/server";
 import { accountScope, canEditOwned } from "@/lib/rbac";
-import { audit } from "@/lib/services";
+import { audit, logActivity } from "@/lib/services";
 import { INVOICE_STATUSES } from "@/lib/constants";
+import { formatINR } from "@/lib/utils";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -39,6 +40,14 @@ export const PATCH = route(async (req: NextRequest, ctx: Ctx) => {
     if (!canEditOwned(user, acc.ownerId)) return fail("You can only restore your own invoices.", 403);
     await Invoice.updateOne({ _id: inv._id }, { $unset: { deletedAt: "", deletedBy: "" } });
     await Account.updateOne({ _id: acc._id }, { lastActivityAt: new Date() });
+    await logActivity({
+      workspaceId: user.workspaceId,
+      accountId: acc._id,
+      actorId: user._id,
+      kind: "invoice",
+      title: `Invoice #${inv.number} restored`,
+      detail: formatINR(inv.amount),
+    });
     await audit({
       entity: "invoice", entityId: inv._id, entityLabel: `Invoice #${inv.number}`, action: "restore", actor: user,
       accountId: inv.accountId,
@@ -79,10 +88,18 @@ export const DELETE = route(async (_req: NextRequest, ctx: Ctx) => {
   await connectDB();
   const { id } = await ctx.params;
   const { inv, acc } = await loadInvoice(user, id);
-  if (!canEditOwned(user, acc.ownerId)) return fail("You can only manage your own invoices.", 403);
+  if (!canEditOwned(user, acc.ownerId)) return fail("You can only delete your own invoices.", 403);
 
   await Invoice.updateOne({ _id: inv._id }, { deletedAt: new Date(), deletedBy: user._id });
   await Account.updateOne({ _id: acc._id }, { lastActivityAt: new Date() });
+  await logActivity({
+    workspaceId: user.workspaceId,
+    accountId: acc._id,
+    actorId: user._id,
+    kind: "invoice",
+    title: `Invoice #${inv.number} removed`,
+    detail: formatINR(inv.amount),
+  });
   await audit({
     entity: "invoice", entityId: inv._id, entityLabel: `Invoice #${inv.number}`, action: "delete", actor: user,
     accountId: inv.accountId,
