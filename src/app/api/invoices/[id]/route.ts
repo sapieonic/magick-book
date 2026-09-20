@@ -38,7 +38,13 @@ export const PATCH = route(async (req: NextRequest, ctx: Ctx) => {
   if (b.action === "restore") {
     const { inv, acc } = await loadInvoice(user, id, { archived: true });
     if (!canEditOwned(user, acc.ownerId)) return fail("You can only restore your own invoices.", 403);
-    await Invoice.updateOne({ _id: inv._id }, { $unset: { deletedAt: "", deletedBy: "" } });
+    // Claim the archived row atomically so a concurrent restore can't both succeed
+    // and write duplicate activity/audit entries.
+    const claimed = await Invoice.updateOne(
+      { _id: inv._id, deletedAt: { $ne: null } },
+      { $unset: { deletedAt: "", deletedBy: "" } },
+    );
+    if (claimed.matchedCount === 0) throw new HttpError("Invoice not found", 404);
     await Account.updateOne({ _id: acc._id }, { lastActivityAt: new Date() });
     await logActivity({
       workspaceId: user.workspaceId,
@@ -90,7 +96,11 @@ export const DELETE = route(async (_req: NextRequest, ctx: Ctx) => {
   const { inv, acc } = await loadInvoice(user, id);
   if (!canEditOwned(user, acc.ownerId)) return fail("You can only delete your own invoices.", 403);
 
-  await Invoice.updateOne({ _id: inv._id }, { deletedAt: new Date(), deletedBy: user._id });
+  const claimed = await Invoice.updateOne(
+    { _id: inv._id, deletedAt: null },
+    { deletedAt: new Date(), deletedBy: user._id },
+  );
+  if (claimed.matchedCount === 0) throw new HttpError("Invoice not found", 404);
   await Account.updateOne({ _id: acc._id }, { lastActivityAt: new Date() });
   await logActivity({
     workspaceId: user.workspaceId,

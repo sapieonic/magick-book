@@ -289,4 +289,27 @@ describe("DELETE + restore /api/invoices/:id (soft-delete)", () => {
     expect(res.status).toBe(200);
     expect((await models.Invoice.findById(inv._id).lean())?.deletedAt ?? null).toBeNull();
   });
+
+  it("only one of two concurrent restores writes activity and audit", async () => {
+    const { inv } = await makeInvoice();
+    await invoiceRoute.DELETE(jsonRequest(`/api/invoices/${inv._id}`, "DELETE"), ctx({ id: String(inv._id) }));
+    const [a, b] = await Promise.all([
+      invoiceRoute.PATCH(jsonRequest(`/api/invoices/${inv._id}`, "PATCH", { action: "restore" }), ctx({ id: String(inv._id) })),
+      invoiceRoute.PATCH(jsonRequest(`/api/invoices/${inv._id}`, "PATCH", { action: "restore" }), ctx({ id: String(inv._id) })),
+    ]);
+    expect([a.status, b.status].sort()).toEqual([200, 404]);
+    expect(await models.AuditLog.countDocuments({ entity: "invoice", action: "restore", entityId: inv._id })).toBe(1);
+    expect(await models.Activity.countDocuments({ kind: "invoice", title: `Invoice #${inv.number} restored` })).toBe(1);
+  });
+
+  it("only one of two concurrent deletes writes activity and audit", async () => {
+    const { inv } = await makeInvoice();
+    const [a, b] = await Promise.all([
+      invoiceRoute.DELETE(jsonRequest(`/api/invoices/${inv._id}`, "DELETE"), ctx({ id: String(inv._id) })),
+      invoiceRoute.DELETE(jsonRequest(`/api/invoices/${inv._id}`, "DELETE"), ctx({ id: String(inv._id) })),
+    ]);
+    expect([a.status, b.status].sort()).toEqual([200, 404]);
+    expect(await models.AuditLog.countDocuments({ entity: "invoice", action: "delete", entityId: inv._id })).toBe(1);
+    expect(await models.Activity.countDocuments({ kind: "invoice", title: `Invoice #${inv.number} removed` })).toBe(1);
+  });
 });
