@@ -58,6 +58,19 @@ describe("accountFinance", () => {
     expect(fin.margin).toBe(0);
   });
 
+  it("excludes soft-deleted invoices from billed/paid/outstanding", async () => {
+    const workspaceId = ws();
+    const accountId = new Types.ObjectId();
+    await models.Invoice.create([
+      { workspaceId, accountId, number: 1, amount: 2000, status: "sent" },
+      { workspaceId, accountId, number: 2, amount: 3000, status: "paid", deletedAt: new Date() },
+    ]);
+    const fin = await services.accountFinance(accountId);
+    expect(fin.billed).toBe(2000);
+    expect(fin.paid).toBe(0);
+    expect(fin.outstanding).toBe(2000);
+  });
+
   it("accepts a string account id", async () => {
     const accountId = new Types.ObjectId();
     const fin = await services.accountFinance(String(accountId));

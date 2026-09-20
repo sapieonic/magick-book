@@ -1,27 +1,69 @@
 import { type NextRequest } from "next/server";
 import { ok, fail, route, serializeInvoice, HttpError } from "@/lib/api";
 import { connectDB } from "@/lib/db";
-import { Invoice, Account, type IInvoice, type IAccount } from "@/lib/models";
+import { Invoice, Account, type IInvoice, type IAccount, type IUser } from "@/lib/models";
 import { requireUser } from "@/lib/auth/server";
 import { accountScope, canEditOwned } from "@/lib/rbac";
-import { audit } from "@/lib/services";
+import { audit, logActivity } from "@/lib/services";
 import { INVOICE_STATUSES } from "@/lib/constants";
+import { formatINR } from "@/lib/utils";
 
 type Ctx = { params: Promise<{ id: string }> };
 
-// PATCH /api/invoices/:id — change status (e.g. mark paid) or send a reminder.
+async function loadInvoice(
+  user: IUser,
+  id: string,
+  opts?: { archived?: boolean },
+): Promise<{ inv: IInvoice; acc: IAccount }> {
+  const inv = await Invoice.findOne({
+    _id: id,
+    workspaceId: user.workspaceId,
+    deletedAt: opts?.archived ? { $ne: null } : null,
+  }).lean<IInvoice>();
+  if (!inv) throw new HttpError("Invoice not found", 404);
+  // Parent account visibility (live scope) — archived accounts hide their invoices.
+  const acc = await Account.findOne({ _id: inv.accountId, ...accountScope(user) }).lean<IAccount>();
+  if (!acc) throw new HttpError("Invoice not found", 404);
+  return { inv, acc };
+}
+
+// PATCH /api/invoices/:id — change status (e.g. mark paid), send a reminder, or restore an archived invoice.
 export const PATCH = route(async (req: NextRequest, ctx: Ctx) => {
   const user = await requireUser();
   await connectDB();
   const { id } = await ctx.params;
-
-  const inv = await Invoice.findOne({ _id: id, workspaceId: user.workspaceId, deletedAt: null }).lean<IInvoice>();
-  if (!inv) throw new HttpError("Invoice not found", 404);
-  const acc = await Account.findOne({ _id: inv.accountId, ...accountScope(user) }).lean<IAccount>();
-  if (!acc) throw new HttpError("Invoice not found", 404);
-  if (!canEditOwned(user, acc.ownerId)) return fail("You can only manage your own invoices.", 403);
-
   const b = await req.json().catch(() => ({}));
+
+  // Restore path loads from the ARCHIVED set (the live scope hides it).
+  if (b.action === "restore") {
+    const { inv, acc } = await loadInvoice(user, id, { archived: true });
+    if (!canEditOwned(user, acc.ownerId)) return fail("You can only restore your own invoices.", 403);
+    // Claim the archived row atomically so a concurrent restore can't both succeed
+    // and write duplicate activity/audit entries.
+    const claimed = await Invoice.updateOne(
+      { _id: inv._id, deletedAt: { $ne: null } },
+      { $unset: { deletedAt: "", deletedBy: "" } },
+    );
+    if (claimed.matchedCount === 0) throw new HttpError("Invoice not found", 404);
+    await Account.updateOne({ _id: acc._id }, { lastActivityAt: new Date() });
+    await logActivity({
+      workspaceId: user.workspaceId,
+      accountId: acc._id,
+      actorId: user._id,
+      kind: "invoice",
+      title: `Invoice #${inv.number} restored`,
+      detail: formatINR(inv.amount),
+    });
+    await audit({
+      entity: "invoice", entityId: inv._id, entityLabel: `Invoice #${inv.number}`, action: "restore", actor: user,
+      accountId: inv.accountId,
+    });
+    const fresh = await Invoice.findById(inv._id).lean<IInvoice>();
+    return ok({ invoice: serializeInvoice(fresh!) });
+  }
+
+  const { inv, acc } = await loadInvoice(user, id);
+  if (!canEditOwned(user, acc.ownerId)) return fail("You can only manage your own invoices.", 403);
 
   // "remind" is a no-op state nudge in this demo (would email/WhatsApp in prod).
   if (b.action === "remind") {
@@ -43,4 +85,34 @@ export const PATCH = route(async (req: NextRequest, ctx: Ctx) => {
     return ok({ invoice: serializeInvoice(fresh!) });
   }
   return fail("Nothing to update");
+});
+
+// DELETE /api/invoices/:id — soft-delete (archive). The invoice number is kept
+// so nextInvoiceNumber never reissues it; billed/paid/outstanding drop it.
+export const DELETE = route(async (_req: NextRequest, ctx: Ctx) => {
+  const user = await requireUser();
+  await connectDB();
+  const { id } = await ctx.params;
+  const { inv, acc } = await loadInvoice(user, id);
+  if (!canEditOwned(user, acc.ownerId)) return fail("You can only delete your own invoices.", 403);
+
+  const claimed = await Invoice.updateOne(
+    { _id: inv._id, deletedAt: null },
+    { deletedAt: new Date(), deletedBy: user._id },
+  );
+  if (claimed.matchedCount === 0) throw new HttpError("Invoice not found", 404);
+  await Account.updateOne({ _id: acc._id }, { lastActivityAt: new Date() });
+  await logActivity({
+    workspaceId: user.workspaceId,
+    accountId: acc._id,
+    actorId: user._id,
+    kind: "invoice",
+    title: `Invoice #${inv.number} removed`,
+    detail: formatINR(inv.amount),
+  });
+  await audit({
+    entity: "invoice", entityId: inv._id, entityLabel: `Invoice #${inv.number}`, action: "delete", actor: user,
+    accountId: inv.accountId,
+  });
+  return ok({ ok: true });
 });

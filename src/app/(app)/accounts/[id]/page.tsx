@@ -64,12 +64,8 @@ export default function AccountDetailPage({ params }: { params: Promise<{ id: st
   const activity = useApi<{ activities: ActivityDTO[] }>(`/api/accounts/${id}/activity`);
   const history = useApi<{ entries: AuditLogDTO[] }>(`/api/accounts/${id}/audit`);
 
-  function refreshMoney() {
-    acc.refresh();
-    invoices.refresh();
-    expenses.refresh();
-    activity.refresh();
-    history.refresh();
+  async function refreshMoney() {
+    await Promise.all([acc.refresh(), invoices.refresh(), expenses.refresh(), activity.refresh(), history.refresh()]);
   }
 
   async function archiveAccount() {
@@ -145,7 +141,7 @@ export default function AccountDetailPage({ params }: { params: Promise<{ id: st
           )}
           {tab === "contacts" && <Contacts contacts={contacts.data?.contacts ?? []} loading={contacts.loading} onAdd={() => setAddContact(true)} onEdit={setEditContact} />}
           {tab === "documents" && <Documents accountId={id} documents={documents.data?.documents ?? []} loading={documents.loading} onUpload={() => setUploadDoc(true)} onChanged={() => { documents.refresh(); acc.refresh(); history.refresh(); }} />}
-          {tab === "invoices" && <Invoices accountId={id} invoices={invoices.data?.invoices ?? []} finance={finance} loading={invoices.loading} onNew={() => setNewInvoice(true)} onChanged={refreshMoney} />}
+          {tab === "invoices" && <Invoices invoices={invoices.data?.invoices ?? []} finance={finance} loading={invoices.loading} onNew={() => setNewInvoice(true)} onChanged={refreshMoney} />}
           {tab === "expenses" && <Expenses expenses={expenses.data?.expenses ?? []} finance={finance} loading={expenses.loading} onNew={() => setLogExpense(true)} />}
           {tab === "activity" && (activity.loading ? <PageLoader /> : (
             <Card className="p-6">
@@ -422,8 +418,20 @@ function Documents({ accountId, documents, loading, onUpload, onChanged }: { acc
 
 /* ---------------------------------------------------------------- Invoices */
 
-function Invoices({ invoices, finance, loading, onNew, onChanged }: { accountId: string; invoices: InvoiceDTO[]; finance: AccountFinance; loading: boolean; onNew: () => void; onChanged: () => void }) {
+function removeCopy(inv: InvoiceDTO): string {
+  const amount = formatINR(inv.amount);
+  if (inv.status === "paid") {
+    return `${amount} will drop off billed and paid totals. This invoice is marked paid. The invoice number is kept and won't be reused.`;
+  }
+  if (inv.status === "draft") {
+    return `${amount} is a draft and is not in billed totals. It will be removed from this account. The invoice number is kept and won't be reused.`;
+  }
+  return `${amount} will drop off billed and outstanding totals. The invoice number is kept and won't be reused.`;
+}
+
+function Invoices({ invoices, finance, loading, onNew, onChanged }: { invoices: InvoiceDTO[]; finance: AccountFinance; loading: boolean; onNew: () => void; onChanged: () => void | Promise<void> }) {
   const { toast } = useToast();
+  const confirm = useConfirm();
   const [busyId, setBusyId] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const uploadTarget = useRef<string | null>(null);
@@ -437,7 +445,7 @@ function Invoices({ invoices, finance, loading, onNew, onChanged }: { accountId:
       } else {
         await api.patch(`/api/invoices/${inv.id}`, { status: "paid" });
         toast(`#${inv.number} marked paid.`, "success");
-        onChanged();
+        await onChanged();
       }
     } catch (e) {
       toast(e instanceof Error ? e.message : "Failed", "error");
@@ -460,7 +468,7 @@ function Invoices({ invoices, finance, loading, onNew, onChanged }: { accountId:
     try {
       await uploadInvoiceFile(invId, file);
       toast("Invoice file stored.", "success");
-      onChanged();
+      await onChanged();
     } catch (err) {
       toast(err instanceof Error ? err.message : "Upload failed", "error");
     } finally {
@@ -470,6 +478,25 @@ function Invoices({ invoices, finance, loading, onNew, onChanged }: { accountId:
 
   function viewDoc(invId: string) {
     window.open(`/api/invoices/${invId}/document`, "_blank", "noopener");
+  }
+
+  async function remove(inv: InvoiceDTO) {
+    if (!(await confirm({
+      title: `Remove invoice #${inv.number}?`,
+      description: removeCopy(inv),
+      confirmLabel: "Remove invoice",
+      tone: "danger",
+    }))) return;
+    setBusyId(inv.id);
+    try {
+      await api.delete(`/api/invoices/${inv.id}`);
+      toast(`Invoice #${inv.number} removed.`, "info");
+      await onChanged();
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Could not remove", "error");
+    } finally {
+      setBusyId(null);
+    }
   }
 
   return (
@@ -521,13 +548,21 @@ function Invoices({ invoices, finance, loading, onNew, onChanged }: { accountId:
                     )}
                   </td>
                   <td className="px-5 py-3.5 text-right">
-                    {inv.status === "overdue" ? (
-                      <button disabled={busyId === inv.id} onClick={() => act(inv, "remind")} className="text-[12.5px] font-semibold text-violet-600 hover:underline disabled:opacity-50">remind</button>
-                    ) : inv.status === "sent" ? (
-                      <button disabled={busyId === inv.id} onClick={() => act(inv, "paid")} className="text-[12.5px] font-semibold text-violet-600 hover:underline disabled:opacity-50">mark paid</button>
-                    ) : (
-                      <span className="text-[12.5px] text-faint">—</span>
-                    )}
+                    <div className="inline-flex items-center justify-end gap-2">
+                      {inv.status === "overdue" ? (
+                        <button disabled={busyId === inv.id} onClick={() => act(inv, "remind")} className="text-[12.5px] font-semibold text-violet-600 hover:underline disabled:opacity-50">remind</button>
+                      ) : inv.status === "sent" ? (
+                        <button disabled={busyId === inv.id} onClick={() => act(inv, "paid")} className="text-[12.5px] font-semibold text-violet-600 hover:underline disabled:opacity-50">mark paid</button>
+                      ) : null}
+                      <button
+                        disabled={busyId === inv.id}
+                        onClick={() => remove(inv)}
+                        className="rounded-md p-1.5 text-muted transition-colors hover:bg-danger-bg hover:text-danger disabled:opacity-50"
+                        aria-label={`Remove invoice #${inv.number}`}
+                      >
+                        <Trash2 className="size-4" />
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
