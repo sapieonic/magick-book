@@ -11,7 +11,7 @@ import { isOutstanding, isOverdue } from "@/lib/receivables";
 import type { ExpenseDTO, InvoiceDTO } from "@/lib/types";
 import { cn, plural } from "@/lib/utils";
 import { buildStatement, longDate, overdueLabel, type StatementEntry } from "./statement";
-import { useInvoiceActions } from "./useInvoiceActions";
+import { useInvoiceActions } from "@/components/invoices/useInvoiceActions";
 
 export function InvoiceStatus({ invoice }: { invoice: InvoiceDTO }) {
   return isOverdue(invoice, new Date()) ? <StatusPill tone="overdue">{overdueLabel(invoice)}</StatusPill> : <StatusPill status={invoice.status} />;

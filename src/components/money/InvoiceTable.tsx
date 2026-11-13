@@ -7,7 +7,7 @@ import { Table, Th, Td, TwoLine } from "@/components/ui/Table";
 import { Button, LinkButton } from "@/components/ui/Button";
 import { StatusPill } from "@/components/ui/Badge";
 import { Money } from "@/components/ui/Money";
-import { useInvoiceActions } from "@/components/accounts/useInvoiceActions";
+import { useInvoiceActions } from "@/components/invoices/useInvoiceActions";
 import { groupLedger, invoiceAge } from "@/lib/money-charts";
 import { displayStatus, isOutstanding, paymentDate } from "@/lib/receivables";
 import { cn, plural } from "@/lib/utils";

@@ -16,7 +16,7 @@ import type { AccountFinance, ContactDTO, DocumentDTO, ExpenseDTO, InvoiceDTO } 
 import { documentMeta, openDocument } from "./AccountRail";
 import { InvoiceNumber, InvoiceStatus } from "./StatementTable";
 import { longDate } from "./statement";
-import { useInvoiceActions } from "./useInvoiceActions";
+import { useInvoiceActions } from "@/components/invoices/useInvoiceActions";
 
 const icon = (Icon: typeof Mail) => <Icon className="size-6" strokeWidth={1.5} />;
 const plus = <Plus className="size-4" strokeWidth={1.5} aria-hidden />;

@@ -5,7 +5,7 @@ import { formatMoney } from "@/components/ui/Money";
 import { useToast } from "@/components/ui/Toast";
 import { api } from "@/lib/client";
 import type { InvoiceDTO } from "@/lib/types";
-import { INVOICE_FILE_TYPES, uploadInvoiceFile } from "./AccountModals";
+import { INVOICE_FILE_TYPES, uploadInvoiceFile } from "@/components/accounts/AccountModals";
 
 function removeCopy(inv: InvoiceDTO): string {
   const amount = formatMoney(inv.amount);
