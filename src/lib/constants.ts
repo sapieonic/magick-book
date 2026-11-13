@@ -54,33 +54,9 @@ export const DEFAULT_LEAD_CATEGORIES = [
 
 export const DEFAULT_LEAD_CATEGORY = "unclassified";
 
-/** Fixed colors for known defaults — deliberately distinct from STAGE_META. */
-export const CATEGORY_META: Record<string, { label: string; tint: string; dot: string }> = {
-  unclassified: { label: "Unclassified", tint: "bg-sunk text-ink-2", dot: "#9aa3b2" },
-  automobile: { label: "Automobile", tint: "bg-sky-50 text-sky-800 border-sky-200", dot: "#0284c7" },
-  finance: { label: "Finance", tint: "bg-emerald-50 text-emerald-800 border-emerald-200", dot: "#059669" },
-  collection: { label: "Collection", tint: "bg-amber-50 text-amber-900 border-amber-200", dot: "#d97706" },
-  insurance: { label: "Insurance", tint: "bg-rose-50 text-rose-800 border-rose-200", dot: "#e11d48" },
-  healthcare: { label: "Healthcare", tint: "bg-teal-50 text-teal-800 border-teal-200", dot: "#0d9488" },
-};
-
-/** Fallback palette for admin-added categories (avoids stage badge hues). */
-const CATEGORY_TINT_FALLBACK = [
-  { tint: "bg-sky-50 text-sky-800 border-sky-200", dot: "#0284c7" },
-  { tint: "bg-emerald-50 text-emerald-800 border-emerald-200", dot: "#059669" },
-  { tint: "bg-amber-50 text-amber-900 border-amber-200", dot: "#d97706" },
-  { tint: "bg-rose-50 text-rose-800 border-rose-200", dot: "#e11d48" },
-  { tint: "bg-teal-50 text-teal-800 border-teal-200", dot: "#0d9488" },
-  { tint: "bg-indigo-50 text-indigo-800 border-indigo-200", dot: "#4f46e5" },
-  { tint: "bg-orange-50 text-orange-900 border-orange-200", dot: "#ea580c" },
-  { tint: "bg-cyan-50 text-cyan-800 border-cyan-200", dot: "#0891b2" },
-] as const;
-
 /** Title-case a stored category slug for display (keeps hyphens, e.g. e-commerce). */
 export function formatCategoryLabel(category: string): string {
   if (!category) return "Unclassified";
-  const known = CATEGORY_META[category.toLowerCase()];
-  if (known) return known.label;
   return category
     .split(/[\s_]+/)
     .filter(Boolean)
@@ -91,29 +67,6 @@ export function formatCategoryLabel(category: string): string {
         .join("-"),
     )
     .join(" ");
-}
-
-function hashCategory(key: string): number {
-  let h = 0;
-  for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) >>> 0;
-  return h;
-}
-
-/** Stable tint for a category slug — unclassified is always muted. */
-export function categoryTint(category: string): string {
-  return categoryMeta(category).tint;
-}
-
-export function categoryDot(category: string): string {
-  return categoryMeta(category).dot;
-}
-
-export function categoryMeta(category: string): { label: string; tint: string; dot: string } {
-  const key = (category || DEFAULT_LEAD_CATEGORY).toLowerCase();
-  const known = CATEGORY_META[key];
-  if (known) return known;
-  const fb = CATEGORY_TINT_FALLBACK[hashCategory(key) % CATEGORY_TINT_FALLBACK.length];
-  return { label: formatCategoryLabel(key), tint: fb.tint, dot: fb.dot };
 }
 
 export const ACCOUNT_STATUSES = ["active", "at_risk", "churned"] as const;
@@ -196,6 +149,9 @@ export const ACTIVITY_KINDS = [
   "reminder",
 ] as const;
 export type ActivityKind = (typeof ACTIVITY_KINDS)[number];
+
+/** A logged meeting is stored as a `note` activity with this title (there is no meeting kind). */
+export const MEETING_TITLE = "Meeting logged";
 
 /* ----------------------------------------------------------------- reminders */
 // Reminders fire an outbound HTTP request ("call an API") to a per-user webhook

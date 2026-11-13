@@ -1,9 +1,6 @@
-"use client";
-import { Avatar } from "@/components/ui/Avatar";
-import { Badge } from "@/components/ui/Badge";
-import { AUDIT_ACTION_META } from "@/lib/constants";
-import { formatINRCompact } from "@/lib/utils";
-import { Time } from "@/components/ui/Time";
+import { formatMoney } from "@/components/ui/Money";
+import { AUDIT_ACTION_META, STAGE_META, type LeadStage } from "@/lib/constants";
+import { absoluteTime, shortDate } from "@/lib/utils";
 import type { AuditLogDTO, AuditChange } from "@/lib/types";
 
 const ENTITY_LABEL: Record<string, string> = {
@@ -17,75 +14,69 @@ const ENTITY_LABEL: Record<string, string> = {
 
 // Human labels for the fields we diff, so the trail reads in plain English.
 const FIELD_LABEL: Record<string, string> = {
-  estValue: "Est. value",
+  estValue: "Estimated value",
   isPrimary: "Primary",
   fromLead: "From lead",
   convertedAccount: "Converted to",
   customerSince: "Customer since",
 };
 
+const MONEY_FIELDS = new Set(["estValue", "value", "amount"]);
+
 function label(field: string): string {
   return FIELD_LABEL[field] ?? field.charAt(0).toUpperCase() + field.slice(1);
 }
 
 function fmt(field: string, v: unknown): string {
-  if (v === null || v === undefined || v === "") return "—";
-  if ((field === "estValue" || field === "value") && typeof v === "number") return formatINRCompact(v);
+  if (v === null || v === undefined || v === "") return "–";
+  if (MONEY_FIELDS.has(field) && typeof v === "number") return formatMoney(v);
+  if (field === "stage" && typeof v === "string" && v in STAGE_META) return STAGE_META[v as LeadStage].label;
+  if (typeof v === "boolean") return v ? "Yes" : "No";
   return String(v);
 }
 
-function ChangeRow({ field, change }: { field: string; change: AuditChange }) {
+function ChangeLine({ change }: { change: AuditChange }) {
   return (
-    <div className="flex flex-wrap items-center gap-1.5 text-[12px]">
-      <span className="font-medium text-muted">{label(field)}:</span>
-      {change.from !== undefined && (
-        <>
-          <span className="text-faint line-through">{fmt(field, change.from)}</span>
-          <span className="text-faint">→</span>
-        </>
-      )}
-      <span className="font-medium text-ink-soft">{fmt(field, change.to)}</span>
-    </div>
+    <p className="break-words">
+      <span className="text-ink-1">{label(change.field)}</span>{" "}
+      <span className="tnum text-ink-3">
+        {change.from !== undefined && <>{fmt(change.field, change.from)} → </>}
+        {fmt(change.field, change.to)}
+      </span>
+    </p>
   );
 }
 
-/** Renders an audit-log feed. `showEntity` adds the entity type+name line (used in the workspace log). */
+/**
+ * Audit-log feed as a hairline list: what changed (field, from → to), then who
+ * and when. `showEntity` adds the record type and name (the workspace log).
+ */
 export function AuditTimeline({ entries, showEntity = false }: { entries: AuditLogDTO[]; showEntity?: boolean }) {
   if (entries.length === 0) {
-    return <p className="py-8 text-center text-[13px] text-faint">No history yet.</p>;
+    return <p className="py-6 text-center text-[13px] text-ink-3">No history yet.</p>;
   }
   return (
-    <ul className="space-y-4">
-      {entries.map((e) => {
-        const meta = AUDIT_ACTION_META[e.action];
-        return (
-          <li key={e.id} className="flex gap-3">
-            <Avatar name={e.actorName || "System"} size={30} className="mt-0.5 shrink-0" />
-            <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge tint={meta.tint}>{meta.label}</Badge>
-                {showEntity && (
-                  <span className="text-[12.5px] text-muted">
-                    {ENTITY_LABEL[e.entity] ?? e.entity}
-                  </span>
-                )}
-                <span className="truncate text-[13px] font-semibold text-ink">{e.entityLabel || "—"}</span>
-                <Time value={e.createdAt} className="ml-auto shrink-0 text-[11.5px] text-faint" />
-              </div>
-              <p className="mt-0.5 text-[12px] text-muted">
-                by {e.actorName || "System"}
-              </p>
-              {e.changes.length > 0 && (
-                <div className="mt-2 space-y-1 rounded-[var(--radius-md)] border border-line bg-canvas/50 px-3 py-2">
-                  {e.changes.map((c, i) => (
-                    <ChangeRow key={`${c.field}-${i}`} field={c.field} change={c} />
-                  ))}
-                </div>
-              )}
-            </div>
-          </li>
-        );
-      })}
+    <ul className="text-[13px]">
+      {entries.map((e) => (
+        <li key={e.id} className="border-b border-line py-2 last:border-b-0">
+          {showEntity && (
+            <p className="truncate">
+              <span className="text-ink-3">{ENTITY_LABEL[e.entity] ?? e.entity}</span>{" "}
+              <span className="font-medium text-ink-1">{e.entityLabel || "–"}</span>
+            </p>
+          )}
+          {(e.action !== "update" || e.changes.length === 0) && <p className="text-ink-1">{AUDIT_ACTION_META[e.action].label}</p>}
+          {e.changes.map((c, i) => (
+            <ChangeLine key={`${c.field}-${i}`} change={c} />
+          ))}
+          <p className="tnum text-[12px] text-ink-3">
+            {e.actorName || "System"} ·{" "}
+            <time dateTime={e.createdAt} title={absoluteTime(e.createdAt)}>
+              {shortDate(e.createdAt)}
+            </time>
+          </p>
+        </li>
+      ))}
     </ul>
   );
 }

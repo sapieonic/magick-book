@@ -47,37 +47,6 @@ export function initials(name: string): string {
     .join("");
 }
 
-/**
- * Deterministic avatar tint from a string. Returns a tailwind-ish inline style
- * pair (bg + fg) so the same person always gets the same color.
- */
-const AVATAR_TINTS = [
-  ["#e6e2fd", "#4a39c9"],
-  ["#e4f6ec", "#15803d"],
-  ["#fbf0d8", "#b45309"],
-  ["#e3eefb", "#1d4ed8"],
-  ["#fbe6e3", "#be3a31"],
-  ["#f3e8fd", "#7e22ce"],
-  ["#ddf4f1", "#0f766e"],
-];
-export function avatarTint(seed: string): { bg: string; fg: string } {
-  let h = 0;
-  for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0;
-  const [bg, fg] = AVATAR_TINTS[h % AVATAR_TINTS.length];
-  return { bg, fg };
-}
-
-/**
- * Lead value tier — one colour band per ₹25k, low → high, capped at 4.
- * Bands are half-open: tier 0 = [0,25k), 1 = [25k,50k), 2 = [50k,75k),
- * 3 = [75k,100k), 4 = ≥100k. Returns -1 when there is no estimated value.
- * Pairs with the --color-tier{0..4} tokens to colour board cards by deal size.
- */
-export function valueTier(estValue: number): number {
-  if (!estValue || estValue <= 0) return -1;
-  return Math.min(4, Math.floor(estValue / 25000));
-}
-
 /** Absolute, locale-aware timestamp for tooltips, e.g. "1 Jun 2026, 4:05 pm". */
 export function absoluteTime(date: Date | string): string {
   const d = typeof date === "string" ? new Date(date) : date;
@@ -99,4 +68,27 @@ export function relativeTime(date: Date | string): string {
   const mo = Math.round(day / 30);
   if (mo < 12) return `${mo}mo ago`;
   return `${Math.round(mo / 12)}y ago`;
+}
+
+/** Whole days elapsed since `date` (0 for today or a future/invalid date). */
+export function daysSince(date: Date | string, now: number = Date.now()): number {
+  const t = (typeof date === "string" ? new Date(date) : date).getTime();
+  if (Number.isNaN(t)) return 0;
+  return Math.max(0, Math.floor((now - t) / 86_400_000));
+}
+
+/** An age written in words: "Today", "1 day", "17 days", "3 months", "2 years". */
+export function ageInWords(days: number): string {
+  const plural = (n: number, unit: string) => `${n} ${unit}${n === 1 ? "" : "s"}`;
+  if (days < 1) return "Today";
+  if (days < 30) return plural(days, "day");
+  if (days < 365) return plural(Math.floor(days / 30), "month");
+  return plural(Math.floor(days / 365), "year");
+}
+
+/** Short calendar date in en-IN, e.g. "14 Jul 2026" (or "14 Jul" with `withYear` false). */
+export function shortDate(date: Date | string, withYear = true): string {
+  const d = typeof date === "string" ? new Date(date) : date;
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleDateString("en-IN", { day: "numeric", month: "short", ...(withYear && { year: "numeric" }) });
 }

@@ -5,7 +5,7 @@ import { Lead, Activity, type ILead, type IActivity } from "@/lib/models";
 import { requireUser } from "@/lib/auth/server";
 import { leadScope } from "@/lib/rbac";
 import { notifyLeadComment } from "@/lib/slack";
-import { CONTACT_METHODS, ACTIVITY_KINDS } from "@/lib/constants";
+import { CONTACT_METHODS, ACTIVITY_KINDS, MEETING_TITLE } from "@/lib/constants";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -15,9 +15,11 @@ const METHOD_TITLE: Record<string, string> = {
   email: "Email sent",
   sms: "SMS sent",
   note: "Note added",
+  meeting: MEETING_TITLE,
 };
 
-// POST /api/leads/:id/activities — log a reach-out or note on the timeline.
+// POST /api/leads/:id/activities — log a reach-out, meeting or note on the timeline.
+// A meeting has no activity kind of its own: it is stored as a note titled MEETING_TITLE.
 export const POST = route(async (req: NextRequest, ctx: Ctx) => {
   const user = await requireUser();
   await connectDB();
@@ -27,7 +29,7 @@ export const POST = route(async (req: NextRequest, ctx: Ctx) => {
 
   const b = await req.json().catch(() => ({}));
   const kind = b.kind;
-  const valid = [...CONTACT_METHODS, "note"];
+  const valid = [...CONTACT_METHODS, "note", "meeting"];
   if (!valid.includes(kind)) return fail("Invalid activity kind");
 
   const activityKind = (ACTIVITY_KINDS.includes(kind) ? kind : "note") as IActivity["kind"];

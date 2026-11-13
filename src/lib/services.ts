@@ -2,7 +2,10 @@ import "server-only";
 import { Types } from "mongoose";
 import { Activity, AuditLog, Invoice, Expense, User, type IUser } from "./models";
 import type { ActivityKind, AuditAction, AuditEntity } from "./constants";
-import type { AccountFinance, AuditChange } from "./types";
+import type { AccountFinance, AccountListFinance, AuditChange } from "./types";
+import { LEAD_STAGES, type LeadStage } from "./constants";
+import type { ILead, IAuditLog } from "./models";
+import type { LeadStageSpan } from "./types";
 
 /** Append an activity/timeline entry. */
 export async function logActivity(opts: {
@@ -94,14 +97,51 @@ export async function accountFinance(accountId: Types.ObjectId | string): Promis
     ]),
   ]);
 
-  const byStatus = new Map(invoiceAgg.map((r) => [r._id, r.total]));
+  return financeFromTotals(new Map(invoiceAgg.map((r) => [r._id, r.total])), expenseAgg[0]?.total ?? 0);
+}
+
+/** Shared rollup rule: billed = sent + paid + overdue (drafts excluded), outstanding = sent + overdue. */
+function financeFromTotals(byStatus: Map<string, number>, expenses: number): AccountFinance {
   const billed = (byStatus.get("sent") ?? 0) + (byStatus.get("paid") ?? 0) + (byStatus.get("overdue") ?? 0);
   const paid = byStatus.get("paid") ?? 0;
   const outstanding = (byStatus.get("sent") ?? 0) + (byStatus.get("overdue") ?? 0);
-  const expenses = expenseAgg[0]?.total ?? 0;
   const margin = billed > 0 ? Math.max(0, (billed - expenses) / billed) : 0;
-
   return { billed, paid, outstanding, expenses, margin };
+}
+
+/**
+ * `accountFinance` for many accounts at once (list views): one invoice
+ * aggregation grouped by account + status and one expense aggregation, keyed by
+ * account id. Accounts with no money rows are absent from the map.
+ */
+export async function accountFinances(accountIds: Types.ObjectId[]): Promise<Map<string, AccountListFinance>> {
+  if (!accountIds.length) return new Map();
+  const match = { accountId: { $in: accountIds }, deletedAt: null };
+  const [invoiceAgg, expenseAgg] = await Promise.all([
+    Invoice.aggregate<{ _id: { accountId: Types.ObjectId; status: string }; total: number }>([
+      { $match: match },
+      { $group: { _id: { accountId: "$accountId", status: "$status" }, total: { $sum: "$amount" } } },
+    ]),
+    Expense.aggregate<{ _id: Types.ObjectId; total: number }>([
+      { $match: match },
+      { $group: { _id: "$accountId", total: { $sum: "$amount" } } },
+    ]),
+  ]);
+
+  const statusTotals = new Map<string, Map<string, number>>();
+  for (const r of invoiceAgg) {
+    const key = String(r._id.accountId);
+    if (!statusTotals.has(key)) statusTotals.set(key, new Map());
+    statusTotals.get(key)!.set(r._id.status, r.total);
+  }
+  const expenseTotals = new Map(expenseAgg.map((r) => [String(r._id), r.total]));
+
+  const out = new Map<string, AccountListFinance>();
+  for (const key of new Set([...statusTotals.keys(), ...expenseTotals.keys()])) {
+    const byStatus = statusTotals.get(key) ?? new Map<string, number>();
+    out.set(key, { ...financeFromTotals(byStatus, expenseTotals.get(key) ?? 0), overdue: byStatus.get("overdue") ?? 0 });
+  }
+  return out;
 }
 
 /** Next sequential invoice number for a workspace (starts at 1001). */
@@ -111,4 +151,31 @@ export async function nextInvoiceNumber(workspaceId: Types.ObjectId | string): P
     .select("number")
     .lean<{ number: number }>();
   return last ? last.number + 1 : 1001;
+}
+
+const isLeadStage = (v: unknown): v is LeadStage => LEAD_STAGES.includes(v as LeadStage);
+
+/**
+ * How long a lead spent in each stage, oldest first. Folds every recorded
+ * `stage` diff on the lead's audit trail (lane moves, edits, conversion) in
+ * one indexed query. A lead with no recorded move gets a single open span
+ * starting at `createdAt`.
+ */
+export async function leadStageSpans(lead: Pick<ILead, "_id" | "workspaceId" | "stage" | "createdAt">): Promise<LeadStageSpan[]> {
+  const entries = await AuditLog.find({ workspaceId: lead.workspaceId, leadId: lead._id, "changes.field": "stage" })
+    .sort({ createdAt: 1 })
+    .select({ changes: 1, createdAt: 1 })
+    .lean<Pick<IAuditLog, "changes" | "createdAt">[]>();
+  const moves = entries.flatMap((e) => e.changes.filter((c) => c.field === "stage").map((c) => ({ ...c, at: e.createdAt })));
+
+  const spans: LeadStageSpan[] = [];
+  const firstFrom = moves[0]?.from;
+  let open = { stage: isLeadStage(firstFrom) ? firstFrom : lead.stage, enteredAt: lead.createdAt };
+  for (const m of moves) {
+    if (!isLeadStage(m.to) || m.to === open.stage) continue;
+    spans.push({ stage: open.stage, enteredAt: open.enteredAt.toISOString(), leftAt: m.at.toISOString() });
+    open = { stage: m.to, enteredAt: m.at };
+  }
+  spans.push({ stage: open.stage, enteredAt: open.enteredAt.toISOString(), leftAt: null });
+  return spans;
 }

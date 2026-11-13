@@ -1,10 +1,11 @@
 import { type NextRequest } from "next/server";
-import { ok, fail, route, serializeLead, serializeActivity, HttpError } from "@/lib/api";
+import { ok, fail, route, serializeLead, serializeActivity, serializeReminder, HttpError } from "@/lib/api";
 import { connectDB } from "@/lib/db";
-import { Lead, Activity, type ILead, type IActivity } from "@/lib/models";
+import { Lead, Activity, Reminder, type ILead, type IActivity, type IReminder } from "@/lib/models";
 import { requireUser } from "@/lib/auth/server";
-import { leadScope, canEditOwned } from "@/lib/rbac";
-import { ownerNameMap, audit, diffChanges } from "@/lib/services";
+import { leadScope, reminderScope, canEditOwned } from "@/lib/rbac";
+import { ownerNameMap, audit, diffChanges, leadStageSpans } from "@/lib/services";
+import type { LeadDetail } from "@/lib/types";
 import { LEAD_SOURCES, LEAD_STAGES } from "@/lib/constants";
 import { resolveLeadCategory } from "@/lib/lead-categories";
 
@@ -16,22 +17,37 @@ async function loadLead(userScope: Record<string, unknown>, id: string) {
   return lead;
 }
 
-// GET /api/leads/:id — lead + activity timeline.
+/** Re-read a lead after a write, with its owner's name (not the editor's). */
+async function freshLead(id: ILead["_id"]) {
+  const lead = (await Lead.findById(id).lean<ILead>())!;
+  const names = await ownerNameMap([lead.ownerId]);
+  return serializeLead(lead, names.get(String(lead.ownerId)) ?? "");
+}
+
+// GET /api/leads/:id — lead, activity timeline, time in each stage and the viewer's next step.
+// Archived leads load too (read-only on the page) so they can be reviewed and restored.
 export const GET = route(async (_req: NextRequest, ctx: Ctx) => {
   const user = await requireUser();
   await connectDB();
   const { id } = await ctx.params;
-  const lead = await loadLead(leadScope(user), id);
+  const lead =
+    (await Lead.findOne({ _id: id, ...leadScope(user) }).lean<ILead>()) ??
+    (await loadLead(leadScope(user, { archived: true }), id));
 
-  const [names, activities] = await Promise.all([
-    ownerNameMap([lead.ownerId]),
+  const [activities, stages, nextStep] = await Promise.all([
     Activity.find({ leadId: lead._id }).sort({ createdAt: -1 }).lean<IActivity[]>(),
+    leadStageSpans(lead),
+    Reminder.findOne({ ...reminderScope(user), leadId: lead._id, status: { $in: ["scheduled", "sent", "failed"] } })
+      .sort({ dueAt: 1 })
+      .lean<IReminder>(),
   ]);
-  const actorNames = await ownerNameMap(activities.map((a) => a.actorId).filter(Boolean) as never[]);
+  const names = await ownerNameMap([lead.ownerId, ...activities.flatMap((a) => (a.actorId ? [a.actorId] : []))]);
 
-  return ok({
+  return ok<LeadDetail>({
     lead: serializeLead(lead, names.get(String(lead.ownerId)) ?? ""),
-    activities: activities.map((a) => serializeActivity(a, actorNames.get(String(a.actorId)) ?? "")),
+    activities: activities.map((a) => serializeActivity(a, names.get(String(a.actorId)) ?? "")),
+    stages,
+    nextStep: nextStep ? serializeReminder(nextStep) : null,
   });
 });
 
@@ -48,8 +64,7 @@ export const PATCH = route(async (req: NextRequest, ctx: Ctx) => {
     if (!canEditOwned(user, lead.ownerId)) return fail("You can only restore your own leads.", 403);
     await Lead.updateOne({ _id: lead._id }, { $unset: { deletedAt: "", deletedBy: "" } });
     await audit({ entity: "lead", entityId: lead._id, entityLabel: lead.name, action: "restore", actor: user, leadId: lead._id });
-    const fresh = await Lead.findById(lead._id).lean<ILead>();
-    return ok({ lead: serializeLead(fresh!, user.name) });
+    return ok({ lead: await freshLead(lead._id) });
   }
 
   const lead = await loadLead(leadScope(user), id);
@@ -78,8 +93,7 @@ export const PATCH = route(async (req: NextRequest, ctx: Ctx) => {
 
   await Lead.updateOne({ _id: lead._id }, patch);
   await audit({ entity: "lead", entityId: lead._id, entityLabel: (patch.name as string) ?? lead.name, action: "update", actor: user, changes, leadId: lead._id });
-  const fresh = await Lead.findById(lead._id).lean<ILead>();
-  return ok({ lead: serializeLead(fresh!, user.name) });
+  return ok({ lead: await freshLead(lead._id) });
 });
 
 // DELETE /api/leads/:id — soft-delete (archive). Activities are kept for history.
