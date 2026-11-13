@@ -7,15 +7,21 @@ import type { LeadDTO } from "./types";
 export interface OwnerOption {
   id: string;
   name: string;
-  /** How many of the supplied leads this person owns — a Jira-style count. */
+  /** How many of the supplied rows this person owns — a Jira-style count. */
   count: number;
 }
 
+/** Any owned record: a lead, an account. */
+interface Owned {
+  ownerId: string;
+  ownerName?: string;
+}
+
 /**
- * The pool of people you can filter by: everyone who owns one of `leads`, with
- * their lead counts, sorted by name. Leads without an owner are skipped.
+ * The pool of people you can filter by: everyone who owns one of `rows`, with
+ * their counts, sorted by name. Rows without an owner are skipped.
  */
-export function deriveOwners(leads: LeadDTO[]): OwnerOption[] {
+export function deriveOwners(leads: Owned[]): OwnerOption[] {
   const byId = new Map<string, OwnerOption>();
   for (const l of leads) {
     if (!l.ownerId || !l.ownerName?.trim()) continue;
@@ -26,8 +32,8 @@ export function deriveOwners(leads: LeadDTO[]): OwnerOption[] {
   return [...byId.values()].sort((a, b) => a.name.localeCompare(b.name));
 }
 
-/** Narrow `leads` to those owned by one of `ownerIds`. No selection → everything. */
-export function filterLeadsByOwners(leads: LeadDTO[], ownerIds: string[]): LeadDTO[] {
+/** Narrow `rows` to those owned by one of `ownerIds`. No selection → everything. */
+export function filterByOwners<T extends Owned>(leads: T[], ownerIds: string[]): T[] {
   if (ownerIds.length === 0) return leads;
   const set = new Set(ownerIds);
   return leads.filter((l) => set.has(l.ownerId));

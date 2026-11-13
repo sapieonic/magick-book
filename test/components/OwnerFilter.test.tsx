@@ -2,7 +2,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { OwnerFilter, type OwnerOption } from "@/components/leads/OwnerFilter";
+import { OwnerFilter, type OwnerOption } from "@/components/ui/OwnerFilter";
 
 const owners: OwnerOption[] = [
   { id: "a", name: "Amit", count: 2 },

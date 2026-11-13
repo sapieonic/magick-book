@@ -2,7 +2,8 @@
 import { useState } from "react";
 import { RotateCcw } from "lucide-react";
 import { CategoryBadge } from "./CategoryBadge";
-import { OwnerCell, StageLabel } from "./cells";
+import { OwnerCell } from "@/components/ui/Avatar";
+import { StageLabel } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Money } from "@/components/ui/Money";
 import { Table, Td, Th, TwoLine } from "@/components/ui/Table";

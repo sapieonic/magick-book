@@ -87,4 +87,10 @@ describe("ProportionBar bar", () => {
     render(<ProportionBar variant="bar" aria-label="Aging" segments={[seg("a", 0)]} />);
     expect(screen.getByRole("img")).toHaveClass("hatch");
   });
+  it("draws a 36px block bar at size md, a thin 12px bar by default", () => {
+    const { rerender } = render(<ProportionBar variant="bar" aria-label="Billed" segments={aging} />);
+    expect(screen.getByRole("img")).toHaveClass("h-3", "rounded-full");
+    rerender(<ProportionBar variant="bar" size="md" aria-label="Billed" segments={aging} />);
+    expect(screen.getByRole("img")).toHaveClass("h-9", "rounded-bar");
+  });
 });

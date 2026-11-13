@@ -1,8 +1,9 @@
 import "server-only";
 import { Types } from "mongoose";
-import { Activity, AuditLog, Invoice, Expense, User, type IUser } from "./models";
+import { Activity, AuditLog, Invoice, Expense, User, type IInvoice, type IUser } from "./models";
 import type { ActivityKind, AuditAction, AuditEntity } from "./constants";
-import type { AccountFinance, AccountListFinance, AuditChange } from "./types";
+import type { AccountFinance, AuditChange } from "./types";
+import { rollupMoney } from "./receivables";
 import { LEAD_STAGES, type LeadStage } from "./constants";
 import type { ILead, IAuditLog } from "./models";
 import type { LeadStageSpan } from "./types";
@@ -83,65 +84,45 @@ export async function ownerNameMap(ids: (Types.ObjectId | string)[]): Promise<Ma
   return new Map(users.map((u) => [String(u._id), u.name]));
 }
 
-/** Roll up an account's money: billed / paid / outstanding / expenses / margin. */
-export async function accountFinance(accountId: Types.ObjectId | string): Promise<AccountFinance> {
-  const accId = new Types.ObjectId(accountId);
-  const [invoiceAgg, expenseAgg] = await Promise.all([
-    Invoice.aggregate<{ _id: string; total: number }>([
-      { $match: { accountId: accId, deletedAt: null } },
-      { $group: { _id: "$status", total: { $sum: "$amount" } } },
-    ]),
-    Expense.aggregate<{ _id: null; total: number }>([
-      { $match: { accountId: accId, deletedAt: null } },
-      { $group: { _id: null, total: { $sum: "$amount" } } },
-    ]),
-  ]);
-
-  return financeFromTotals(new Map(invoiceAgg.map((r) => [r._id, r.total])), expenseAgg[0]?.total ?? 0);
-}
-
-/** Shared rollup rule: billed = sent + paid + overdue (drafts excluded), outstanding = sent + overdue. */
-function financeFromTotals(byStatus: Map<string, number>, expenses: number): AccountFinance {
-  const billed = (byStatus.get("sent") ?? 0) + (byStatus.get("paid") ?? 0) + (byStatus.get("overdue") ?? 0);
-  const paid = byStatus.get("paid") ?? 0;
-  const outstanding = (byStatus.get("sent") ?? 0) + (byStatus.get("overdue") ?? 0);
-  const margin = billed > 0 ? Math.max(0, (billed - expenses) / billed) : 0;
-  return { billed, paid, outstanding, expenses, margin };
-}
-
 /**
- * `accountFinance` for many accounts at once (list views): one invoice
- * aggregation grouped by account + status and one expense aggregation, keyed by
- * account id. Accounts with no money rows are absent from the map.
+ * Money rollup for many accounts at once (list views): one projected invoice
+ * read and one expense aggregation, folded per account by `rollupMoney` so
+ * "overdue" means the same here as on Today and Money. Accounts with no money
+ * rows are absent from the map.
  */
-export async function accountFinances(accountIds: Types.ObjectId[]): Promise<Map<string, AccountListFinance>> {
+export async function accountFinances(accountIds: Types.ObjectId[]): Promise<Map<string, AccountFinance>> {
   if (!accountIds.length) return new Map();
   const match = { accountId: { $in: accountIds }, deletedAt: null };
-  const [invoiceAgg, expenseAgg] = await Promise.all([
-    Invoice.aggregate<{ _id: { accountId: Types.ObjectId; status: string }; total: number }>([
-      { $match: match },
-      { $group: { _id: { accountId: "$accountId", status: "$status" }, total: { $sum: "$amount" } } },
-    ]),
+  const [invoices, expenseAgg] = await Promise.all([
+    Invoice.find(match).select("accountId amount status issuedAt dueAt").lean<Pick<IInvoice, "accountId" | "amount" | "status" | "issuedAt" | "dueAt">[]>(),
     Expense.aggregate<{ _id: Types.ObjectId; total: number }>([
       { $match: match },
       { $group: { _id: "$accountId", total: { $sum: "$amount" } } },
     ]),
   ]);
 
-  const statusTotals = new Map<string, Map<string, number>>();
-  for (const r of invoiceAgg) {
-    const key = String(r._id.accountId);
-    if (!statusTotals.has(key)) statusTotals.set(key, new Map());
-    statusTotals.get(key)!.set(r._id.status, r.total);
+  const byAccount = new Map<string, typeof invoices>();
+  for (const inv of invoices) {
+    const key = String(inv.accountId);
+    byAccount.set(key, [...(byAccount.get(key) ?? []), inv]);
   }
   const expenseTotals = new Map(expenseAgg.map((r) => [String(r._id), r.total]));
 
-  const out = new Map<string, AccountListFinance>();
-  for (const key of new Set([...statusTotals.keys(), ...expenseTotals.keys()])) {
-    const byStatus = statusTotals.get(key) ?? new Map<string, number>();
-    out.set(key, { ...financeFromTotals(byStatus, expenseTotals.get(key) ?? 0), overdue: byStatus.get("overdue") ?? 0 });
+  const now = new Date();
+  const out = new Map<string, AccountFinance>();
+  for (const key of new Set([...byAccount.keys(), ...expenseTotals.keys()])) {
+    const { billed, paid, outstanding, overdue, expenses, margin } = rollupMoney(byAccount.get(key) ?? [], [{ amount: expenseTotals.get(key) ?? 0 }], now);
+    out.set(key, { billed, paid, outstanding, overdue, expenses, margin });
   }
   return out;
+}
+
+export const NO_FINANCE: AccountFinance = { billed: 0, paid: 0, outstanding: 0, overdue: 0, expenses: 0, margin: 0 };
+
+/** One account's money rollup (see `accountFinances`). */
+export async function accountFinance(accountId: Types.ObjectId | string): Promise<AccountFinance> {
+  const id = new Types.ObjectId(accountId);
+  return (await accountFinances([id])).get(String(id)) ?? NO_FINANCE;
 }
 
 /** Next sequential invoice number for a workspace (starts at 1001). */

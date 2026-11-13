@@ -14,7 +14,6 @@ vi.mock("@/lib/client", () => ({
     refresh: vi.fn(),
     setData: vi.fn(),
   }),
-  ApiError: class extends Error {},
 }));
 
 import { AddLeadDrawer } from "@/components/leads/AddLeadDrawer";

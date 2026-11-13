@@ -27,3 +27,13 @@ export function Avatar({
     </span>
   );
 }
+
+/** Owner initials and name for table cells, or a dash when unowned. `first` shows the first name only. */
+export function OwnerCell({ name, first, size = 22 }: { name: string; first?: boolean; size?: number }) {
+  if (!name) return <span className="text-ink-3">–</span>;
+  return (
+    <span className="inline-flex items-center gap-2 whitespace-nowrap text-ink-2">
+      <Avatar name={name} size={size} /> {first ? name.split(" ")[0] : name}
+    </span>
+  );
+}

@@ -71,10 +71,6 @@ export async function connectDB(): Promise<typeof mongoose> {
   return cache.conn;
 }
 
-export function isUsingMemoryDB(): boolean {
-  return cache.usingMemory;
-}
-
 let seedPromise: Promise<void> | null = null;
 async function ensureSeeded(isMemory: boolean): Promise<void> {
   // Always seed the ephemeral memory DB. For a real DB, only seed when empty

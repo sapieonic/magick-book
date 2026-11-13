@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { formatINR, formatINRCompact, initials, relativeTime, daysSince, ageInWords } from "@/lib/utils";
+import { formatINR, formatINRCompact, initials, relativeTime, daysSince, ageInWords, agoInWords, plural, parseAmount } from "@/lib/utils";
 
 describe("formatINR", () => {
   it("formats with the Indian grouping and a rupee sign", () => {
@@ -72,6 +72,27 @@ describe("ageInWords", () => {
     expect(ageInWords(125)).toBe("4 months");
     expect(ageInWords(400)).toBe("1 year");
     expect(ageInWords(800)).toBe("2 years");
+  });
+});
+
+describe("agoInWords / plural", () => {
+  it("writes an age for the middle of a sentence", () => {
+    expect(agoInWords(0)).toBe("today");
+    expect(agoInWords(17)).toBe("17 days ago");
+    expect(agoInWords(125)).toBe("4 months ago");
+  });
+  it("pluralises with an optional irregular form", () => {
+    expect(plural(1, "lead")).toBe("1 lead");
+    expect(plural(3, "lead")).toBe("3 leads");
+    expect(plural(2, "person", "people")).toBe("2 people");
+  });
+});
+
+describe("parseAmount", () => {
+  it("reads grouped or prefixed rupee input, else 0", () => {
+    expect(parseAmount("1,10,000")).toBe(110000);
+    expect(parseAmount("₹ 6200.5")).toBe(6200.5);
+    expect(parseAmount("abc")).toBe(0);
   });
 });
 

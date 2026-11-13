@@ -160,13 +160,14 @@ describe("template rendering", () => {
   });
 });
 
-describe("dispatch", () => {
-  function mockFetch(impl: () => Promise<Response>) {
-    const fn = vi.fn(impl);
-    vi.stubGlobal("fetch", fn);
-    return fn;
-  }
+/** Stub global fetch with a typed mock so `mock.calls` carries fetch's parameter types. */
+function mockFetch(impl: typeof fetch = async () => new Response("ok", { status: 200 })) {
+  const fn = vi.fn<typeof fetch>(impl);
+  vi.stubGlobal("fetch", fn);
+  return fn;
+}
 
+describe("dispatch", () => {
   it("delivers due reminders to the owner's webhook and marks them sent", async () => {
     await models.ReminderSetting.create({
       workspaceId,
@@ -186,8 +187,8 @@ describe("dispatch", () => {
 
     const [url, init] = fetchMock.mock.calls[0];
     expect(url).toBe("https://example.com/hook");
-    expect(JSON.parse((init as RequestInit).body as string)).toEqual({ text: "Due now" });
-    expect((init as RequestInit).headers).toMatchObject({ "X-Test": "Due now" });
+    expect(JSON.parse(init?.body as string)).toEqual({ text: "Due now" });
+    expect(init?.headers).toMatchObject({ "X-Test": "Due now" });
 
     const fresh = await models.Reminder.findById(r._id).lean();
     expect(fresh?.status).toBe("sent");
@@ -230,12 +231,6 @@ describe("dispatch", () => {
 });
 
 describe("per-lead webhook override", () => {
-  function mockFetch() {
-    const fn = vi.fn(async () => new Response("ok", { status: 200 }));
-    vi.stubGlobal("fetch", fn);
-    return fn;
-  }
-
   async function makeLead() {
     return models.Lead.create({ workspaceId, ownerId: admin._id, name: "Acme", source: "Website", stage: "new" });
   }

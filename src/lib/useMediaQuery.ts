@@ -19,5 +19,5 @@ export function useMediaQuery(query: string): boolean {
   );
 }
 
-/** Below the `md` breakpoint (720px): the board becomes a single stage list. */
+/** Below the `md` breakpoint (720px). */
 export const PHONE_QUERY = "(max-width: 719.98px)";

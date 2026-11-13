@@ -150,19 +150,25 @@ export interface CollectedDTO {
   total: number;
 }
 
-export interface MoneyTotals {
+/** Money rollup of an account (or of everything visible, in `MoneyTotals`). Built by `rollupMoney()`. */
+export interface AccountFinance {
   /** Every issued (non-draft) invoice. */
   billed: number;
-  billedCount: number;
   paid: number;
-  paidCount: number;
+  /** Sent + overdue. */
   outstanding: number;
-  outstandingCount: number;
-  /** Outstanding invoices past their due date. */
-  overdueCount: number;
+  /** The outstanding part that is overdue (`isOverdue` in receivables.ts). */
+  overdue: number;
   expenses: number;
   /** (billed − expenses) / billed, floored at 0; 0 when nothing is billed. */
   margin: number;
+}
+
+export interface MoneyTotals extends AccountFinance {
+  billedCount: number;
+  paidCount: number;
+  outstandingCount: number;
+  overdueCount: number;
 }
 
 /** `GET /api/money`. */
@@ -247,22 +253,9 @@ export interface ReminderSettingDTO {
   payloadTemplate: string;
 }
 
-export interface AccountFinance {
-  billed: number;
-  paid: number;
-  outstanding: number;
-  expenses: number;
-  margin: number; // 0..1
-}
-
-/** Per-row money rollup on `GET /api/accounts`: the account finance plus its overdue share. */
-export interface AccountListFinance extends AccountFinance {
-  overdue: number;
-}
-
 /** A row of `GET /api/accounts`. */
 export interface AccountListItem extends AccountDTO {
-  finance: AccountListFinance;
+  finance: AccountFinance;
 }
 
 export interface DashboardData {
@@ -282,12 +275,6 @@ export interface DashboardData {
   receivables: DashboardReceivables;
   /** The signed-in user's reminders due after today and within the next 7 days. */
   upcoming: UpcomingReminder[];
-  /** @deprecated No longer rendered; kept for API compatibility. */
-  revenueThisMonth: number;
-  /** @deprecated No longer rendered; kept for API compatibility. */
-  revenueDeltaPct: number;
-  /** @deprecated Superseded by `queue`; kept for API compatibility. */
-  attention: AttentionItem[];
 }
 
 /** A lead pointer on a pipeline stage (its oldest untouched or latest lead). */
@@ -334,18 +321,11 @@ export interface WorkItem {
   invoiceNumber: number | null;
 }
 
-/** Outstanding amounts by days past due (due date, else issue date). */
-export interface ReceivablesAging {
-  current: number;
-  d1_30: number;
-  d31_60: number;
-  d60plus: number;
-}
-
 export interface DashboardReceivables {
   billed: number;
   outstanding: number;
-  aging: ReceivablesAging;
+  /** Outstanding by days past due (due date, else issue date); same bands as `/api/money`. */
+  aging: AgingBucketDTO[];
   /** How many accounts owe money. */
   owingAccounts: number;
   /** The five accounts owing the most, largest first. */
@@ -364,16 +344,6 @@ export interface UpcomingReminder {
   dueAt: string;
   entityLabel: string;
   href: string | null;
-}
-
-export interface AttentionItem {
-  id: string;
-  kind: "lead_followup" | "invoice_overdue";
-  title: string;
-  tag: string;
-  tagTone: "neutral" | "warn" | "danger" | "success";
-  action: string;
-  href: string;
 }
 
 /** Sidebar counts from `GET /api/nav`. */

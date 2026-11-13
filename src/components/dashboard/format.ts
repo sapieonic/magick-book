@@ -1,24 +1,7 @@
-import { differenceInCalendarDays, differenceInCalendarMonths, format, setHours, startOfDay, addDays } from "date-fns";
+import { differenceInCalendarDays, format, setHours, startOfDay, addDays } from "date-fns";
 import { formatMoney } from "@/components/ui/Money";
+import { plural } from "@/lib/utils";
 import type { DashboardData } from "@/lib/types";
-
-/** "1 lead" / "3 leads". */
-export function plural(n: number, one: string, many = `${one}s`): string {
-  return `${n} ${n === 1 ? one : many}`;
-}
-
-/** Elapsed time in words for "last touched" columns: "today", "17 days", "4 months". */
-export function ageWords(date: string | Date, now: Date): string {
-  const days = differenceInCalendarDays(now, new Date(date));
-  if (days <= 0) return "today";
-  if (days < 30) return plural(days, "day");
-  const months = Math.max(1, differenceInCalendarMonths(now, new Date(date)));
-  return months < 12 ? plural(months, "month") : plural(Math.floor(months / 12), "year");
-}
-
-export function daysSince(date: string | Date, now: Date): number {
-  return differenceInCalendarDays(now, new Date(date));
-}
 
 /** Due time relative to today: "due today", "due 3 days ago", "due tomorrow". */
 export function dueWords(date: string, now: Date): string {

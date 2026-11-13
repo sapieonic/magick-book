@@ -1,35 +1,17 @@
-import type {
-  AgingBucketDTO,
-  AgingKey,
-  CollectedDTO,
-  CollectedSeriesDTO,
-  ExpenseDTO,
-  InvoiceDTO,
-  MoneyTotals,
-} from "./types";
-import type { InvoiceStatus } from "./constants";
+import type { AgingKey, CollectedDTO, CollectedSeriesDTO, InvoiceDTO } from "./types";
+import { agingKey, daysPastDue, differenceInUtcCalendarDays, isOutstanding, paymentDate, subUtcMonths } from "./receivables";
+import { plural } from "./utils";
 
-/** Pure money maths shared by `GET /api/money` and the Money page. All dates are UTC. */
-
-export const AGING_KEYS: readonly AgingKey[] = ["current", "d30", "d60", "d60plus"];
-
-export const AGING_LABELS: Record<AgingKey, string> = {
-  current: "Current",
-  d30: "1–30 days",
-  d60: "31–60 days",
-  d60plus: "60+ days",
-};
+/**
+ * Money page builders over invoice DTOs: totals, the collected-by-month series
+ * and ledger grouping/filtering. Aging, overdue and payment-date rules live in
+ * `receivables.ts`. All dates are UTC.
+ */
 
 export const OTHER_SERIES_KEY = "other";
 const OTHER_SERIES_NAME = "Other accounts";
 const MONTH_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"] as const;
 const MONTH_LONG = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"] as const;
-const MS_PER_DAY = 86_400_000;
-
-/** UTC start of the calendar month `n` months before `d`'s month. */
-export function subUtcMonths(d: Date, n: number): Date {
-  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() - n, 1));
-}
 
 export function utcMonthKey(d: Date): string {
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
@@ -41,46 +23,6 @@ export function monthLabel(key: string, long = false): string {
   return (long ? MONTH_LONG : MONTH_SHORT)[m] ?? key;
 }
 
-/** Whole UTC calendar days from `b` to `a` (a − b). */
-export function differenceInUtcCalendarDays(a: Date, b: Date): number {
-  const a0 = Date.UTC(a.getUTCFullYear(), a.getUTCMonth(), a.getUTCDate());
-  const b0 = Date.UTC(b.getUTCFullYear(), b.getUTCMonth(), b.getUTCDate());
-  return Math.round((a0 - b0) / MS_PER_DAY);
-}
-
-export function isOutstanding(inv: Pick<InvoiceDTO, "status">): boolean {
-  return inv.status === "sent" || inv.status === "overdue";
-}
-
-/** Payment date: paidAt, else issuedAt for legacy paid rows; null when unpaid. */
-export function paymentDate(inv: InvoiceDTO): Date | null {
-  if (inv.status !== "paid") return null;
-  const when = inv.paidAt ?? inv.issuedAt;
-  return when ? new Date(when) : null;
-}
-
-/** Days past the due date (falls back to the issue date). Negative = not yet due. */
-export function daysPastDue(inv: InvoiceDTO, now: Date): number {
-  return differenceInUtcCalendarDays(now, new Date(inv.dueAt ?? inv.issuedAt));
-}
-
-/** Aging band of an outstanding invoice; null for paid and draft invoices. */
-export function agingKey(inv: InvoiceDTO, now: Date): AgingKey | null {
-  if (!isOutstanding(inv)) return null;
-  const days = daysPastDue(inv, now);
-  if (days <= 0) return "current";
-  if (days <= 30) return "d30";
-  if (days <= 60) return "d60";
-  return "d60plus";
-}
-
-/** Status as the ledger shows it: a sent invoice past its due date reads as overdue. */
-export function displayStatus(inv: InvoiceDTO, now: Date): InvoiceStatus {
-  return inv.status === "sent" && daysPastDue(inv, now) > 0 ? "overdue" : inv.status;
-}
-
-const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
-
 /** The ledger's "Age" cell: how late an open invoice is, or how long a paid one took. */
 export function invoiceAge(inv: InvoiceDTO, now: Date): { text: string; late: boolean } {
   if (inv.status === "draft") return { text: "Not issued", late: false };
@@ -91,51 +33,9 @@ export function invoiceAge(inv: InvoiceDTO, now: Date): { text: string; late: bo
   }
   const days = daysPastDue(inv, now);
   if (days > 0) return { text: `${plural(days, "day")} overdue`, late: true };
+  if (inv.status === "overdue") return { text: "Overdue", late: true };
   if (days === 0) return { text: "Due today", late: false };
   return { text: `Due in ${plural(-days, "day")}`, late: false };
-}
-
-/** Billed / paid / outstanding / expenses / margin in one pass over each list. */
-export function buildMoneyTotals(invoices: InvoiceDTO[], expenses: Pick<ExpenseDTO, "amount">[], now: Date): MoneyTotals {
-  const t: MoneyTotals = {
-    billed: 0, billedCount: 0, paid: 0, paidCount: 0,
-    outstanding: 0, outstandingCount: 0, overdueCount: 0, expenses: 0, margin: 0,
-  };
-  for (const inv of invoices) {
-    if (inv.status === "draft") continue;
-    t.billed += inv.amount;
-    t.billedCount += 1;
-    if (inv.status === "paid") {
-      t.paid += inv.amount;
-      t.paidCount += 1;
-    } else {
-      t.outstanding += inv.amount;
-      t.outstandingCount += 1;
-      if (daysPastDue(inv, now) > 0) t.overdueCount += 1;
-    }
-  }
-  for (const e of expenses) t.expenses += e.amount;
-  t.margin = t.billed > 0 ? Math.max(0, (t.billed - t.expenses) / t.billed) : 0;
-  return t;
-}
-
-/** Outstanding amount and count per aging band, with the accounts that owe it. */
-export function buildOutstandingAging(invoices: InvoiceDTO[], now: Date): AgingBucketDTO[] {
-  const sums = new Map(AGING_KEYS.map((k) => [k, { amount: 0, count: 0, byAccount: new Map<string, number>() }]));
-  for (const inv of invoices) {
-    const key = agingKey(inv, now);
-    if (!key) continue;
-    const slot = sums.get(key)!;
-    slot.amount += inv.amount;
-    slot.count += 1;
-    const name = inv.accountName?.trim() || "Unknown";
-    slot.byAccount.set(name, (slot.byAccount.get(name) ?? 0) + inv.amount);
-  }
-  return AGING_KEYS.map((key) => {
-    const { amount, count, byAccount } = sums.get(key)!;
-    const accounts = [...byAccount.entries()].sort((a, b) => b[1] - a[1]).map(([name]) => name);
-    return { key, amount, count, accounts };
-  });
 }
 
 /**

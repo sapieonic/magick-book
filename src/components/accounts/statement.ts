@@ -1,4 +1,6 @@
-import { differenceInCalendarDays, format } from "date-fns";
+import { format } from "date-fns";
+import { daysPastDue } from "@/lib/receivables";
+import { plural } from "@/lib/utils";
 import type { ExpenseDTO, InvoiceDTO } from "@/lib/types";
 
 /** "31 Oct 2026". */
@@ -6,16 +8,10 @@ export const longDate = (d: string | Date) => format(new Date(d), "dd MMM yyyy")
 /** "31 Oct". */
 export const shortDate = (d: string | Date) => format(new Date(d), "d MMM");
 
-/** Whole days past the due date for an unpaid, billed invoice; 0 when not late. */
-export function daysOverdue(inv: Pick<InvoiceDTO, "status" | "dueAt">, now = new Date()): number {
-  if (!inv.dueAt || (inv.status !== "sent" && inv.status !== "overdue")) return 0;
-  return Math.max(0, differenceInCalendarDays(now, new Date(inv.dueAt)));
-}
-
-/** "Overdue 6 days" / "Overdue" for the status pill. */
-export function overdueLabel(inv: Pick<InvoiceDTO, "status" | "dueAt">, now = new Date()): string {
-  const days = daysOverdue(inv, now);
-  return days > 0 ? `Overdue ${days} ${days === 1 ? "day" : "days"}` : "Overdue";
+/** "Overdue 6 days" / "Overdue" for the status pill of an overdue invoice. */
+export function overdueLabel(inv: Pick<InvoiceDTO, "issuedAt" | "dueAt">, now = new Date()): string {
+  const days = daysPastDue(inv, now);
+  return days > 0 ? `Overdue ${plural(days, "day")}` : "Overdue";
 }
 
 interface EntryBase {

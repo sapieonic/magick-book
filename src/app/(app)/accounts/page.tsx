@@ -5,10 +5,11 @@ import { Page } from "@/components/layout/Page";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { AccountsTable, ACCOUNT_SORT } from "@/components/accounts/AccountsTable";
 import { NewAccountModal } from "@/components/accounts/AccountModals";
-import { RowsSkeleton } from "@/components/accounts/parts";
 import { Button } from "@/components/ui/Button";
-import { Input, Select } from "@/components/ui/Field";
-import { EmptyState, ErrorState, Skeleton } from "@/components/ui/Misc";
+import { Input } from "@/components/ui/Field";
+import { OwnerFilter } from "@/components/ui/OwnerFilter";
+import { useSession } from "@/components/layout/SessionContext";
+import { EmptyState, ErrorState, RowsSkeleton, Skeleton } from "@/components/ui/Misc";
 import { Money } from "@/components/ui/Money";
 import { Portal } from "@/components/ui/Overlay";
 import { Panel } from "@/components/ui/Panel";
@@ -17,6 +18,7 @@ import { Pagination, sortRows, usePagination, useSort } from "@/components/ui/Ta
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { useToast } from "@/components/ui/Toast";
 import { api, useApi } from "@/lib/client";
+import { deriveOwners, filterByOwners } from "@/lib/leadFilters";
 import type { AccountListItem } from "@/lib/types";
 
 type View = "all" | "active" | "at_risk" | "churned" | "archived";
@@ -45,9 +47,10 @@ const EMPTY: Record<View, { title: string; description: string }> = {
 export default function AccountsPage() {
   const { toast } = useToast();
   const confirm = useConfirm();
+  const me = useSession();
   const [view, setView] = useState<View>("all");
   const [q, setQ] = useState("");
-  const [owner, setOwner] = useState("");
+  const [ownerIds, setOwnerIds] = useState<string[]>([]);
   const [creating, setCreating] = useState(false);
   const [restoringId, setRestoringId] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -62,16 +65,13 @@ export default function AccountsPage() {
   const { data, error, refresh } = useApi<AccountsResponse>(`/api/accounts${qs ? `?${qs}` : ""}`);
 
   const accounts = useMemo(() => data?.accounts ?? [], [data]);
-  const owners = useMemo(() => {
-    const byId = new Map(accounts.map((a) => [a.ownerId, a.ownerName || "No owner"]));
-    return [...byId].sort((a, b) => a[1].localeCompare(b[1]));
-  }, [accounts]);
-  const visible = useMemo(() => (owner ? accounts.filter((a) => a.ownerId === owner) : accounts), [accounts, owner]);
+  const owners = useMemo(() => deriveOwners(accounts), [accounts]);
+  const visible = useMemo(() => filterByOwners(accounts, ownerIds), [accounts, ownerIds]);
 
   const { sort, toggle } = useSort();
   const sorted = useMemo(() => sortRows(visible, sort, ACCOUNT_SORT), [visible, sort]);
   const { page, setPage, pageCount, pageRows, total, pageSize } = usePagination(sorted, 25);
-  useEffect(() => setPage(1), [sort, q, view, owner, setPage]);
+  useEffect(() => setPage(1), [sort, q, view, ownerIds, setPage]);
 
   // Drop selections that disappeared after a refresh, search or filter.
   useEffect(() => {
@@ -136,7 +136,7 @@ export default function AccountsPage() {
     refresh();
   }
 
-  const filtering = Boolean(q.trim() || owner);
+  const filtering = Boolean(q.trim() || ownerIds.length);
   const counts = data?.tabCounts;
 
   return (
@@ -177,16 +177,7 @@ export default function AccountsPage() {
             <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-ink-3" strokeWidth={1.5} aria-hidden />
             <Input type="search" aria-label="Filter accounts by name" placeholder="Filter by name" value={q} onChange={(e) => setQ(e.target.value)} className="pl-8" />
           </div>
-          {(owners.length > 1 || owner) && (
-            <Select aria-label="Owner" value={owner} onChange={(e) => setOwner(e.target.value)} className="w-auto min-w-36">
-              <option value="">All owners</option>
-              {owners.map(([id, name]) => (
-                <option key={id} value={id}>
-                  {name}
-                </option>
-              ))}
-            </Select>
-          )}
+          {(owners.length > 1 || ownerIds.length > 0) && <OwnerFilter owners={owners} value={ownerIds} onChange={setOwnerIds} currentUserId={me.id} />}
         </div>
 
         {error ? (
@@ -204,7 +195,7 @@ export default function AccountsPage() {
                   size="sm"
                   onClick={() => {
                     setQ("");
-                    setOwner("");
+                    setOwnerIds([]);
                   }}
                 >
                   Clear filters

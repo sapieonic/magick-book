@@ -12,9 +12,10 @@ import { Panel } from "@/components/ui/Panel";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Field";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
-import { EmptyState, ErrorState, Skeleton } from "@/components/ui/Misc";
+import { EmptyState, ErrorState, RowsSkeleton, Skeleton } from "@/components/ui/Misc";
 import { useApi } from "@/lib/client";
-import { AGING_LABELS, matchesInvoiceQuery, matchesLedgerFilter, type LedgerFilter } from "@/lib/money-charts";
+import { matchesInvoiceQuery, matchesLedgerFilter, type LedgerFilter } from "@/lib/money-charts";
+import { AGING_LABELS } from "@/lib/receivables";
 import type { AgingKey, MoneySummary } from "@/lib/types";
 
 type View = "invoices" | "expenses";
@@ -165,9 +166,7 @@ function MoneySkeleton() {
         </Panel>
       </PageSplit>
       <Panel>
-        {Array.from({ length: 6 }, (_, i) => (
-          <Skeleton key={i} className="mb-3 h-6 w-full" />
-        ))}
+        <RowsSkeleton rows={6} label="Loading invoices" />
       </Panel>
     </>
   );

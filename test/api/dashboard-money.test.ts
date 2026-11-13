@@ -71,36 +71,6 @@ describe("GET /api/dashboard", () => {
     expect(qualifiedBucket.value).toBe(5000);
   });
 
-  it("computes revenue this-month vs last and the delta pct", async () => {
-    const acc = await models.Account.create({ workspaceId, ownerId: admin._id, name: "A", status: "active" });
-    const now = new Date();
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-    const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 15);
-    await models.Invoice.create([
-      { workspaceId, accountId: acc._id, number: 1, amount: 2000, status: "sent", issuedAt: new Date(monthStart.getTime() + 86400000) },
-      { workspaceId, accountId: acc._id, number: 2, amount: 1000, status: "paid", issuedAt: lastMonth },
-      { workspaceId, accountId: acc._id, number: 3, amount: 9999, status: "draft", issuedAt: now }, // drafts excluded
-    ]);
-    const data = await (await (dashboardRoute.GET as any)(jsonRequest("/api/dashboard", "GET"))).json();
-    expect(data.revenueThisMonth).toBe(2000);
-    expect(data.revenueDeltaPct).toBe(100); // (2000-1000)/1000
-  });
-
-  it("surfaces an overdue invoice and a stale qualified/proposal lead in attention", async () => {
-    const acc = await models.Account.create({ workspaceId, ownerId: admin._id, name: "Lumen", status: "active" });
-    await models.Invoice.create({ workspaceId, accountId: acc._id, number: 1, amount: 5000, status: "overdue", dueAt: daysAgo(10) });
-    await models.Lead.create({ workspaceId, ownerId: admin._id, name: "Stale Lead", stage: "qualified", lastActivityAt: daysAgo(5) });
-    await models.Lead.create({ workspaceId, ownerId: admin._id, name: "Fresh Lead", stage: "qualified", lastActivityAt: new Date() });
-
-    const data = await (await (dashboardRoute.GET as any)(jsonRequest("/api/dashboard", "GET"))).json();
-    const kinds = data.attention.map((a: { kind: string }) => a.kind);
-    expect(kinds).toContain("invoice_overdue");
-    expect(kinds).toContain("lead_followup");
-    const followups = data.attention.filter((a: { kind: string }) => a.kind === "lead_followup");
-    expect(followups).toHaveLength(1); // only the stale one
-    expect(followups[0].title).toContain("Stale Lead");
-  });
-
   it("scopes to the standard user's own data", async () => {
     await models.Lead.create({ workspaceId, ownerId: admin._id, name: "AdminLead", stage: "new" });
     await models.Lead.create({ workspaceId, ownerId: standard._id, name: "StanLead", stage: "new" });
@@ -208,5 +178,25 @@ describe("GET /api/money", () => {
     session.user = null;
     const res = await (moneyRoute.GET as any)(jsonRequest("/api/money", "GET"));
     expect(res.status).toBe(401);
+  });
+});
+
+describe("aging agrees across /api/dashboard and /api/money", () => {
+  it("puts every invoice in the same band on both endpoints", async () => {
+    const acc = await models.Account.create({ workspaceId, ownerId: admin._id, name: "Acme", status: "active" });
+    await models.Invoice.create([
+      { workspaceId, accountId: acc._id, number: 1, amount: 100, status: "sent", dueAt: daysAgo(-3) },
+      { workspaceId, accountId: acc._id, number: 2, amount: 200, status: "sent", dueAt: daysAgo(1) },
+      { workspaceId, accountId: acc._id, number: 3, amount: 400, status: "sent", issuedAt: daysAgo(45) }, // no due date: ages from issue
+      { workspaceId, accountId: acc._id, number: 4, amount: 800, status: "overdue", dueAt: daysAgo(61) },
+    ]);
+    const dash = await (await (dashboardRoute.GET as any)(jsonRequest("/api/dashboard", "GET"))).json();
+    const money = await (await (moneyRoute.GET as any)(jsonRequest("/api/money", "GET"))).json();
+    const amounts = (aging: { key: string; amount: number }[]) => aging.map((b) => [b.key, b.amount]);
+    expect(amounts(dash.receivables.aging)).toEqual([["current", 100], ["d30", 200], ["d60", 400], ["d60plus", 800]]);
+    expect(amounts(money.aging)).toEqual(amounts(dash.receivables.aging));
+    // "Overdue" is the same set everywhere: the queue's invoices are the non-current bands.
+    expect(dash.queue.filter((q: { kind: string }) => q.kind === "invoice")).toHaveLength(3);
+    expect(money.totals).toMatchObject({ overdueCount: 3, overdue: 1400 });
   });
 });

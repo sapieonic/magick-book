@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { LeadDTO } from "@/lib/types";
 
@@ -45,7 +45,6 @@ vi.mock("@/lib/client", () => ({
     };
   },
   api: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), put: vi.fn(), delete: vi.fn() },
-  ApiError: class extends Error {},
 }));
 
 // Stub the heavy children; expose the leads and props they receive so we can assert filtering.

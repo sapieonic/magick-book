@@ -9,7 +9,6 @@ vi.mock("next/navigation", () => ({ useRouter: () => ({ push, replace: vi.fn(), 
 vi.mock("@/lib/client", () => ({
   api: { delete: del, get: vi.fn(), post: vi.fn(), patch: vi.fn(), put: vi.fn() },
   useApi: () => ({ data: null, loading: false, error: null, refresh: vi.fn(), setData: vi.fn() }),
-  ApiError: class extends Error {},
 }));
 
 import { LeadTable } from "@/components/leads/LeadTable";

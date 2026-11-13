@@ -5,9 +5,9 @@ import { Lead, Account, Invoice, Reminder, type ILead, type IInvoice, type IAcco
 import { requireUser } from "@/lib/auth/server";
 import { leadScope, accountScope, reminderScope } from "@/lib/rbac";
 import { ownerNameMap } from "@/lib/services";
-import { collections, daysPastDue, isOutstanding, outstandingAging, rankDebtors, agingDate, type ReceivableInvoice } from "@/lib/receivables";
-import { PIPELINE_STAGES, STAGE_META, type LeadStage } from "@/lib/constants";
-import type { DashboardData, AttentionItem, PipelineStageSummary, StageLeadRef, WorkItem, UpcomingReminder } from "@/lib/types";
+import { agingDate, buildOutstandingAging, collections, isOutstanding, isOverdue, rankDebtors } from "@/lib/receivables";
+import { PIPELINE_STAGES, type LeadStage } from "@/lib/constants";
+import type { DashboardData, PipelineStageSummary, StageLeadRef, WorkItem, UpcomingReminder } from "@/lib/types";
 
 const DAY = 86400000;
 /** The working funnel: everything before won (parked and lost are off it). */
@@ -39,7 +39,6 @@ export const GET = route(async () => {
   const todayEnd = endOfDay(now);
   const weekEnd = new Date(todayEnd.getTime() + UPCOMING_DAYS * DAY);
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-  const prevMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
 
   // Visible accounts (for money + RBAC join on invoices).
   const accounts = await Account.find(accountScope(user)).select("ownerId name status lastActivityAt").lean<AccountRow[]>();
@@ -84,19 +83,13 @@ export const GET = route(async () => {
       !remindedLeads.has(String(l._id)) &&
       now.getTime() - new Date(l.lastActivityAt).getTime() > FOLLOW_UP_AFTER,
   );
-  const receivable: (ReceivableInvoice & { id: string })[] = invoices.map((i) => ({
+  const receivable = invoices.map((i) => ({
+    ...i,
     id: String(i._id),
     accountId: String(i.accountId),
-    number: i.number,
-    amount: i.amount,
-    status: i.status,
-    issuedAt: new Date(i.issuedAt),
-    dueAt: i.dueAt ? new Date(i.dueAt) : null,
-    paidAt: i.paidAt ? new Date(i.paidAt) : null,
+    accountName: accountById.get(String(i.accountId))!.name,
   }));
-  const overdue = receivable.filter(
-    (i) => i.status === "overdue" || (i.status === "sent" && i.dueAt && daysPastDue(i, now) > 0),
-  );
+  const overdue = receivable.filter((i) => isOverdue(i, now));
 
   const owners = await ownerNameMap([
     ...staleLeads.map((l) => l.ownerId),
@@ -187,22 +180,6 @@ export const GET = route(async () => {
   const collected = collections(receivable, now);
   const latestPayment = collected.payments[0];
 
-  // Billed revenue by issue month (legacy fields).
-  const billedIn = (from: Date, to?: Date) =>
-    billedRows.filter((i) => i.issuedAt >= from && (!to || i.issuedAt < to)).reduce((s, i) => s + i.amount, 0);
-  const revenueThisMonth = billedIn(monthStart);
-  const revenuePrevMonth = billedIn(prevMonthStart, monthStart);
-  const revenueDeltaPct = revenuePrevMonth > 0 ? Math.round(((revenueThisMonth - revenuePrevMonth) / revenuePrevMonth) * 100) : 0;
-
-  const attention: AttentionItem[] = queue
-    .filter((q) => q.kind !== "reminder")
-    .slice(0, 6)
-    .map((q) =>
-      q.kind === "invoice"
-        ? { id: q.id, kind: "invoice_overdue", title: q.title, tag: "Overdue", tagTone: "danger", action: "Remind", href: q.href! }
-        : { id: q.id, kind: "lead_followup", title: q.title, tag: STAGE_META[q.stage!].label, tagTone: "warn", action: "Call", href: q.href! },
-    );
-
   const data: DashboardData = {
     asOf: now.toISOString(),
     openLeads: open.length,
@@ -215,8 +192,8 @@ export const GET = route(async () => {
     queue,
     receivables: {
       billed: billedRows.reduce((s, i) => s + i.amount, 0),
-      outstanding: receivable.filter((i) => isOutstanding(i.status)).reduce((s, i) => s + i.amount, 0),
-      aging: outstandingAging(receivable, now),
+      outstanding: receivable.filter(isOutstanding).reduce((s, i) => s + i.amount, 0),
+      aging: buildOutstandingAging(receivable, now),
       owingAccounts: debtors.length,
       debtors: debtors.slice(0, TOP_DEBTORS).map((d) => ({ ...d, name: accountById.get(d.accountId)!.name })),
       collected: {
@@ -224,14 +201,11 @@ export const GET = route(async () => {
         lastMonth: collected.lastMonth,
         payments: collected.payments.length,
         latest: latestPayment
-          ? { accountId: latestPayment.accountId, accountName: accountById.get(latestPayment.accountId)!.name, number: latestPayment.number }
+          ? { accountId: latestPayment.accountId, accountName: latestPayment.accountName, number: latestPayment.number }
           : null,
       },
     },
     upcoming,
-    revenueThisMonth,
-    revenueDeltaPct,
-    attention,
   };
   return ok(data);
 });

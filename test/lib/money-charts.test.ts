@@ -1,17 +1,11 @@
 import { describe, it, expect } from "vitest";
 import {
-  agingKey,
   buildCollectedByMonth,
-  buildMoneyTotals,
-  buildOutstandingAging,
-  differenceInUtcCalendarDays,
-  displayStatus,
   groupLedger,
   invoiceAge,
   matchesInvoiceQuery,
   matchesLedgerFilter,
   monthLabel,
-  paymentDate,
   utcMonthKey,
 } from "@/lib/money-charts";
 import type { InvoiceDTO } from "@/lib/types";
@@ -32,22 +26,6 @@ function inv(over: Partial<InvoiceDTO> & Pick<InvoiceDTO, "id" | "amount" | "sta
 
 const now = new Date("2026-08-15T12:00:00.000Z");
 
-describe("paymentDate", () => {
-  it("prefers paidAt over issuedAt", () => {
-    const d = paymentDate(inv({ id: "1", amount: 1, status: "paid", paidAt: "2026-03-10T00:00:00.000Z", issuedAt: "2026-02-01T00:00:00.000Z" }));
-    expect(d?.toISOString()).toBe("2026-03-10T00:00:00.000Z");
-  });
-
-  it("falls back to issuedAt for legacy paid rows", () => {
-    const d = paymentDate(inv({ id: "1", amount: 1, status: "paid", issuedAt: "2026-02-01T00:00:00.000Z" }));
-    expect(d?.toISOString()).toBe("2026-02-01T00:00:00.000Z");
-  });
-
-  it("returns null for unpaid invoices", () => {
-    expect(paymentDate(inv({ id: "1", amount: 1, status: "sent" }))).toBeNull();
-  });
-});
-
 describe("UTC helpers", () => {
   it("utcMonthKey uses the UTC calendar month near day boundaries", () => {
     // 2026-07-31 22:00 UTC is still July UTC; local IST would already be Aug 1.
@@ -55,54 +33,9 @@ describe("UTC helpers", () => {
     expect(utcMonthKey(new Date("2026-08-01T00:30:00.000Z"))).toBe("2026-08");
   });
 
-  it("differenceInUtcCalendarDays ignores local timezone offsets", () => {
-    expect(differenceInUtcCalendarDays(new Date("2026-08-15T01:00:00.000Z"), new Date("2026-08-14T23:00:00.000Z"))).toBe(1);
-  });
-
   it("monthLabel gives short and long names", () => {
     expect(monthLabel("2026-06")).toBe("Jun");
     expect(monthLabel("2026-11", true)).toBe("November");
-  });
-});
-
-describe("aging", () => {
-  const rows = [
-    inv({ id: "1", amount: 10, status: "sent", dueAt: "2026-08-20T00:00:00.000Z", accountName: "Lumen" }), // current
-    inv({ id: "2", amount: 20, status: "overdue", dueAt: "2026-08-01T00:00:00.000Z", accountName: "Acme" }), // 14d
-    inv({ id: "2b", amount: 70, status: "sent", dueAt: "2026-08-14T00:00:00.000Z", accountName: "Pine" }), // 1d, still "sent"
-    inv({ id: "3", amount: 30, status: "overdue", dueAt: "2026-07-01T00:00:00.000Z" }), // 45d
-    inv({ id: "4", amount: 40, status: "overdue", dueAt: "2026-05-01T00:00:00.000Z" }), // 106d
-    inv({ id: "5", amount: 99, status: "paid", dueAt: "2026-05-01T00:00:00.000Z" }),
-    inv({ id: "6", amount: 99, status: "draft" }),
-  ];
-
-  it("bands outstanding invoices by UTC days past due", () => {
-    expect(rows.map((r) => agingKey(r, now))).toEqual(["current", "d30", "d30", "d60", "d60plus", null, null]);
-  });
-
-  it("treats the due date itself as current and day 31 as the second band", () => {
-    expect(agingKey(inv({ id: "x", amount: 1, status: "sent", dueAt: "2026-08-15T23:00:00.000Z" }), now)).toBe("current");
-    expect(agingKey(inv({ id: "x", amount: 1, status: "sent", dueAt: "2026-07-16T00:00:00.000Z" }), now)).toBe("d30");
-    expect(agingKey(inv({ id: "x", amount: 1, status: "sent", dueAt: "2026-07-15T00:00:00.000Z" }), now)).toBe("d60");
-  });
-
-  it("falls back to the issue date when there is no due date", () => {
-    expect(agingKey(inv({ id: "x", amount: 1, status: "sent", issuedAt: "2026-06-01T00:00:00.000Z" }), now)).toBe("d60plus");
-  });
-
-  it("sums amount, count and the owing accounts (largest first) per band", () => {
-    const aging = buildOutstandingAging(rows, now);
-    expect(aging.map((b) => b.key)).toEqual(["current", "d30", "d60", "d60plus"]);
-    expect(aging[0]).toEqual({ key: "current", amount: 10, count: 1, accounts: ["Lumen"] });
-    expect(aging[1]).toEqual({ key: "d30", amount: 90, count: 2, accounts: ["Pine", "Acme"] });
-    expect(aging[2]).toMatchObject({ amount: 30, count: 1 });
-    expect(aging[3]).toMatchObject({ amount: 40, count: 1 });
-  });
-
-  it("shows a sent invoice past its due date as overdue", () => {
-    expect(displayStatus(rows[2], now)).toBe("overdue");
-    expect(displayStatus(rows[0], now)).toBe("sent");
-    expect(displayStatus(rows[5], now)).toBe("paid");
   });
 });
 
@@ -114,6 +47,10 @@ describe("invoiceAge", () => {
     expect(invoiceAge(inv({ id: "1", amount: 1, status: "sent", dueAt: "2026-08-20T00:00:00.000Z" }), now)).toEqual({ text: "Due in 5 days", late: false });
   });
 
+  it("calls an invoice marked overdue before its due date just overdue", () => {
+    expect(invoiceAge(inv({ id: "1", amount: 1, status: "overdue", dueAt: "2026-08-20T00:00:00.000Z" }), now)).toEqual({ text: "Overdue", late: true });
+  });
+
   it("describes paid invoices by how long they took", () => {
     const paid = inv({ id: "1", amount: 1, status: "paid", issuedAt: "2026-07-01T00:00:00.000Z", paidAt: "2026-07-09T00:00:00.000Z" });
     expect(invoiceAge(paid, now).text).toBe("8 days to pay");
@@ -122,32 +59,6 @@ describe("invoiceAge", () => {
 
   it("marks drafts as not issued", () => {
     expect(invoiceAge(inv({ id: "1", amount: 1, status: "draft" }), now).text).toBe("Not issued");
-  });
-});
-
-describe("buildMoneyTotals", () => {
-  const invoices = [
-    inv({ id: "1", amount: 1000, status: "paid" }),
-    inv({ id: "2", amount: 500, status: "sent", dueAt: "2026-09-01T00:00:00.000Z" }),
-    inv({ id: "3", amount: 250, status: "sent", dueAt: "2026-08-01T00:00:00.000Z" }),
-    inv({ id: "4", amount: 9999, status: "draft" }),
-  ];
-
-  it("sums the equation and counts, excluding drafts", () => {
-    const t = buildMoneyTotals(invoices, [{ amount: 350 }], now);
-    expect(t).toMatchObject({
-      billed: 1750, billedCount: 3,
-      paid: 1000, paidCount: 1,
-      outstanding: 750, outstandingCount: 2,
-      overdueCount: 1,
-      expenses: 350,
-    });
-    expect(t.margin).toBeCloseTo(0.8);
-  });
-
-  it("reports zero margin rather than a negative one, and zero when nothing is billed", () => {
-    expect(buildMoneyTotals(invoices, [{ amount: 5000 }], now).margin).toBe(0);
-    expect(buildMoneyTotals([], [{ amount: 10 }], now).margin).toBe(0);
   });
 });
 

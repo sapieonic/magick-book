@@ -1,7 +1,7 @@
 "use client";
 import { useState, type FormEvent } from "react";
 import { Panel } from "@/components/ui/Panel";
-import { Button } from "@/components/ui/Button";
+import { Button, LinkButton } from "@/components/ui/Button";
 import { Field, Input } from "@/components/ui/Field";
 import { useToast } from "@/components/ui/Toast";
 import { DuePresets, toLocalInput } from "@/components/reminders/ReminderModal";
@@ -155,12 +155,12 @@ export function NextStepPanel({
         </form>
       )}
       <div className="mt-4 flex flex-wrap gap-x-4 gap-y-1 border-t border-line pt-3 text-[13px]">
-        <button type="button" className="link" onClick={() => onMoreOptions(what.trim())}>
+        <LinkButton onClick={() => onMoreOptions(what.trim())}>
           {step ? "Another reminder" : "More options"}
-        </button>
-        <button type="button" className="link" onClick={onWebhook}>
+        </LinkButton>
+        <LinkButton onClick={onWebhook}>
           Webhook for this lead
-        </button>
+        </LinkButton>
       </div>
     </Panel>
   );

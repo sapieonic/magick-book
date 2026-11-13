@@ -1,4 +1,5 @@
 import { Page, PageSplit } from "@/components/layout/Page";
+import { PageHeader } from "@/components/layout/PageHeader";
 import { Panel } from "@/components/ui/Panel";
 import { Skeleton } from "@/components/ui/Misc";
 
@@ -6,6 +7,7 @@ import { Skeleton } from "@/components/ui/Misc";
 export function LeadDetailSkeleton() {
   return (
     <Page>
+      <PageHeader title="Lead" breadcrumb={[{ label: "Leads", href: "/leads" }]} />
       <p role="status" className="sr-only">
         Loading lead…
       </p>

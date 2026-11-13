@@ -3,13 +3,12 @@ import { Panel } from "@/components/ui/Panel";
 import { Money, formatMoney } from "@/components/ui/Money";
 import { ProportionBar, segmentShares } from "@/components/ui/ProportionBar";
 import { stageColor } from "@/components/ui/stage";
-import { STAGE_META } from "@/lib/constants";
-import { cn } from "@/lib/utils";
-import { plural } from "./format";
+import { STAGE_META, type LeadStage } from "@/lib/constants";
+import { cn, plural } from "@/lib/utils";
 import type { DashboardData } from "@/lib/types";
 
-/** The leads board has no stage filter, so every band opens the board. */
-const BOARD_HREF = "/leads";
+/** Each band opens the leads board focused on its stage. */
+export const stageHref = (stage: LeadStage) => `/leads?stage=${stage}`;
 
 /**
  * Signature pipeline ribbon: each stage is a band drawn to its rupee value,
@@ -25,7 +24,7 @@ export function PipelineRibbon({ data }: { data: DashboardData }) {
       value: p.value,
       count: p.count,
       color: stageColor(p.stage),
-      href: BOARD_HREF,
+      href: stageHref(p.stage),
       valueClassName: p.stage === "won" ? "text-paid" : undefined,
       note: p.stage === "won" && data.wonConverted > 0 ? `converted to ${plural(data.wonConverted, "account")}` : undefined,
     })),
@@ -48,7 +47,7 @@ export function PipelineRibbon({ data }: { data: DashboardData }) {
             {won && won.count > 0 && <> · Won {formatMoney(won.value, true)} in {won.count}</>}
             {" · "}
           </span>
-          <Link href={BOARD_HREF} className="link">
+          <Link href="/leads" className="link">
             Open board
           </Link>
         </span>
@@ -59,7 +58,7 @@ export function PipelineRibbon({ data }: { data: DashboardData }) {
       <ul aria-label="Pipeline by value" className="md:hidden">
         {segments.map((s) => (
           <li key={s.key} className="border-b border-line last:border-b-0">
-            <Link href={BOARD_HREF} className="grid min-h-11 grid-cols-[104px_minmax(0,1fr)_64px] items-center gap-2.5 text-ink-1">
+            <Link href={s.href!} className="grid min-h-11 grid-cols-[104px_minmax(0,1fr)_64px] items-center gap-2.5 text-ink-1">
               <span>
                 {s.label} <span className="tnum text-ink-3">{s.count}</span>
               </span>

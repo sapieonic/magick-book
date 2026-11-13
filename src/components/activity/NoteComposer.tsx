@@ -24,11 +24,12 @@ const KIND: Record<ComposerKind, { tab: string; action: string; placeholder: str
 };
 
 /**
- * Timeline composer shared by the lead and account pages. Posts an activity of
- * the selected kind (just `note` unless `kinds` offers more) to `postUrl`, and
- * recognizes the inline `/remind` command: typing it switches to "reminder
- * mode" and hands the text off via `onRemind` (which opens a prefilled
- * reminder modal). Renders no surface of its own; place it in a Panel.
+ * Timeline composer shared by the lead and account pages and the Today "Log
+ * call" dialog. Posts an activity of the selected kind (just `note` unless
+ * `kinds` offers more) to `postUrl`. With `onRemind` it also recognizes the
+ * inline `/remind` command: typing it switches to "reminder mode" and hands
+ * the text off (to open a prefilled reminder modal). Renders no surface of
+ * its own; place it in a Panel or Modal.
  */
 export function NoteComposer({
   postUrl,
@@ -38,16 +39,18 @@ export function NoteComposer({
   kind: controlledKind,
   onKindChange,
   inputRef,
+  autoFocus,
 }: {
   postUrl: string;
   onAdded: () => void;
-  onRemind: (title: string) => void;
+  onRemind?: (title: string) => void;
   /** Kinds offered as tabs (in order); the first is the default. */
   kinds?: ComposerKind[];
   /** Controlled selected kind, e.g. so a "Log a call" link can switch the composer. */
   kind?: ComposerKind;
   onKindChange?: (kind: ComposerKind) => void;
   inputRef?: Ref<HTMLTextAreaElement>;
+  autoFocus?: boolean;
 }) {
   const { toast } = useToast();
   const [ownKind, setOwnKind] = useState<ComposerKind>(kinds[0]);
@@ -55,7 +58,7 @@ export function NoteComposer({
   const [busy, setBusy] = useState(false);
   const kind = controlledKind ?? ownKind;
   const meta = KIND[kind];
-  const remind = REMIND_CMD.exec(text);
+  const remind = onRemind ? REMIND_CMD.exec(text) : null;
 
   function selectKind(k: ComposerKind) {
     setOwnKind(k);
@@ -78,7 +81,7 @@ export function NoteComposer({
   }
 
   function fireRemind() {
-    if (!remind) return;
+    if (!remind || !onRemind) return;
     onRemind(remind[1].trim()); // text after `/remind` prefills the reminder title
     setText("");
   }
@@ -96,6 +99,7 @@ export function NoteComposer({
       )}
       <Textarea
         ref={inputRef}
+        autoFocus={autoFocus}
         aria-label={kinds.length > 1 ? `${meta.tab} notes` : "Note"}
         rows={3}
         value={text}
@@ -127,7 +131,13 @@ export function NoteComposer({
         ) : (
           <>
             <span className="mr-auto text-[12px] text-ink-3 max-md:hidden">
-              <KbdHint>⌘ Enter</KbdHint> to post · type <span className="font-mono">/remind</span> for a reminder
+              <KbdHint>⌘ Enter</KbdHint> to post
+              {onRemind && (
+                <>
+                  {" "}
+                  · type <span className="font-mono">/remind</span> for a reminder
+                </>
+              )}
             </span>
             {text.trim() && (
               <Button size="sm" variant="ghost" onClick={() => setText("")}>

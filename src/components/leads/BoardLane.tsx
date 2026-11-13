@@ -1,4 +1,5 @@
 "use client";
+import { LinkButton } from "@/components/ui/Button";
 import { useId, useState, type KeyboardEvent, type ReactNode } from "react";
 import { useDroppable } from "@dnd-kit/core";
 import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
@@ -14,7 +15,7 @@ import type { StageTotal } from "@/lib/leadFilters";
 import type { LeadDTO } from "@/lib/types";
 
 /** Cards shown per column before a "N more" toggle. */
-export const CARD_LIMIT = 6;
+const CARD_LIMIT = 6;
 
 /** What moving a lead into an empty stage means, for its empty state. */
 const MOVE_HINT: Partial<Record<PipelineStage, string>> = {
@@ -116,9 +117,9 @@ function EmptyStage({
             <span className="min-w-0 truncate">
               {l.name} <Money value={l.estValue} compact className="text-ink-3" />
             </span>
-            <button type="button" onClick={() => onMove(l)} className="link shrink-0" aria-label={`Move ${l.name} to ${label}`}>
+            <LinkButton onClick={() => onMove(l)} className="shrink-0" aria-label={`Move ${l.name} to ${label}`}>
               Move here
-            </button>
+            </LinkButton>
           </li>
         ))}
       </ul>

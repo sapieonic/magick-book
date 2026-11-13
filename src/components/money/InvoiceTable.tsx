@@ -4,20 +4,19 @@ import Link from "next/link";
 import { format } from "date-fns";
 import { Download } from "lucide-react";
 import { Table, Th, Td, TwoLine } from "@/components/ui/Table";
-import { Button } from "@/components/ui/Button";
+import { Button, LinkButton } from "@/components/ui/Button";
 import { StatusPill } from "@/components/ui/Badge";
 import { Money } from "@/components/ui/Money";
-import { useToast } from "@/components/ui/Toast";
-import { api } from "@/lib/client";
-import { displayStatus, groupLedger, invoiceAge, paymentDate } from "@/lib/money-charts";
-import { cn } from "@/lib/utils";
+import { useInvoiceActions } from "@/components/accounts/useInvoiceActions";
+import { groupLedger, invoiceAge } from "@/lib/money-charts";
+import { displayStatus, isOutstanding, paymentDate } from "@/lib/receivables";
+import { cn, plural } from "@/lib/utils";
 import type { InvoiceDTO } from "@/lib/types";
 
 /** Paid invoices shown before "Show earlier paid invoices". */
 const PAID_PREVIEW = 8;
 
 const sum = (rows: InvoiceDTO[]) => rows.reduce((s, i) => s + i.amount, 0);
-const plural = (n: number, word = "invoice") => `${n} ${word}${n === 1 ? "" : "s"}`;
 
 /** "07 Nov" this year, "07 Nov 2025" otherwise. */
 function shortDate(d: Date, now: Date): string {
@@ -41,34 +40,15 @@ export function InvoiceTable({
   filtered: boolean;
   onChanged: () => void | Promise<void>;
 }) {
-  const { toast } = useToast();
-  const [busyId, setBusyId] = useState<string | null>(null);
+  const actions = useInvoiceActions(onChanged);
   const [showAllPaid, setShowAllPaid] = useState(false);
   const groups = groupLedger(invoices, now);
   const paidRows = showAllPaid ? groups.paid : groups.paid.slice(0, PAID_PREVIEW);
   const hiddenPaid = groups.paid.length - paidRows.length;
   const issued = [...groups.outstanding, ...groups.paid];
 
-  async function act(inv: InvoiceDTO, action: "paid" | "remind") {
-    setBusyId(inv.id);
-    try {
-      if (action === "remind") {
-        await api.patch(`/api/invoices/${inv.id}`, { action: "remind" });
-        toast(`Reminder sent for #${inv.number}.`, "success");
-      } else {
-        await api.patch(`/api/invoices/${inv.id}`, { status: "paid" });
-        toast(`#${inv.number} marked paid.`, "success");
-        await onChanged();
-      }
-    } catch (e) {
-      toast(e instanceof Error ? e.message : "Something went wrong", "error");
-    } finally {
-      setBusyId(null);
-    }
-  }
-
   const row = (inv: InvoiceDTO) => (
-    <InvoiceRow key={inv.id} inv={inv} now={now} busy={busyId === inv.id} onAct={(a) => act(inv, a)} />
+    <InvoiceRow key={inv.id} inv={inv} now={now} busy={actions.busyId === inv.id} onAct={(a) => (a === "paid" ? actions.markPaid(inv) : actions.remind(inv))} />
   );
 
   return (
@@ -91,26 +71,26 @@ export function InvoiceTable({
         </thead>
         <tbody>
           {groups.outstanding.length > 0 && (
-            <SpanRow kind="group" label={`Outstanding · ${plural(groups.outstanding.length)}`} amount={sum(groups.outstanding)} />
+            <SpanRow kind="group" label={`Outstanding · ${plural(groups.outstanding.length, "invoice")}`} amount={sum(groups.outstanding)} />
           )}
           {groups.outstanding.map(row)}
-          {groups.paid.length > 0 && <SpanRow kind="group" label={`Paid · ${plural(groups.paid.length)}`} amount={sum(groups.paid)} />}
+          {groups.paid.length > 0 && <SpanRow kind="group" label={`Paid · ${plural(groups.paid.length, "invoice")}`} amount={sum(groups.paid)} />}
           {paidRows.map(row)}
           {groups.draft.length > 0 && (
-            <SpanRow kind="group" label={`Draft · ${plural(groups.draft.length)} not yet issued`} amount={sum(groups.draft)} />
+            <SpanRow kind="group" label={`Draft · ${plural(groups.draft.length, "invoice")} not yet issued`} amount={sum(groups.draft)} />
           )}
           {groups.draft.map(row)}
         </tbody>
         {issued.length > 0 && (
           <tfoot>
-            <SpanRow kind="total" label={`${filtered ? "Total shown" : "Total billed"} · ${plural(issued.length)}`} amount={sum(issued)} />
+            <SpanRow kind="total" label={`${filtered ? "Total shown" : "Total billed"} · ${plural(issued.length, "invoice")}`} amount={sum(issued)} />
           </tfoot>
         )}
       </Table>
       {hiddenPaid > 0 && (
-        <button type="button" className="link mt-3 text-[13px]" onClick={() => setShowAllPaid(true)}>
+        <LinkButton className="mt-3 text-[13px]" onClick={() => setShowAllPaid(true)}>
           Show {plural(hiddenPaid, "earlier paid invoice")}
-        </button>
+        </LinkButton>
       )}
     </>
   );
@@ -129,7 +109,7 @@ function InvoiceRow({
 }) {
   const age = invoiceAge(inv, now);
   const paidOn = paymentDate(inv);
-  const open = inv.status === "sent" || inv.status === "overdue";
+  const open = isOutstanding(inv);
   const ageText = <span className={age.late ? "text-overdue" : undefined}>{age.text}</span>;
   const account = (
     <Link href={`/accounts/${inv.accountId}`} className="link">

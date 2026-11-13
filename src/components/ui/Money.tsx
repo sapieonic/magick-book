@@ -1,6 +1,6 @@
 import { cn, formatINR, formatINRCompact } from "@/lib/utils";
 
-export const MONEY_DASH = "–";
+const MONEY_DASH = "–";
 
 /**
  * Split an amount into sign + digits (no ₹). Returns null for zero or missing

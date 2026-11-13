@@ -17,7 +17,7 @@ import { ChevronDown } from "lucide-react";
 import { CollapsedLane, SortableItem, StageLane, type CardKeyHandler } from "./BoardLane";
 import { LeadCard, LeadRow } from "./LeadCard";
 import { LostLeadModal } from "./LostLeadModal";
-import { PHONE_QUERY, useMediaQuery } from "./useMediaQuery";
+import { PHONE_QUERY, useMediaQuery } from "@/lib/useMediaQuery";
 import { KbdHint } from "@/components/ui/Misc";
 import { Money } from "@/components/ui/Money";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";

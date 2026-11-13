@@ -3,7 +3,8 @@ import { connectDB } from "@/lib/db";
 import { Account, Invoice, Expense, type IAccount, type IInvoice, type IExpense } from "@/lib/models";
 import { requireUser } from "@/lib/auth/server";
 import { accountScope } from "@/lib/rbac";
-import { buildCollectedByMonth, buildMoneyTotals, buildOutstandingAging } from "@/lib/money-charts";
+import { buildCollectedByMonth } from "@/lib/money-charts";
+import { buildOutstandingAging, rollupMoney } from "@/lib/receivables";
 import type { MoneySummary } from "@/lib/types";
 
 // GET /api/money — invoices + expenses across visible accounts, with the
@@ -29,7 +30,7 @@ export const GET = route(async () => {
     asOf: now.toISOString(),
     invoices,
     expenses,
-    totals: buildMoneyTotals(invoices, expenses, now),
+    totals: rollupMoney(invoices, expenses, now),
     aging: buildOutstandingAging(invoices, now),
     collected: buildCollectedByMonth(invoices, now),
   };

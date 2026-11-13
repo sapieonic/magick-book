@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import { Plus, Send, Trash2 } from "lucide-react";
-import { Button } from "@/components/ui/Button";
+import { Button, LinkButton } from "@/components/ui/Button";
 import { Input, Textarea, Select, Field, Label } from "@/components/ui/Field";
 import { useToast } from "@/components/ui/Toast";
 import { api } from "@/lib/client";
@@ -149,9 +149,9 @@ export function WebhookForm({
             label="Payload template"
             hint={
               template !== defaultTemplate ? (
-                <button type="button" onClick={() => setTemplate(defaultTemplate)} className="link">
+                <LinkButton onClick={() => setTemplate(defaultTemplate)}>
                   Reset to default
-                </button>
+                </LinkButton>
               ) : (
                 "JSON"
               )

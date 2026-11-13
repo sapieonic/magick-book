@@ -4,12 +4,10 @@ import { connectDB } from "@/lib/db";
 import { Account, Contact, type IAccount, type IContact } from "@/lib/models";
 import { requireUser } from "@/lib/auth/server";
 import { accountScope } from "@/lib/rbac";
-import { ownerNameMap, audit, accountFinances } from "@/lib/services";
+import { ownerNameMap, audit, accountFinances, NO_FINANCE } from "@/lib/services";
 import { ACCOUNT_STATUSES } from "@/lib/constants";
-import type { AccountListFinance, AccountListItem } from "@/lib/types";
+import type { AccountListItem } from "@/lib/types";
 import { Types } from "mongoose";
-
-const NO_FINANCE: AccountListFinance = { billed: 0, paid: 0, outstanding: 0, expenses: 0, margin: 0, overdue: 0 };
 
 // GET /api/accounts — list with primary contact, contact counts and a money rollup per row.
 export const GET = route(async (req: NextRequest) => {

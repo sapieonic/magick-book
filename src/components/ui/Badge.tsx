@@ -1,18 +1,9 @@
 import { type ReactNode } from "react";
 import { cn } from "@/lib/utils";
-import type { AccountStatus, InvoiceStatus, LeadStage } from "@/lib/constants";
+import { STAGE_META, type AccountStatus, type InvoiceStatus, type LeadStage } from "@/lib/constants";
+import { stageColor } from "./stage";
 
 export type Tone = "neutral" | "accent" | "paid" | "due" | "overdue" | "lost";
-/** Pre-Daybook tone names still passed by pages that have not been rebuilt. */
-type LegacyTone = "violet" | "success" | "warn" | "danger" | "info";
-
-const LEGACY_TONES: Record<LegacyTone, Tone> = {
-  violet: "accent",
-  info: "accent",
-  success: "paid",
-  warn: "due",
-  danger: "overdue",
-};
 
 const TONES: Record<Tone, string> = {
   neutral: "bg-sunk text-ink-2",
@@ -25,24 +16,21 @@ const TONES: Record<Tone, string> = {
 
 const PILL = "inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border border-transparent py-0.5 pl-2 pr-2.5 text-[13px] font-medium";
 
-/** Pill chip. Use `tone`, or pass a `tint` class string (bg + text) for one-off colours. */
+/** Pill chip in one of the status tones. */
 export function Badge({
   children,
-  tint,
   tone = "neutral",
   className,
   dot,
 }: {
   children: ReactNode;
-  tint?: string;
-  tone?: Tone | LegacyTone;
+  tone?: Tone;
   className?: string;
   /** CSS colour for a leading dot. */
   dot?: string;
 }) {
-  const resolved = tone in LEGACY_TONES ? LEGACY_TONES[tone as LegacyTone] : (tone as Tone);
   return (
-    <span className={cn(PILL, tint ?? TONES[resolved], className)}>
+    <span className={cn(PILL, TONES[tone], className)}>
       {dot && <span className="size-[7px] rounded-full" style={{ background: dot }} aria-hidden />}
       {children}
     </span>
@@ -105,6 +93,16 @@ export function StatusPill({
     <span className={cn(PILL, TONES[resolved], className)}>
       <span className={cn("shrink-0", SHAPES[resolved])} aria-hidden />
       {children ?? meta?.label}
+    </span>
+  );
+}
+
+/** Lead stage word with its ramp swatch (grey for parked and lost). */
+export function StageLabel({ stage }: { stage: LeadStage }) {
+  return (
+    <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+      <span className="size-2 shrink-0 rounded-[2px]" style={{ background: stageColor(stage) }} aria-hidden />
+      {STAGE_META[stage].label}
     </span>
   );
 }

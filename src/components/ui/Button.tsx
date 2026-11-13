@@ -34,6 +34,11 @@ export function buttonClasses({
   );
 }
 
+/** Text button that reads as a link: panel header actions such as "Upload" or "Show all". */
+export function LinkButton({ className, ...props }: ButtonHTMLAttributes<HTMLButtonElement>) {
+  return <button type="button" className={cn("link", className)} {...props} />;
+}
+
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: ButtonVariant;
   size?: ButtonSize;

@@ -28,7 +28,6 @@ vi.mock("@/lib/client", () => ({
     refresh: H.refresh,
   }),
   api: H.api,
-  ApiError: class extends Error {},
 }));
 
 import LeadDetailPage from "@/app/(app)/leads/[id]/page";

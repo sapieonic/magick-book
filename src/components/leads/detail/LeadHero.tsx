@@ -1,7 +1,7 @@
 import { Fragment, type ReactNode } from "react";
 import { Panel } from "@/components/ui/Panel";
 import { Money } from "@/components/ui/Money";
-import { ageInWords, cn, daysSince } from "@/lib/utils";
+import { agoInWords, cn, daysSince } from "@/lib/utils";
 import type { LeadDTO } from "@/lib/types";
 
 /** Big name, the one-line story of the lead, and its stage actions. */
@@ -17,7 +17,7 @@ export function LeadHero({ lead, open, actions }: { lead: LeadDTO; open: boolean
     lead.ownerName && `owned by ${lead.ownerName}`,
     <>
       last touched{" "}
-      <span className={cn(open && idle > 30 && "font-medium text-overdue")}>{idle < 1 ? "today" : `${ageInWords(idle).toLowerCase()} ago`}</span>
+      <span className={cn(open && idle > 30 && "font-medium text-overdue")}>{agoInWords(idle)}</span>
     </>,
   ].filter(Boolean);
 

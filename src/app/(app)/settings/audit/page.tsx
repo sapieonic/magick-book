@@ -6,7 +6,7 @@ import { AdminOnly, SettingsHeader } from "@/components/settings/SettingsTabs";
 import { AuditTimeline } from "@/components/AuditTimeline";
 import { Button } from "@/components/ui/Button";
 import { Field, Select } from "@/components/ui/Field";
-import { EmptyState, ErrorState, Skeleton } from "@/components/ui/Misc";
+import { EmptyState, ErrorState, RowsSkeleton } from "@/components/ui/Misc";
 import { Panel } from "@/components/ui/Panel";
 import { useApi } from "@/lib/client";
 import { AUDIT_ACTION_META, AUDIT_ACTIONS, AUDIT_ENTITIES } from "@/lib/constants";
@@ -76,17 +76,7 @@ export default function AuditLogPage() {
               {error ? (
                 <ErrorState message={error} onRetry={refresh} />
               ) : loading ? (
-                <div className="space-y-4" aria-busy="true" aria-label="Loading audit log">
-                  {[0, 1, 2, 3].map((i) => (
-                    <div key={i} className="flex gap-3">
-                      <Skeleton className="size-7 shrink-0 rounded-full" />
-                      <div className="flex-1 space-y-2">
-                        <Skeleton className="h-4 w-1/3" />
-                        <Skeleton className="h-3.5 w-1/2" />
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                <RowsSkeleton rows={4} label="Loading audit log" />
               ) : entries.length === 0 ? (
                 <EmptyState
                   icon={<ScrollText className="size-6" strokeWidth={1.5} aria-hidden />}

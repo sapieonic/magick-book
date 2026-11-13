@@ -3,7 +3,10 @@ import { subMonths } from "date-fns";
 import { Panel } from "@/components/ui/Panel";
 import { Money, formatMoney } from "@/components/ui/Money";
 import { ProportionBar } from "@/components/ui/ProportionBar";
-import { collectedComparison, monthName, plural, shortDay } from "./format";
+import { DatedList } from "@/components/ui/Misc";
+import { AGING_COLORS, AGING_LABELS } from "@/lib/receivables";
+import { plural } from "@/lib/utils";
+import { collectedComparison, monthName, shortDay } from "./format";
 import type { DashboardReceivables, UpcomingReminder } from "@/lib/types";
 
 const ROW = "border-b border-line py-[9px]";
@@ -21,7 +24,6 @@ export function ReceivablesRail({ receivables, upcoming, now }: { receivables: D
 }
 
 function Outstanding({ r }: { r: DashboardReceivables }) {
-  const overdue = (alpha: number) => `color-mix(in srgb, var(--color-overdue-fill) ${alpha}%, transparent)`;
   return (
     <Panel title="Receivables">
       <div className="flex flex-wrap items-baseline gap-x-2.5">
@@ -36,12 +38,7 @@ function Outstanding({ r }: { r: DashboardReceivables }) {
           legend
           aria-label="Aging"
           className="mt-3.5"
-          segments={[
-            { key: "current", label: "Not yet due", value: r.aging.current, color: "var(--color-due-fill)" },
-            { key: "d1_30", label: "1–30 days overdue", value: r.aging.d1_30, color: overdue(55) },
-            { key: "d31_60", label: "31–60 days", value: r.aging.d31_60, color: overdue(75) },
-            { key: "d60plus", label: "Over 60 days", value: r.aging.d60plus, color: "var(--color-overdue-fill)" },
-          ]}
+          segments={r.aging.map((b) => ({ key: b.key, label: AGING_LABELS[b.key], value: b.amount, color: AGING_COLORS[b.key] }))}
         />
       )}
     </Panel>
@@ -107,29 +104,25 @@ function Collected({ r, now }: { r: DashboardReceivables; now: Date }) {
 function Reminders({ upcoming }: { upcoming: UpcomingReminder[] }) {
   return (
     <Panel title="Reminders this week" meta={upcoming.length || undefined} ruled>
-      {upcoming.length === 0 ? (
-        <p className="pt-2.5 text-[13px] text-ink-3">Nothing scheduled for the next 7 days.</p>
-      ) : (
-        <ul>
-          {upcoming.map((u) => (
-            <li key={u.id} className={`grid grid-cols-[64px_minmax(0,1fr)] gap-x-2 ${ROW}`}>
-              <time dateTime={u.dueAt} className="tnum text-[13px] text-ink-3">
-                {shortDay(new Date(u.dueAt))}
-              </time>
-              <span className="min-w-0">
-                {u.href ? (
-                  <Link href={u.href} className="text-ink-1 hover:underline">
-                    {u.title}
-                  </Link>
-                ) : (
-                  u.title
-                )}
-                {u.entityLabel && <span className="text-[13px] text-ink-3"> · {u.entityLabel}</span>}
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
+      <DatedList
+        empty="Nothing scheduled for the next 7 days."
+        items={upcoming.map((u) => ({
+          key: u.id,
+          date: <time dateTime={u.dueAt}>{shortDay(new Date(u.dueAt))}</time>,
+          text: (
+            <>
+              {u.href ? (
+                <Link href={u.href} className="text-ink-1 hover:underline">
+                  {u.title}
+                </Link>
+              ) : (
+                u.title
+              )}
+              {u.entityLabel && <span className="text-[13px] text-ink-3"> · {u.entityLabel}</span>}
+            </>
+          ),
+        }))}
+      />
     </Panel>
   );
 }

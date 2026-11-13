@@ -1,19 +1,19 @@
 "use client";
 import { useMemo } from "react";
 import { Receipt } from "lucide-react";
-import { Button } from "@/components/ui/Button";
-import { EmptyState } from "@/components/ui/Misc";
+import { Button, LinkButton } from "@/components/ui/Button";
+import { EmptyState, RowsSkeleton } from "@/components/ui/Misc";
 import { Money } from "@/components/ui/Money";
 import { Panel } from "@/components/ui/Panel";
 import { StatusPill } from "@/components/ui/Badge";
 import { Table, Td, Th, TwoLine } from "@/components/ui/Table";
+import { isOutstanding, isOverdue } from "@/lib/receivables";
 import type { ExpenseDTO, InvoiceDTO } from "@/lib/types";
-import { RowsSkeleton } from "./parts";
 import { buildStatement, longDate, overdueLabel, type StatementEntry } from "./statement";
 import { useInvoiceActions } from "./useInvoiceActions";
 
 export function InvoiceStatus({ invoice }: { invoice: InvoiceDTO }) {
-  return invoice.status === "overdue" ? <StatusPill tone="overdue">{overdueLabel(invoice)}</StatusPill> : <StatusPill status={invoice.status} />;
+  return isOverdue(invoice, new Date()) ? <StatusPill tone="overdue">{overdueLabel(invoice)}</StatusPill> : <StatusPill status={invoice.status} />;
 }
 
 export const InvoiceNumber = ({ n }: { n: number }) => <span className="font-mono text-[13px]">#{n}</span>;
@@ -107,11 +107,11 @@ export function StatementTable({
                     {inv && (
                       <span className="inline-flex items-center gap-3">
                         {inv.hasFile && (
-                          <button type="button" className="link text-[13px]" onClick={() => actions.openFile(inv)} aria-label={`Download invoice #${inv.number}`}>
+                          <LinkButton className="text-[13px]" onClick={() => actions.openFile(inv)} aria-label={`Download invoice #${inv.number}`}>
                             Download
-                          </button>
+                          </LinkButton>
                         )}
-                        {(inv.status === "sent" || inv.status === "overdue") && (
+                        {isOutstanding(inv) && (
                           <Button size="sm" loading={actions.busyId === inv.id} onClick={() => actions.markPaid(inv)} aria-label={`Mark invoice #${inv.number} paid`}>
                             Mark paid
                           </Button>

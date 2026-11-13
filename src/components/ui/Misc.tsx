@@ -52,12 +52,29 @@ export function EmptyState({
   );
 }
 
-/** Bare glass surface. Prefer `Panel` when the section has a title or actions. */
-export function Card({ children, className, style }: { children: ReactNode; className?: string; style?: CSSProperties }) {
+/** Loading placeholder for a list or ledger inside a Panel. */
+export function RowsSkeleton({ rows = 5, label = "Loading" }: { rows?: number; label?: string }) {
   return (
-    <div className={cn("glass rounded-panel", className)} style={style}>
-      {children}
+    <div className="flex flex-col gap-3 py-2" aria-busy="true" aria-label={label}>
+      {Array.from({ length: rows }, (_, i) => (
+        <Skeleton key={i} className="h-6" style={{ width: `${92 - i * 7}%` }} />
+      ))}
     </div>
+  );
+}
+
+/** Hairline list of short-date + text rows (reminders, recent activity). */
+export function DatedList({ items, empty }: { items: { key: string; date: ReactNode; text: ReactNode }[]; empty: string }) {
+  if (items.length === 0) return <p className="py-[9px] text-[13px] text-ink-3">{empty}</p>;
+  return (
+    <ul>
+      {items.map((it) => (
+        <li key={it.key} className="grid grid-cols-[64px_minmax(0,1fr)] gap-x-2 border-b border-line py-[9px] last:border-b-0">
+          <span className="tnum text-[13px] text-ink-3">{it.date}</span>
+          <span className="min-w-0 break-words">{it.text}</span>
+        </li>
+      ))}
+    </ul>
   );
 }
 

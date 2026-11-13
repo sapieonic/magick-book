@@ -1,8 +1,9 @@
 "use client";
 import { useRef, useState, type FormEvent } from "react";
 import { Plus } from "lucide-react";
-import { Button } from "@/components/ui/Button";
+import { Button, LinkButton } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Field";
+import { parseAmount } from "@/lib/utils";
 import { useToast } from "@/components/ui/Toast";
 import { api } from "@/lib/client";
 import { STAGE_META, type BoardStage } from "@/lib/constants";
@@ -65,7 +66,7 @@ export function QuickAddLead({
         name: form.name,
         company: form.company,
         phone: form.phone,
-        estValue: Number(form.value.replace(/[^\d.]/g, "")) || 0,
+        estValue: parseAmount(form.value),
         stage,
       });
       toast(`${lead.name} added to ${label}.`, "success");
@@ -117,9 +118,9 @@ export function QuickAddLead({
           Cancel
         </Button>
       </div>
-      <button type="button" onClick={onMoreFields} className="link self-start text-[13px]">
+      <LinkButton onClick={onMoreFields} className="self-start text-[13px]">
         More fields
-      </button>
+      </LinkButton>
     </form>
   );
 }

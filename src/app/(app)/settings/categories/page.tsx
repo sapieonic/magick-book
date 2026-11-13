@@ -9,11 +9,12 @@ import { CategoryBadge } from "@/components/leads/CategoryBadge";
 import { Button } from "@/components/ui/Button";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { Field, Input } from "@/components/ui/Field";
-import { EmptyState, ErrorState, Skeleton } from "@/components/ui/Misc";
+import { EmptyState, ErrorState, RowsSkeleton } from "@/components/ui/Misc";
 import { Panel } from "@/components/ui/Panel";
 import { Table, Td, Th } from "@/components/ui/Table";
 import { useToast } from "@/components/ui/Toast";
 import { api, useApi } from "@/lib/client";
+import { plural } from "@/lib/utils";
 import { DEFAULT_LEAD_CATEGORY, formatCategoryLabel } from "@/lib/constants";
 
 interface CategoriesResponse {
@@ -24,7 +25,7 @@ interface CategoriesResponse {
 }
 
 const leadsHref = (category: string) => `/leads?category=${encodeURIComponent(category)}`;
-const plural = (n: number) => `${n} ${n === 1 ? "lead" : "leads"}`;
+const leadCount = (n: number) => plural(n, "lead");
 
 export default function CategoriesSettingsPage() {
   const me = useSession();
@@ -71,7 +72,7 @@ export default function CategoriesSettingsPage() {
       title: `Remove “${formatCategoryLabel(slug)}”?`,
       description:
         n > 0
-          ? `${plural(n)} still ${n === 1 ? "uses" : "use"} this. They keep the tag, and show under “Needs reclassify” so you can update them.`
+          ? `${leadCount(n)} still ${n === 1 ? "uses" : "use"} this. They keep the tag, and show under “Needs reclassify” so you can update them.`
           : "No leads use this category. It disappears from the dropdown.",
       confirmLabel: "Remove",
       tone: "danger",
@@ -117,7 +118,7 @@ export default function CategoriesSettingsPage() {
                       <li key={o.category} className="flex items-center justify-between gap-3 border-b border-line py-[9px] last:border-b-0">
                         <CategoryBadge category={o.category} />
                         <Link href={leadsHref(o.category)} className="link tnum text-[13px]">
-                          {plural(o.count)}
+                          {leadCount(o.count)}
                         </Link>
                       </li>
                     ))}
@@ -129,11 +130,7 @@ export default function CategoriesSettingsPage() {
         >
           <Panel title="Categories" meta={loading ? undefined : categories.length} ruled>
             {loading ? (
-              <div className="space-y-3 py-3" aria-busy="true" aria-label="Loading categories">
-                {[0, 1, 2, 3].map((i) => (
-                  <Skeleton key={i} className="h-5 w-full" />
-                ))}
-              </div>
+              <RowsSkeleton rows={4} label="Loading categories" />
             ) : categories.length === 0 ? (
               <EmptyState
                 className="mt-3"
@@ -159,7 +156,7 @@ export default function CategoriesSettingsPage() {
                         <CategoryBadge category={c} />
                       </Td>
                       <Td numeric>
-                        <Link href={leadsHref(c)} className="link" aria-label={`${plural(counts[c] ?? 0)} in ${formatCategoryLabel(c)}`}>
+                        <Link href={leadsHref(c)} className="link" aria-label={`${leadCount(counts[c] ?? 0)} in ${formatCategoryLabel(c)}`}>
                           {counts[c] ?? 0}
                         </Link>
                       </Td>

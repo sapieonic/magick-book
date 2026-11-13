@@ -1,11 +1,11 @@
 "use client";
 import { Avatar } from "@/components/ui/Avatar";
-import { buttonClasses } from "@/components/ui/Button";
+import { LinkButton, buttonClasses } from "@/components/ui/Button";
+import { DatedList } from "@/components/ui/Misc";
 import { Panel } from "@/components/ui/Panel";
 import { DOCUMENT_KIND_META } from "@/lib/constants";
 import { formatBytes } from "@/lib/utils";
 import type { ActivityDTO, ContactDTO, DocumentDTO, ReminderDTO } from "@/lib/types";
-import { DatedList, LinkButton } from "./parts";
 import { shortDate } from "./statement";
 
 export const openDocument = (accountId: string, docId: string) =>
@@ -17,7 +17,7 @@ export function documentMeta(d: DocumentDTO): string {
 }
 
 /** One-line summary of an activity entry; notes show their text. */
-export const activityLine = (a: ActivityDTO) => (a.kind === "note" ? `Note: ${a.detail}` : a.detail ? `${a.title} · ${a.detail}` : a.title);
+const activityLine = (a: ActivityDTO) => (a.kind === "note" ? `Note: ${a.detail}` : a.detail ? `${a.title} · ${a.detail}` : a.title);
 
 export function PrimaryContactPanel({ contact, onAll, onAdd }: { contact: ContactDTO | null; onAll: () => void; onAdd: () => void }) {
   return (

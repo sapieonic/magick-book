@@ -152,7 +152,7 @@ describe("GET /api/dashboard — Today page", () => {
     const { receivables: r } = await getDashboard();
     expect(r.outstanding).toBe(3700);
     expect(r.billed).toBe(3750);
-    expect(r.aging).toEqual({ current: 1000, d1_30: 2000, d31_60: 300, d60plus: 400 });
+    expect(r.aging.map((b: { key: string; amount: number }) => [b.key, b.amount])).toEqual([["current", 1000], ["d30", 2000], ["d60", 300], ["d60plus", 400]]);
     expect(r.owingAccounts).toBe(2);
     expect(r.debtors).toEqual([
       { accountId: String(big._id), name: "Samarthya", amount: 3000, invoices: 2 },

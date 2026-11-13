@@ -24,7 +24,7 @@ describe("accountFinance", () => {
   it("returns all zeros and zero margin for an account with no invoices", async () => {
     const accId = new Types.ObjectId();
     const fin = await services.accountFinance(accId);
-    expect(fin).toEqual({ billed: 0, paid: 0, outstanding: 0, expenses: 0, margin: 0 });
+    expect(fin).toEqual({ billed: 0, paid: 0, outstanding: 0, overdue: 0, expenses: 0, margin: 0 });
   });
 
   it("computes billed=sent+paid+overdue, paid, outstanding, expenses and margin", async () => {

@@ -1,7 +1,8 @@
 "use client";
+import { LinkButton } from "@/components/ui/Button";
 import { useState } from "react";
 import { Panel } from "@/components/ui/Panel";
-import { Skeleton } from "@/components/ui/Misc";
+import { RowsSkeleton } from "@/components/ui/Misc";
 import { AuditTimeline } from "@/components/AuditTimeline";
 import type { AuditLogDTO } from "@/lib/types";
 
@@ -16,18 +17,14 @@ export function LeadHistory({ entries, loading }: { entries: AuditLogDTO[]; load
       ruled
       actions={
         entries.length > COLLAPSED && (
-          <button type="button" className="link" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+          <LinkButton aria-expanded={open} onClick={() => setOpen((o) => !o)}>
             {open ? "Show fewer" : `All ${entries.length} changes`}
-          </button>
+          </LinkButton>
         )
       }
     >
       {loading ? (
-        <div className="space-y-3 py-2">
-          {Array.from({ length: COLLAPSED }, (_, i) => (
-            <Skeleton key={i} className="h-9 w-full" />
-          ))}
-        </div>
+        <RowsSkeleton rows={COLLAPSED} label="Loading history" />
       ) : (
         <AuditTimeline entries={open ? entries : entries.slice(0, COLLAPSED)} />
       )}

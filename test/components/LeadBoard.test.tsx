@@ -12,7 +12,6 @@ const { patch, post } = vi.hoisted(() => ({ patch: vi.fn(), post: vi.fn() }));
 vi.mock("@/lib/client", () => ({
   api: { patch, post, get: vi.fn(), put: vi.fn(), delete: vi.fn() },
   useApi: () => ({ data: null, loading: false, error: null, refresh: vi.fn(), setData: vi.fn() }),
-  ApiError: class extends Error {},
 }));
 
 import { LeadBoard } from "@/components/leads/LeadBoard";

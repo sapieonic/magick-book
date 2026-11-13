@@ -11,12 +11,12 @@ import type { LeadDTO } from "@/lib/types";
 const QUICK_REASONS = ["Price", "Competitor", "No response", "Bad timing", "Not a fit"] as const;
 
 /** Ask why a lead was lost, then move it to the Lost stage. Open while `lead` is set. */
-export function LostLeadModal({ lead, onClose, onDone }: { lead: LeadDTO | null; onClose: () => void; onDone: () => void }) {
+export function LostLeadModal({ lead, onClose, onDone }: { lead: Pick<LeadDTO, "id" | "name"> | null; onClose: () => void; onDone: () => void }) {
   const { toast } = useToast();
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
 
-  useEffect(() => setReason(""), [lead]);
+  useEffect(() => setReason(""), [lead?.id]);
 
   async function submit(overrideReason?: string) {
     if (!lead) return;

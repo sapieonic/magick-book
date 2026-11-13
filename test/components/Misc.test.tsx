@@ -1,25 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { Card, EmptyState, ErrorState, KbdHint, Skeleton } from "@/components/ui/Misc";
-
-describe("Card", () => {
-  it("renders children on a glass panel surface", () => {
-    const { container } = render(<Card>Default Content</Card>);
-    expect(screen.getByText("Default Content")).toBeInTheDocument();
-    expect(container.firstChild).toHaveClass("glass", "rounded-panel");
-  });
-
-  it("forwards custom className and inline style props", () => {
-    const { container } = render(
-      <Card className="custom-test-class" style={{ animationDelay: "200ms" }}>
-        Styled Content
-      </Card>,
-    );
-    expect(container.firstChild).toHaveClass("custom-test-class");
-    expect((container.firstChild as HTMLElement).style.animationDelay).toBe("200ms");
-  });
-});
+import { DatedList, EmptyState, ErrorState, KbdHint, RowsSkeleton, Skeleton } from "@/components/ui/Misc";
 
 describe("EmptyState / ErrorState / Skeleton / KbdHint", () => {
   it("EmptyState shows its title, description and action", () => {
@@ -46,5 +28,21 @@ describe("EmptyState / ErrorState / Skeleton / KbdHint", () => {
   it("KbdHint renders a kbd element", () => {
     render(<KbdHint>⌘K</KbdHint>);
     expect(screen.getByText("⌘K").tagName).toBe("KBD");
+  });
+});
+
+describe("RowsSkeleton / DatedList", () => {
+  it("RowsSkeleton is a labelled busy placeholder with the requested rows", () => {
+    render(<RowsSkeleton rows={3} label="Loading invoices" />);
+    const box = screen.getByLabelText("Loading invoices");
+    expect(box).toHaveAttribute("aria-busy", "true");
+    expect(box.children).toHaveLength(3);
+  });
+
+  it("DatedList lists dated rows, or the empty line", () => {
+    const { rerender } = render(<DatedList items={[{ key: "a", date: "3 Nov", text: "Called Ashish" }]} empty="Nothing yet" />);
+    expect(screen.getByRole("listitem")).toHaveTextContent("3 NovCalled Ashish");
+    rerender(<DatedList items={[]} empty="Nothing yet" />);
+    expect(screen.getByText("Nothing yet")).toBeInTheDocument();
   });
 });

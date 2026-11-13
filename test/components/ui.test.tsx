@@ -26,15 +26,6 @@ describe("Badge", () => {
     expect(screen.getByText("Active")).toBeInTheDocument();
     expect(container.firstChild).toHaveClass("text-paid", "bg-paid-tint");
   });
-  it("maps pre-Daybook tone names onto the new tones", () => {
-    const { container } = render(<Badge tone="danger">Late</Badge>);
-    expect(container.firstChild).toHaveClass("text-overdue");
-  });
-  it("prefers an explicit tint over tone", () => {
-    const { container } = render(<Badge tint="custom-tint" tone="overdue">X</Badge>);
-    expect(container.firstChild).toHaveClass("custom-tint");
-    expect(container.firstChild).not.toHaveClass("text-overdue");
-  });
   it("renders a dot in the given colour", () => {
     const { container } = render(<Badge dot="rgb(1, 2, 3)">X</Badge>);
     expect((container.querySelector("span[style]") as HTMLElement).style.background).toBe("rgb(1, 2, 3)");

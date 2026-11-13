@@ -14,11 +14,10 @@ const H = vi.hoisted(() => ({
 vi.mock("@/lib/client", () => ({
   useApi: () => ({ data: H.data, setData: vi.fn(), error: null, loading: false, refresh: H.refresh }),
   api: H.api,
-  ApiError: class extends Error {},
 }));
 
 import DashboardPage from "@/app/(app)/dashboard/page";
-import { summaryPhrases, collectedComparison, ageWords, dueWords } from "@/components/dashboard/format";
+import { summaryPhrases, collectedComparison, dueWords } from "@/components/dashboard/format";
 
 const AS_OF = new Date(2026, 10, 13, 10, 0).toISOString(); // Friday 13 November 2026
 const daysBefore = (n: number) => new Date(new Date(AS_OF).getTime() - n * 86400000).toISOString();
@@ -50,15 +49,17 @@ function sample(over: Partial<DashboardData> = {}): DashboardData {
     receivables: {
       billed: 2650000,
       outstanding: 1040000,
-      aging: { current: 1020, d1_30: 1021812, d31_60: 0, d60plus: 18880 },
+      aging: [
+        { key: "current", amount: 1020, count: 1, accounts: [] },
+        { key: "d30", amount: 1021812, count: 2, accounts: [] },
+        { key: "d60", amount: 0, count: 0, accounts: [] },
+        { key: "d60plus", amount: 18880, count: 1, accounts: [] },
+      ],
       owingAccounts: 4,
       debtors: [{ accountId: "a2", name: "Samarthya", amount: 791096, invoices: 2 }],
       collected: { thisMonth: 1840, lastMonth: 590000, payments: 1, latest: { accountId: "a3", accountName: "Brewtiful", number: 1018 } },
     },
     upcoming: [{ id: "u1", title: "Renewal call", dueAt: new Date(2026, 10, 18, 11).toISOString(), entityLabel: "Ashish", href: null }],
-    revenueThisMonth: 0,
-    revenueDeltaPct: 0,
-    attention: [],
     ...over,
   };
 }
@@ -95,9 +96,6 @@ describe("format helpers", () => {
     expect(collectedComparison(9000, 100, "October")).toBe("up from ₹100 in October");
     expect(collectedComparison(5, 0, "October")).toBe("nothing collected in October");
     const now = new Date(AS_OF);
-    expect(ageWords(daysBefore(0), now)).toBe("today");
-    expect(ageWords(daysBefore(17), now)).toBe("17 days");
-    expect(ageWords(daysBefore(120), now)).toBe("4 months");
     expect(dueWords(daysBefore(3), now)).toBe("due 3 days ago");
   });
 });
@@ -118,6 +116,14 @@ describe("Today page", () => {
     expect(screen.getByText("Renewal call")).toBeInTheDocument();
     const rail = screen.getByRole("complementary", { name: "Receivables" });
     expect(within(rail).getByRole("link", { name: /Samarthya/ })).toHaveAttribute("href", "/accounts/a2?tab=invoices");
+  });
+
+  it("links each pipeline stage to the board filtered to it", () => {
+    renderPage();
+    const ribbon = screen.getByRole("group", { name: "Pipeline by value" });
+    expect(within(ribbon).getAllByRole("link")[0]).toHaveAttribute("href", "/leads?stage=new");
+    const stageTable = screen.getByRole("heading", { name: "Pipeline by stage" }).closest("section")!;
+    expect(within(stageTable).getByRole("link", { name: "Won" })).toHaveAttribute("href", "/leads?stage=won");
   });
 
   it("shows every queue row with its overdue age", () => {
@@ -153,8 +159,8 @@ describe("Today page", () => {
     renderPage();
     await user.click(screen.getAllByRole("button", { name: "Log call for Naresh · Shivasakthi" })[0]);
     const dialog = await screen.findByRole("dialog");
-    await user.type(within(dialog).getByLabelText("What happened?"), "Asked for a revised quote");
-    await user.click(within(dialog).getByRole("button", { name: "Save" }));
+    await user.type(within(dialog).getByLabelText("Call notes"), "Asked for a revised quote");
+    await user.click(within(dialog).getByRole("button", { name: "Log call" }));
     expect(H.api.post).toHaveBeenCalledWith("/api/leads/l1/activities", { kind: "call", detail: "Asked for a revised quote" });
     expect(H.refresh).toHaveBeenCalled();
   });

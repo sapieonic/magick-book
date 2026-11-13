@@ -44,7 +44,7 @@ interface ProportionBarProps {
    * `bar`: one thin joined bar, optionally with a legend (statement, aging).
    */
   variant?: "ribbon" | "bar";
-  /** Ribbon density. */
+  /** Ribbon density (default `md`). Bar height: `sm` 12px thin bar (default), `md` 36px block (account statement). */
   size?: "sm" | "md";
   /** Bar variant: list every segment with its swatch and amount underneath. */
   legend?: boolean;
@@ -102,7 +102,7 @@ function Ribbon({ segments, size = "md", compact = true, emptyLabel = "Empty", c
   );
 }
 
-function Bar({ segments, legend, compact = false, className, ...aria }: Omit<ProportionBarProps, "variant">) {
+function Bar({ segments, size = "sm", legend, compact = false, className, ...aria }: Omit<ProportionBarProps, "variant">) {
   const shared = segmentShares(segments);
   const filled = shared.filter((s) => s.value > 0);
   const summary = shared.map((s) => `${s.label} ${formatMoney(s.value)}`).join(", ");
@@ -111,7 +111,7 @@ function Bar({ segments, legend, compact = false, className, ...aria }: Omit<Pro
       <div
         role="img"
         aria-label={`${aria["aria-label"]}: ${summary}`}
-        className={cn("flex h-3 gap-0.5 overflow-hidden rounded-full", filled.length === 0 && "hatch")}
+        className={cn("flex gap-0.5 overflow-hidden", size === "md" ? "h-9 rounded-bar" : "h-3 rounded-full", filled.length === 0 && "hatch")}
       >
         {filled.map((s) => (
           <div key={s.key} className="min-w-1.5 basis-0" style={{ flexGrow: s.value, background: s.color }} />

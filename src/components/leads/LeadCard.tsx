@@ -3,28 +3,9 @@ import { Avatar } from "@/components/ui/Avatar";
 import { Tag } from "@/components/ui/Badge";
 import { Money } from "@/components/ui/Money";
 import { DEFAULT_LEAD_CATEGORY, formatCategoryLabel } from "@/lib/constants";
-import { absoluteTime, ageInWords, cn, daysSince } from "@/lib/utils";
+import { Staleness } from "@/components/ui/Staleness";
+import { cn, plural } from "@/lib/utils";
 import type { LeadDTO } from "@/lib/types";
-
-/** A lead goes stale (overdue colour) after this many days without activity. */
-export const STALE_AFTER_DAYS = 30;
-
-/** Time since the last touch, in words; turns overdue red past 30 days unless `plain`. */
-export function Staleness({ since, plain }: { since: string; plain?: boolean }) {
-  if (!since) return null;
-  const days = daysSince(since);
-  return (
-    <span className={cn(!plain && days > STALE_AFTER_DAYS && "text-overdue")} title={`Last activity ${absoluteTime(since)}`}>
-      <span className="sr-only">Last activity </span>
-      {ageInWords(days)}
-      {days >= 1 && <span className="sr-only"> ago</span>}
-    </span>
-  );
-}
-
-function notesLabel(count: number) {
-  return `${count} ${count === 1 ? "note" : "notes"}`;
-}
 
 /** The lead's name as a link stretched over the whole card, so the card is one target. */
 function NameLink({ lead, dragging, describedBy }: { lead: LeadDTO; dragging?: boolean; describedBy?: string }) {
@@ -48,7 +29,7 @@ function NameLink({ lead, dragging, describedBy }: { lead: LeadDTO; dragging?: b
 export function LeadCard({ lead, dragging, describedBy }: { lead: LeadDTO; dragging?: boolean; describedBy?: string }) {
   const subtitle = [lead.title, lead.company].filter(Boolean).join(" · ");
   const classified = !!lead.category && lead.category !== DEFAULT_LEAD_CATEGORY;
-  const meta = [classified && formatCategoryLabel(lead.category), lead.commentCount > 0 && notesLabel(lead.commentCount)]
+  const meta = [classified && formatCategoryLabel(lead.category), lead.commentCount > 0 && plural(lead.commentCount, "note")]
     .filter(Boolean)
     .join(" · ");
 

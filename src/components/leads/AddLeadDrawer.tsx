@@ -2,7 +2,8 @@
 import { useRef, useState } from "react";
 import { Drawer } from "@/components/ui/Overlay";
 import { Button } from "@/components/ui/Button";
-import { Input, Textarea, Select, Field } from "@/components/ui/Field";
+import { AmountInput, Input, Textarea, Select, Field } from "@/components/ui/Field";
+import { parseAmount } from "@/lib/utils";
 import { useToast } from "@/components/ui/Toast";
 import { api, useApi } from "@/lib/client";
 import {
@@ -111,7 +112,7 @@ export function AddLeadDrawer({
 
     setErrors({});
     setBusy(true);
-    const payload = { ...form, estValue: Number(String(form.estValue).replace(/[^\d.]/g, "")) || 0 };
+    const payload = { ...form, estValue: parseAmount(form.estValue) };
     try {
       if (isEdit) {
         const { lead: updated } = await api.patch<{ lead: LeadDTO }>(`/api/leads/${lead!.id}`, payload);
@@ -194,8 +195,8 @@ export function AddLeadDrawer({
           </Select>
         </Field>
 
-        <Field label="Est. value (₹)" hint="optional" error={errors.estValue}>
-          <Input ref={estValueRef} aria-invalid={!!errors.estValue} className="tnum" inputMode="numeric" placeholder="1,20,000" value={form.estValue} onChange={(e) => set("estValue", e.target.value)} />
+        <Field label="Est. value" hint="optional" error={errors.estValue}>
+          <AmountInput ref={estValueRef} placeholder="1,20,000" value={form.estValue} onChange={(e) => set("estValue", e.target.value)} />
         </Field>
 
         <Field label="Notes">

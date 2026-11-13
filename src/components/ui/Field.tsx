@@ -82,6 +82,18 @@ export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputE
   return <input ref={ref} className={cn(CONTROL, "h-[34px]", className)} {...props} />;
 });
 
+/** Rupee amount input: a muted ₹ prefix, numeric keypad, tabular figures. Read it with `parseAmount`. */
+export const AmountInput = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement>>(function AmountInput({ className, ...props }, ref) {
+  return (
+    <div className="relative">
+      <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-3" aria-hidden>
+        ₹
+      </span>
+      <Input ref={ref} inputMode="numeric" className={cn("tnum pl-6", className)} {...props} />
+    </div>
+  );
+});
+
 export const Textarea = forwardRef<HTMLTextAreaElement, TextareaHTMLAttributes<HTMLTextAreaElement>>(function Textarea(
   { className, ...props },
   ref,

@@ -5,7 +5,9 @@ import { Table, Th, Td } from "@/components/ui/Table";
 import { segmentShares } from "@/components/ui/ProportionBar";
 import { stageColor } from "@/components/ui/stage";
 import { STAGE_META } from "@/lib/constants";
-import { ageWords, daysSince, plural } from "./format";
+import { stageHref } from "./PipelineRibbon";
+import { Staleness } from "@/components/ui/Staleness";
+import { agoInWords, daysSince, plural } from "@/lib/utils";
 import type { PipelineStageSummary } from "@/lib/types";
 
 /** Count, value, share and the longest-waiting lead for each pipeline stage. */
@@ -28,7 +30,11 @@ export function StageTable({ pipeline, now }: { pipeline: PipelineStageSummary[]
         <tbody>
           {rows.map((r, i) => (
             <tr key={r.key}>
-              <Td>{r.label}</Td>
+              <Td>
+                <Link href={stageHref(r.stage)} className="link">
+                  {r.label}
+                </Link>
+              </Td>
               <Td numeric>{r.count || "–"}</Td>
               <Td numeric>
                 <Money value={r.value} />
@@ -51,10 +57,9 @@ export function StageTable({ pipeline, now }: { pipeline: PipelineStageSummary[]
 
 function StageNote({ row, previous, now }: { row: PipelineStageSummary; previous?: PipelineStageSummary; now: Date }) {
   if (row.stage === "won") {
-    const age = row.latest && ageWords(row.latest.lastActivityAt, now);
     return row.latest ? (
       <>
-        Last win {age === "today" ? age : `${age} ago`} ·{" "}
+        Last win {agoInWords(daysSince(row.latest.lastActivityAt, now))} ·{" "}
         <Link href={`/leads/${row.latest.id}`} className="link">
           {row.latest.company || row.latest.name}
         </Link>
@@ -68,13 +73,12 @@ function StageNote({ row, previous, now }: { row: PipelineStageSummary; previous
       ? `${plural(previous.count, `${STAGE_META[previous.stage].label.toLowerCase()} lead`)} could move here`
       : "No leads";
   }
-  const days = daysSince(row.oldest.lastActivityAt, now);
   return (
     <>
       <Link href={`/leads/${row.oldest.id}`} className="link">
         {row.oldest.name}
       </Link>{" "}
-      · <span className={days > 30 ? "text-overdue" : undefined}>{ageWords(row.oldest.lastActivityAt, now)}</span>
+      · <Staleness since={row.oldest.lastActivityAt} now={now} />
     </>
   );
 }

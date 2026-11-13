@@ -29,8 +29,6 @@ export const api = {
   delete: <T>(url: string) => request<T>("DELETE", url),
 };
 
-export { ApiError };
-
 /** Tiny data hook: fetch on mount, expose loading/error + refresh + optimistic set. */
 export function useApi<T>(url: string | null) {
   const [data, setData] = useState<T | null>(null);

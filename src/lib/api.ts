@@ -69,8 +69,6 @@ export class HttpError extends Error {
 const iso = (d?: Date | null) => (d ? new Date(d).toISOString() : null);
 const id = (v: unknown) => (v ? String(v) : "");
 
-type OwnerLike = { _id: unknown; name?: string } | null | undefined;
-
 export function serializeLead(l: ILead, ownerName = "", commentCount = 0): LeadDTO {
   return {
     id: id(l._id),
@@ -246,5 +244,3 @@ export function serializeReminderSetting(s: IReminderSetting | null): ReminderSe
   };
 }
 
-export { iso, id };
-export type { OwnerLike };

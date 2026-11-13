@@ -2,18 +2,18 @@
 import { useState, type ReactNode } from "react";
 import { FileText, Mail, Plus, Receipt, Upload, Wallet } from "lucide-react";
 import { Badge, Tag } from "@/components/ui/Badge";
-import { Button } from "@/components/ui/Button";
+import { Button, LinkButton } from "@/components/ui/Button";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
-import { EmptyState } from "@/components/ui/Misc";
+import { EmptyState, RowsSkeleton } from "@/components/ui/Misc";
 import { Money, formatMoney } from "@/components/ui/Money";
 import { Panel } from "@/components/ui/Panel";
 import { Table, Td, Th, TwoLine } from "@/components/ui/Table";
 import { useToast } from "@/components/ui/Toast";
 import { api } from "@/lib/client";
 import { DOCUMENT_KIND_META } from "@/lib/constants";
+import { isOutstanding, isOverdue } from "@/lib/receivables";
 import type { AccountFinance, ContactDTO, DocumentDTO, ExpenseDTO, InvoiceDTO } from "@/lib/types";
 import { documentMeta, openDocument } from "./AccountRail";
-import { RowsSkeleton } from "./parts";
 import { InvoiceNumber, InvoiceStatus } from "./StatementTable";
 import { longDate } from "./statement";
 import { useInvoiceActions } from "./useInvoiceActions";
@@ -215,6 +215,7 @@ export function InvoicesSection({
   onChanged: () => void | Promise<void>;
 }) {
   const actions = useInvoiceActions(onChanged);
+  const now = new Date();
   return (
     <Section
       title="Invoices"
@@ -262,27 +263,27 @@ export function InvoicesSection({
                 <Td hideOnPhone className="whitespace-nowrap">
                   {inv.hasFile ? (
                     <span className="inline-flex gap-3 text-[13px]">
-                      <button type="button" className="link" onClick={() => actions.openFile(inv)} aria-label={`View invoice #${inv.number} file`}>
+                      <LinkButton onClick={() => actions.openFile(inv)} aria-label={`View invoice #${inv.number} file`}>
                         View
-                      </button>
+                      </LinkButton>
                       <button type="button" className="text-ink-3 hover:text-ink-1 disabled:opacity-50" disabled={busy} onClick={() => actions.attachFile(inv)} aria-label={`Replace invoice #${inv.number} file`}>
                         Replace
                       </button>
                     </span>
                   ) : (
-                    <button type="button" className="link inline-flex items-center gap-1.5 text-[13px] disabled:opacity-50" disabled={busy} onClick={() => actions.attachFile(inv)} aria-label={`Upload invoice #${inv.number} file`}>
+                    <LinkButton className="inline-flex items-center gap-1.5 text-[13px] disabled:opacity-50" disabled={busy} onClick={() => actions.attachFile(inv)} aria-label={`Upload invoice #${inv.number} file`}>
                       <Upload className="size-3.5" strokeWidth={1.5} aria-hidden /> Upload
-                    </button>
+                    </LinkButton>
                   )}
                 </Td>
                 <Td className="whitespace-nowrap text-right">
                   <span className="inline-flex items-center gap-1">
-                    {inv.status === "overdue" && (
+                    {isOverdue(inv, now) && (
                       <Button size="sm" loading={busy} onClick={() => actions.remind(inv)}>
                         Remind
                       </Button>
                     )}
-                    {(inv.status === "sent" || inv.status === "overdue") && (
+                    {isOutstanding(inv) && (
                       <Button size="sm" loading={busy} onClick={() => actions.markPaid(inv)} aria-label={`Mark invoice #${inv.number} paid`}>
                         Mark paid
                       </Button>

@@ -2,17 +2,9 @@ import { Panel } from "@/components/ui/Panel";
 import { Button } from "@/components/ui/Button";
 import { Money, formatMoney } from "@/components/ui/Money";
 import { segmentShares } from "@/components/ui/ProportionBar";
-import { AGING_LABELS } from "@/lib/money-charts";
+import { AGING_COLORS, AGING_LABELS } from "@/lib/receivables";
 import { cn } from "@/lib/utils";
 import type { AgingBucketDTO, AgingKey } from "@/lib/types";
-
-/** Band colour: amber while not yet due, deepening red as it ages. */
-const BAR: Record<AgingKey, string> = {
-  current: "var(--color-due-fill)",
-  d30: "color-mix(in srgb, var(--color-overdue-fill) 55%, transparent)",
-  d60: "color-mix(in srgb, var(--color-overdue-fill) 75%, transparent)",
-  d60plus: "var(--color-overdue-fill)",
-};
 
 /** Smallest share of the row a band keeps, so its figures stay legible. */
 const MIN_GROW = 0.14;
@@ -35,7 +27,7 @@ export function AgingBuckets({
   selected: AgingKey | null;
   onSelect: (key: AgingKey | null) => void;
 }) {
-  const shares = segmentShares(aging.map((b) => ({ ...b, label: AGING_LABELS[b.key], color: BAR[b.key], value: b.amount })));
+  const shares = segmentShares(aging.map((b) => ({ ...b, label: AGING_LABELS[b.key], color: AGING_COLORS[b.key], value: b.amount })));
   const owed = aging.some((b) => b.count > 0);
 
   return (

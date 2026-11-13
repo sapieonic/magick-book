@@ -10,11 +10,11 @@ import { ActivityTimeline } from "@/components/ActivityTimeline";
 import { NoteComposer, type ComposerKind } from "@/components/activity/NoteComposer";
 import { AddLeadDrawer } from "@/components/leads/AddLeadDrawer";
 import { ConvertModal } from "@/components/leads/ConvertModal";
+import { LostLeadModal } from "@/components/leads/LostLeadModal";
 import { LeadDetailSkeleton } from "@/components/leads/detail/LeadDetailSkeleton";
 import { LeadFacts } from "@/components/leads/detail/LeadFacts";
 import { LeadHero } from "@/components/leads/detail/LeadHero";
 import { LeadHistory } from "@/components/leads/detail/LeadHistory";
-import { LostModal } from "@/components/leads/detail/LostModal";
 import { NextStepPanel } from "@/components/leads/detail/NextStepPanel";
 import { StageTrack } from "@/components/leads/detail/StageTrack";
 import { ReminderModal } from "@/components/reminders/ReminderModal";
@@ -28,16 +28,11 @@ import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { useToast } from "@/components/ui/Toast";
 import { api, useApi } from "@/lib/client";
 import { STAGE_META, isActiveLeadStage, type BoardStage } from "@/lib/constants";
-import { daysSince, shortDate } from "@/lib/utils";
+import { daysSince, plural, shortDate } from "@/lib/utils";
 import type { AuditLogDTO, LeadDTO, LeadDetail } from "@/lib/types";
 
 const COMPOSER_KINDS: ComposerKind[] = ["call", "note", "email", "meeting", "whatsapp", "sms"];
 const BREADCRUMB = [{ label: "Leads", href: "/leads" }];
-
-/** "3 notes", "1 call", or "" for none. */
-function countOf(n: number, noun: string): string {
-  return n ? `${n} ${noun}${n === 1 ? "" : "s"}` : "";
-}
 
 function StageChip({ lead }: { lead: LeadDTO }) {
   if (lead.deletedAt) return <StatusPill tone="lost">Archived</StatusPill>;
@@ -82,11 +77,10 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
   const canEdit = owns && !archived;
   const open = !converted && isActiveLeadStage(lead.stage) && lead.stage !== "won";
   const idle = daysSince(lead.lastActivityAt || lead.createdAt);
-  const activityMeta = [
-    countOf(activities.filter((a) => a.kind === "note").length, "note"),
-    countOf(activities.filter((a) => a.kind === "call").length, "call"),
-  ]
-    .filter(Boolean)
+  const kindCount = (kind: "note" | "call") => activities.filter((a) => a.kind === kind).length;
+  const activityMeta = (["note", "call"] as const)
+    .filter((kind) => kindCount(kind) > 0)
+    .map((kind) => plural(kindCount(kind), kind))
     .join(" · ");
 
   function reloadAll() {
@@ -292,16 +286,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
       {converting && (
         <ConvertModal lead={lead} open onClose={() => setConverting(false)} onConverted={(acc) => router.push(`/accounts/${acc.id}`)} />
       )}
-      <LostModal
-        open={lostOpen}
-        leadId={id}
-        name={lead.name}
-        onClose={() => setLostOpen(false)}
-        onDone={() => {
-          setLostOpen(false);
-          reloadAll();
-        }}
-      />
+      <LostLeadModal lead={lostOpen ? lead : null} onClose={() => setLostOpen(false)} onDone={reloadAll} />
       <ReminderModal
         open={!!reminder}
         leadId={id}

@@ -21,22 +21,18 @@ export function isActiveLeadStage(stage: string): boolean {
   return stage !== "lost" && stage !== "parked";
 }
 
-export function isBoardStage(stage: string): stage is BoardStage {
-  return (BOARD_STAGES as readonly string[]).includes(stage);
-}
-
 export function isCollapsibleStage(stage: string): stage is CollapsibleStage {
   return (COLLAPSIBLE_STAGES as readonly string[]).includes(stage);
 }
 
-export const STAGE_META: Record<LeadStage, { label: string; tint: string; dot: string }> = {
-  new: { label: "New", tint: "bg-accent-tint text-accent", dot: "#c9d4f5" },
-  contacted: { label: "Contacted", tint: "bg-accent-tint text-accent", dot: "#9db0ec" },
-  qualified: { label: "Qualified", tint: "bg-accent-tint text-accent", dot: "#6f8be0" },
-  proposal: { label: "Proposal", tint: "bg-due-tint text-due", dot: "#3f62d2" },
-  won: { label: "Won", tint: "bg-paid-tint text-paid", dot: "#2f9e62" },
-  parked: { label: "Parked", tint: "bg-sunk text-ink-2", dot: "#9aa0a8" },
-  lost: { label: "Lost", tint: "bg-overdue-tint text-overdue", dot: "#9aa0a8" },
+export const STAGE_META: Record<LeadStage, { label: string }> = {
+  new: { label: "New" },
+  contacted: { label: "Contacted" },
+  qualified: { label: "Qualified" },
+  proposal: { label: "Proposal" },
+  won: { label: "Won" },
+  parked: { label: "Parked" },
+  lost: { label: "Lost" },
 };
 
 export const LEAD_SOURCES = ["Website", "Referral", "Cold call", "Event", "Inbound", "Social", "Other"] as const;
@@ -72,20 +68,20 @@ export function formatCategoryLabel(category: string): string {
 export const ACCOUNT_STATUSES = ["active", "at_risk", "churned"] as const;
 export type AccountStatus = (typeof ACCOUNT_STATUSES)[number];
 
-export const ACCOUNT_STATUS_META: Record<AccountStatus, { label: string; tint: string }> = {
-  active: { label: "Active", tint: "bg-paid-tint text-paid" },
-  at_risk: { label: "At risk", tint: "bg-due-tint text-due" },
-  churned: { label: "Churned", tint: "bg-overdue-tint text-overdue" },
+export const ACCOUNT_STATUS_META: Record<AccountStatus, { label: string }> = {
+  active: { label: "Active" },
+  at_risk: { label: "At risk" },
+  churned: { label: "Churned" },
 };
 
 export const INVOICE_STATUSES = ["draft", "sent", "paid", "overdue"] as const;
 export type InvoiceStatus = (typeof INVOICE_STATUSES)[number];
 
-export const INVOICE_STATUS_META: Record<InvoiceStatus, { label: string; tint: string }> = {
-  draft: { label: "Draft", tint: "bg-sunk text-ink-2" },
-  sent: { label: "Sent", tint: "bg-due-tint text-due" },
-  paid: { label: "Paid", tint: "bg-paid-tint text-paid" },
-  overdue: { label: "Overdue", tint: "bg-overdue-tint text-overdue" },
+export const INVOICE_STATUS_META: Record<InvoiceStatus, { label: string }> = {
+  draft: { label: "Draft" },
+  sent: { label: "Sent" },
+  paid: { label: "Paid" },
+  overdue: { label: "Overdue" },
 };
 
 export const EXPENSE_CATEGORIES = [
@@ -113,10 +109,10 @@ export type ContactMethod = (typeof CONTACT_METHODS)[number];
 export const DOCUMENT_KINDS = ["proposal", "agreement", "other"] as const;
 export type DocumentKind = (typeof DOCUMENT_KINDS)[number];
 
-export const DOCUMENT_KIND_META: Record<DocumentKind, { label: string; tint: string }> = {
-  proposal: { label: "Proposal", tint: "bg-accent-tint text-accent" },
-  agreement: { label: "Agreement", tint: "bg-accent-tint text-accent" },
-  other: { label: "Other", tint: "bg-sunk text-ink-2" },
+export const DOCUMENT_KIND_META: Record<DocumentKind, { label: string }> = {
+  proposal: { label: "Proposal" },
+  agreement: { label: "Agreement" },
+  other: { label: "Other" },
 };
 
 /* --------------------------------------------------------------- audit trail */
@@ -124,11 +120,11 @@ export const DOCUMENT_KIND_META: Record<DocumentKind, { label: string; tint: str
 export const AUDIT_ACTIONS = ["create", "update", "delete", "restore"] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 
-export const AUDIT_ACTION_META: Record<AuditAction, { label: string; tint: string }> = {
-  create: { label: "Created", tint: "bg-paid-tint text-paid" },
-  update: { label: "Updated", tint: "bg-accent-tint text-accent" },
-  delete: { label: "Archived", tint: "bg-overdue-tint text-overdue" },
-  restore: { label: "Restored", tint: "bg-accent-tint text-accent" },
+export const AUDIT_ACTION_META: Record<AuditAction, { label: string }> = {
+  create: { label: "Created" },
+  update: { label: "Updated" },
+  delete: { label: "Archived" },
+  restore: { label: "Restored" },
 };
 
 // Entity types tracked by the audit log.
@@ -160,12 +156,12 @@ export const MEETING_TITLE = "Meeting logged";
 export const REMINDER_STATUSES = ["scheduled", "sent", "failed", "done", "canceled"] as const;
 export type ReminderStatus = (typeof REMINDER_STATUSES)[number];
 
-export const REMINDER_STATUS_META: Record<ReminderStatus, { label: string; tint: string }> = {
-  scheduled: { label: "Scheduled", tint: "bg-accent-tint text-accent" },
-  sent: { label: "Sent", tint: "bg-paid-tint text-paid" },
-  failed: { label: "Failed", tint: "bg-overdue-tint text-overdue" },
-  done: { label: "Done", tint: "bg-sunk text-ink-2" },
-  canceled: { label: "Canceled", tint: "bg-sunk text-ink-2" },
+export const REMINDER_STATUS_META: Record<ReminderStatus, { label: string }> = {
+  scheduled: { label: "Scheduled" },
+  sent: { label: "Sent" },
+  failed: { label: "Failed" },
+  done: { label: "Done" },
+  canceled: { label: "Canceled" },
 };
 
 /** HTTP verbs allowed for the outbound reminder webhook. */

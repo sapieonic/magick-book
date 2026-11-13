@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from "vites
 import { Types } from "mongoose";
 import { startTestDB, stopTestDB, clearDB } from "../helpers/db";
 import type { IUser } from "@/lib/models";
+import type { InvoiceStatus } from "@/lib/constants";
 
 const session: { user: IUser | null } = { user: null };
 vi.mock("@/lib/auth/server", async (importOriginal) => {
@@ -57,7 +58,7 @@ beforeEach(async () => {
     { workspaceId, ownerId: standard._id, name: "Stan Co", lastActivityAt: daysAgo(1) },
     { workspaceId, ownerId: admin._id, name: "Gone Co", deletedAt: new Date() },
   ]);
-  const invoice = (accountId: Types.ObjectId, number: number, amount: number, status: string, extra = {}) => ({
+  const invoice = (accountId: Types.ObjectId, number: number, amount: number, status: InvoiceStatus, extra = {}) => ({
     workspaceId, accountId, number, amount, status, issuedAt: new Date(), ...extra,
   });
   await models.Invoice.create([

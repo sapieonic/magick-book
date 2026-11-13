@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   deriveOwners,
-  filterLeadsByOwners,
+  filterByOwners,
   parseOwnerParam,
   parseStageParam,
   serializeOwnerParam,
@@ -120,7 +120,7 @@ describe("deriveOwners", () => {
   });
 });
 
-describe("filterLeadsByOwners", () => {
+describe("filterByOwners", () => {
   const leads = [
     lead({ id: "1", ownerId: "a" }),
     lead({ id: "2", ownerId: "b" }),
@@ -129,44 +129,44 @@ describe("filterLeadsByOwners", () => {
   ];
 
   it("returns the same array reference when no owners are selected", () => {
-    expect(filterLeadsByOwners(leads, [])).toBe(leads);
+    expect(filterByOwners(leads, [])).toBe(leads);
   });
 
   it("keeps only leads owned by a single selected owner", () => {
-    expect(filterLeadsByOwners(leads, ["b"]).map((l) => l.id)).toEqual(["2"]);
+    expect(filterByOwners(leads, ["b"]).map((l) => l.id)).toEqual(["2"]);
   });
 
   it("keeps every lead of a single owner", () => {
-    expect(filterLeadsByOwners(leads, ["a"]).map((l) => l.id)).toEqual(["1", "4"]);
+    expect(filterByOwners(leads, ["a"]).map((l) => l.id)).toEqual(["1", "4"]);
   });
 
   it("keeps leads owned by any of several selected owners (OR within owners)", () => {
-    expect(filterLeadsByOwners(leads, ["a", "c"]).map((l) => l.id)).toEqual(["1", "3", "4"]);
+    expect(filterByOwners(leads, ["a", "c"]).map((l) => l.id)).toEqual(["1", "3", "4"]);
   });
 
   it("preserves the original ordering of the leads", () => {
-    expect(filterLeadsByOwners(leads, ["c", "a"]).map((l) => l.id)).toEqual(["1", "3", "4"]);
+    expect(filterByOwners(leads, ["c", "a"]).map((l) => l.id)).toEqual(["1", "3", "4"]);
   });
 
   it("returns nothing for an owner id that matches no lead", () => {
-    expect(filterLeadsByOwners(leads, ["ghost"])).toEqual([]);
+    expect(filterByOwners(leads, ["ghost"])).toEqual([]);
   });
 
   it("ignores unknown ids mixed with a matching one", () => {
-    expect(filterLeadsByOwners(leads, ["ghost", "b"]).map((l) => l.id)).toEqual(["2"]);
+    expect(filterByOwners(leads, ["ghost", "b"]).map((l) => l.id)).toEqual(["2"]);
   });
 
   it("tolerates duplicate ids in the selection", () => {
-    expect(filterLeadsByOwners(leads, ["a", "a"]).map((l) => l.id)).toEqual(["1", "4"]);
+    expect(filterByOwners(leads, ["a", "a"]).map((l) => l.id)).toEqual(["1", "4"]);
   });
 
   it("returns an empty array for empty leads", () => {
-    expect(filterLeadsByOwners([], ["a"])).toEqual([]);
+    expect(filterByOwners([], ["a"])).toEqual([]);
   });
 
   it("does not mutate the input array", () => {
     const snapshot = leads.map((l) => l.id);
-    filterLeadsByOwners(leads, ["a"]);
+    filterByOwners(leads, ["a"]);
     expect(leads.map((l) => l.id)).toEqual(snapshot);
   });
 });

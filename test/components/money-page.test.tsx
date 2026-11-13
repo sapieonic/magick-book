@@ -2,7 +2,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { buildCollectedByMonth, buildMoneyTotals, buildOutstandingAging } from "@/lib/money-charts";
+import { buildCollectedByMonth } from "@/lib/money-charts";
+import { buildOutstandingAging, rollupMoney } from "@/lib/receivables";
 import type { ExpenseDTO, InvoiceDTO, MoneySummary } from "@/lib/types";
 
 const H = vi.hoisted(() => ({
@@ -14,7 +15,6 @@ const H = vi.hoisted(() => ({
 vi.mock("@/lib/client", () => ({
   useApi: () => ({ data: H.data, setData: vi.fn(), error: null, loading: false, refresh: H.refresh }),
   api: { get: vi.fn(), post: vi.fn(), patch: H.patch, put: vi.fn(), delete: vi.fn() },
-  ApiError: class extends Error {},
 }));
 
 import MoneyPage from "@/app/(app)/money/page";
@@ -32,7 +32,7 @@ function summary(invoices: InvoiceDTO[], expenses: ExpenseDTO[] = []): MoneySumm
     asOf: NOW.toISOString(),
     invoices,
     expenses,
-    totals: buildMoneyTotals(invoices, expenses, NOW),
+    totals: rollupMoney(invoices, expenses, NOW),
     aging: buildOutstandingAging(invoices, NOW),
     collected: buildCollectedByMonth(invoices, NOW),
   };

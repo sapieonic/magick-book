@@ -2,7 +2,7 @@ import { Workspace, type IWorkspace } from "./models";
 import { DEFAULT_LEAD_CATEGORIES, DEFAULT_LEAD_CATEGORY } from "./constants";
 
 /** Resolve the workspace taxonomy, falling back to defaults for legacy workspaces. */
-export async function workspaceLeadCategories(workspaceId: unknown): Promise<string[]> {
+async function workspaceLeadCategories(workspaceId: unknown): Promise<string[]> {
   const ws = await Workspace.findById(workspaceId).select("leadCategories").lean<IWorkspace>();
   if (ws?.leadCategories?.length) return ws.leadCategories;
   return [...DEFAULT_LEAD_CATEGORIES];

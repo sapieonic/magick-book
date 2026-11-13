@@ -14,7 +14,7 @@ vi.mock("next/link", () => ({
     <a href={href} {...rest}>{children}</a>
   ),
 }));
-const post = vi.fn(async () => ({}));
+const post = vi.fn(async (_url: string) => ({}));
 vi.mock("@/lib/client", () => ({ api: { post: (url: string) => post(url) } }));
 
 import { Sidebar } from "@/components/layout/Sidebar";

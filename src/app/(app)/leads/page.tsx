@@ -10,7 +10,7 @@ import { AddLeadDrawer } from "@/components/leads/AddLeadDrawer";
 import { ArchivedLeads } from "@/components/leads/ArchivedLeads";
 import { LeadBoard } from "@/components/leads/LeadBoard";
 import { LeadTable } from "@/components/leads/LeadTable";
-import { OwnerFilter } from "@/components/leads/OwnerFilter";
+import { OwnerFilter } from "@/components/ui/OwnerFilter";
 import { Button } from "@/components/ui/Button";
 import { Input, Select } from "@/components/ui/Field";
 import { EmptyState, ErrorState, PageLoader, Skeleton } from "@/components/ui/Misc";
@@ -21,17 +21,17 @@ import { useApi } from "@/lib/client";
 import { DEFAULT_LEAD_CATEGORIES, PIPELINE_STAGES, STAGE_META, formatCategoryLabel, type BoardStage, type LeadStage } from "@/lib/constants";
 import {
   deriveOwners,
-  filterLeadsByOwners,
+  filterByOwners,
   parseOwnerParam,
   parseStageParam,
   serializeOwnerParam,
   summarizeLeads,
 } from "@/lib/leadFilters";
+import { plural } from "@/lib/utils";
 import type { LeadDTO } from "@/lib/types";
 
 type View = "board" | "table" | "lost" | "archived";
 
-const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
 /** Placeholder lanes while the board loads. */
 function BoardSkeleton() {
@@ -96,8 +96,8 @@ function LeadsInner() {
     if (qs !== params.toString()) router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
   }, [q, ownerIds, category, stage, params, pathname, router]);
 
-  const visibleLeads = useMemo(() => filterLeadsByOwners(leads, ownerIds), [leads, ownerIds]);
-  const visibleArchived = useMemo(() => filterLeadsByOwners(archivedApi.data?.leads ?? [], ownerIds), [archivedApi.data, ownerIds]);
+  const visibleLeads = useMemo(() => filterByOwners(leads, ownerIds), [leads, ownerIds]);
+  const visibleArchived = useMemo(() => filterByOwners(archivedApi.data?.leads ?? [], ownerIds), [archivedApi.data, ownerIds]);
   const summary = useMemo(() => summarizeLeads(visibleLeads), [visibleLeads]);
   const boardLeads = useMemo(() => visibleLeads.filter((l) => l.stage !== "lost"), [visibleLeads]);
   const lostLeads = useMemo(() => visibleLeads.filter((l) => l.stage === "lost"), [visibleLeads]);

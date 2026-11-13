@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { AccountListItem, ExpenseDTO, InvoiceDTO } from "@/lib/types";
-import { buildStatement, daysOverdue } from "@/components/accounts/statement";
+import { buildStatement, overdueLabel } from "@/components/accounts/statement";
 import { StatementBar } from "@/components/accounts/AccountHeader";
 
 const H = vi.hoisted(() => ({ accounts: [] as unknown[], push: vi.fn(), detail: {} as Record<string, unknown> }));
@@ -12,6 +12,8 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: H.push, replace: vi.fn(), prefetch: vi.fn() }),
   usePathname: () => "/accounts",
 }));
+
+vi.mock("@/components/layout/SessionContext", () => ({ useSession: () => ({ id: "u1", name: "Riya", role: "admin" }) }));
 
 vi.mock("@/lib/client", () => ({
   useApi: (url: string) => ({
@@ -62,10 +64,9 @@ describe("buildStatement", () => {
     expect(totals).toEqual({ billed: 1800, received: 1000, cost: 200, balance: 800, invoices: 3, payments: 1 });
   });
 
-  it("counts whole days past due only for unpaid, billed invoices", () => {
-    expect(daysOverdue(invoice({ status: "overdue", dueAt: iso(6) }))).toBe(6);
-    expect(daysOverdue(invoice({ status: "sent", dueAt: iso(-3) }))).toBe(0);
-    expect(daysOverdue(invoice({ status: "paid", dueAt: iso(6) }))).toBe(0);
+  it("labels an overdue pill with the days past due, else plain Overdue", () => {
+    expect(overdueLabel(invoice({ status: "overdue", dueAt: iso(6) }))).toBe("Overdue 6 days");
+    expect(overdueLabel(invoice({ status: "overdue", dueAt: iso(-3) }))).toBe("Overdue");
   });
 });
 
@@ -73,7 +74,7 @@ describe("StatementBar", () => {
   it("splits billed into paid and outstanding and explains a missing margin", () => {
     render(
       <StatementBar
-        finance={{ billed: 1500, paid: 1000, outstanding: 500, expenses: 0, margin: 0 }}
+        finance={{ billed: 1500, paid: 1000, outstanding: 500, overdue: 0, expenses: 0, margin: 0 }}
         invoices={[invoice({ id: "1", amount: 1000, status: "paid", paidAt: iso(3) }), invoice({ id: "2", amount: 500, status: "overdue", dueAt: iso(6) })]}
         expenses={[]}
       />,
@@ -86,7 +87,7 @@ describe("StatementBar", () => {
   });
 
   it("shows the margin once expenses exist", () => {
-    render(<StatementBar finance={{ billed: 1000, paid: 1000, outstanding: 0, expenses: 250, margin: 0.75 }} invoices={[]} expenses={[expense({ amount: 250 })]} />);
+    render(<StatementBar finance={{ billed: 1000, paid: 1000, outstanding: 0, overdue: 0, expenses: 250, margin: 0.75 }} invoices={[]} expenses={[expense({ amount: 250 })]} />);
     expect(screen.getByText("75%")).toBeInTheDocument();
     expect(screen.queryByText("No expenses recorded")).not.toBeInTheDocument();
   });
@@ -144,7 +145,8 @@ describe("Accounts list", () => {
 
   it("filters by owner", async () => {
     await renderPage();
-    await userEvent.selectOptions(screen.getByRole("combobox", { name: "Owner" }), "u2");
+    await userEvent.click(screen.getByRole("button", { name: /^Owner/ }));
+    await userEvent.click(screen.getByRole("option", { name: /Neha/ }));
     expect(screen.queryByRole("link", { name: "Samarthya" })).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Lumen" })).toBeInTheDocument();
   });
@@ -156,7 +158,7 @@ describe("Account detail", () => {
     H.detail = {
       [base]: {
         account: account({ id: "a1", name: "Samarthya", plan: "Starter", value: 50000, ownerName: "Riya" }),
-        finance: { billed: 1500, paid: 1000, outstanding: 500, expenses: 0, margin: 0 },
+        finance: { billed: 1500, paid: 1000, outstanding: 500, overdue: 0, expenses: 0, margin: 0 },
       },
       [`${base}/contacts`]: { contacts: [{ id: "c1", name: "Ashish", title: "Proprietor", email: "a@s.in", phone: "+91 98765", isPrimary: true, note: "" }] },
       [`${base}/documents`]: { documents: [] },

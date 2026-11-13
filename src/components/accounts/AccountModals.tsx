@@ -1,9 +1,9 @@
 "use client";
-import { forwardRef, useRef, useState, type FormEvent, type InputHTMLAttributes, type ReactNode, type RefObject } from "react";
+import { useRef, useState, type FormEvent, type ReactNode, type RefObject } from "react";
 import { Paperclip } from "lucide-react";
 import { Drawer, Modal } from "@/components/ui/Overlay";
 import { Button } from "@/components/ui/Button";
-import { Field, Input, Select } from "@/components/ui/Field";
+import { AmountInput, Field, Input, Select } from "@/components/ui/Field";
 import { useToast } from "@/components/ui/Toast";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { api } from "@/lib/client";
@@ -16,7 +16,7 @@ import {
   INVOICE_STATUSES,
   INVOICE_STATUS_META,
 } from "@/lib/constants";
-import { cn, formatBytes } from "@/lib/utils";
+import { cn, formatBytes, parseAmount } from "@/lib/utils";
 import type { AccountDTO, ContactDTO, DocumentDTO, ExpenseDTO, InvoiceDTO } from "@/lib/types";
 
 /* Every modal here is mounted only while open (`{open && <XModal … />}`), so
@@ -24,11 +24,6 @@ import type { AccountDTO, ContactDTO, DocumentDTO, ExpenseDTO, InvoiceDTO } from
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const errorMessage = (e: unknown, fallback: string) => (e instanceof Error ? e.message : fallback);
-
-/** "1,10,000" or "₹ 6200" → 110000 / 6200; anything unparseable → 0. */
-function parseAmount(raw: string): number {
-  return Number(raw.replace(/[^\d.]/g, "")) || 0;
-}
 
 const today = () => new Date().toISOString().slice(0, 10);
 
@@ -70,18 +65,6 @@ function FormBody({
     </form>
   );
 }
-
-/** Rupee amount input. Forwards `id` so a wrapping `Field` label stays linked. */
-const AmountInput = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement>>(function AmountInput({ className, ...props }, ref) {
-  return (
-    <div className="relative">
-      <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-3" aria-hidden>
-        ₹
-      </span>
-      <Input ref={ref} inputMode="numeric" className={cn("tnum pl-6", className)} {...props} />
-    </div>
-  );
-});
 
 function CheckRow({ checked, onChange, children }: { checked: boolean; onChange: (v: boolean) => void; children: ReactNode }) {
   return (

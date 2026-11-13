@@ -31,7 +31,7 @@ export function renderTemplate(template: string, vars: Record<string, string>): 
 }
 
 /** Build the variable bag a template can reference for a given reminder. */
-export function reminderVars(r: IReminder, owner: Pick<IUser, "name" | "email"> | null, baseUrl: string): Record<string, string> {
+function reminderVars(r: IReminder, owner: Pick<IUser, "name" | "email"> | null, baseUrl: string): Record<string, string> {
   return {
     title: r.title,
     notes: r.notes ?? "",

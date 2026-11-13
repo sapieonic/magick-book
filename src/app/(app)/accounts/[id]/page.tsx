@@ -12,11 +12,10 @@ import { ContactModal, ExpenseModal, NewInvoiceModal, UploadDocumentModal } from
 import { DocumentsRailPanel, PrimaryContactPanel, RecentActivityPanel, RemindersPanel } from "@/components/accounts/AccountRail";
 import { ContactsSection, DocumentsSection, ExpensesSection, InvoicesSection } from "@/components/accounts/AccountSections";
 import { StatementTable } from "@/components/accounts/StatementTable";
-import { RowsSkeleton } from "@/components/accounts/parts";
 import { longDate } from "@/components/accounts/statement";
 import { Button } from "@/components/ui/Button";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
-import { EmptyState, ErrorState, Skeleton } from "@/components/ui/Misc";
+import { EmptyState, ErrorState, RowsSkeleton, Skeleton } from "@/components/ui/Misc";
 import { Panel } from "@/components/ui/Panel";
 import { Tabs } from "@/components/ui/Tabs";
 import { useToast } from "@/components/ui/Toast";

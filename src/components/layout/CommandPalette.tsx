@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useId, useMemo, useState, type KeyboardEvent } from "react";
 import { useRouter } from "next/navigation";
 import { Building2, CornerDownLeft, Search, User, UserPlus, type LucideIcon } from "lucide-react";
 import { Portal, Scrim, useDialog } from "@/components/ui/Overlay";

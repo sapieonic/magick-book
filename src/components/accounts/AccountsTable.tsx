@@ -23,7 +23,7 @@ export const ACCOUNT_SORT: Record<string, (a: AccountListItem) => string | numbe
 };
 
 /** Outstanding figure; turns overdue red with the overdue square when any of it is past due. */
-export function Outstanding({ amount, overdue, className }: { amount: number; overdue: number; className?: string }) {
+function Outstanding({ amount, overdue, className }: { amount: number; overdue: number; className?: string }) {
   if (overdue <= 0) return <Money value={amount} className={className} />;
   return (
     <span className={cn("inline-flex items-center gap-1.5 text-overdue", className)} title={`${formatMoney(overdue)} overdue`}>

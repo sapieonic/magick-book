@@ -9,7 +9,7 @@ import { WebhookForm } from "@/components/reminders/WebhookForm";
 import { StatusPill, type StatusTone } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
-import { EmptyState, ErrorState, Skeleton, Spinner } from "@/components/ui/Misc";
+import { EmptyState, ErrorState, RowsSkeleton, Skeleton, Spinner } from "@/components/ui/Misc";
 import { Panel } from "@/components/ui/Panel";
 import { Time } from "@/components/ui/Time";
 import { useToast } from "@/components/ui/Toast";
@@ -75,7 +75,7 @@ export default function RemindersSettingsPage() {
             {list.error ? (
               <ErrorState message={list.error} onRetry={list.refresh} />
             ) : list.loading ? (
-              <ListSkeleton />
+              <RowsSkeleton rows={3} label="Loading reminders" />
             ) : reminders.length === 0 ? (
               <EmptyState
                 className="mt-3"
@@ -192,15 +192,3 @@ function IconAction({ label, onClick, icon: Icon }: { label: string; onClick: ()
   );
 }
 
-function ListSkeleton() {
-  return (
-    <div className="space-y-4 py-3" aria-busy="true" aria-label="Loading reminders">
-      {[0, 1, 2].map((i) => (
-        <div key={i} className="space-y-2">
-          <Skeleton className="h-4 w-2/3" />
-          <Skeleton className="h-3.5 w-1/3" />
-        </div>
-      ))}
-    </div>
-  );
-}

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { CheckCircle2 } from "lucide-react";
 import { Panel } from "@/components/ui/Panel";
 import { Money } from "@/components/ui/Money";
-import { Avatar } from "@/components/ui/Avatar";
+import { OwnerCell } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/Misc";
 import { Table, Th, Td, TwoLine } from "@/components/ui/Table";
@@ -12,9 +12,12 @@ import { useToast } from "@/components/ui/Toast";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { api } from "@/lib/client";
 import { STAGE_META } from "@/lib/constants";
-import { cn } from "@/lib/utils";
-import { ageWords, daysSince, dueWords, plural, tomorrowMorning } from "./format";
-import { LogActivityModal } from "./LogActivityModal";
+import { Staleness } from "@/components/ui/Staleness";
+import { differenceInUtcCalendarDays } from "@/lib/receivables";
+import { cn, plural } from "@/lib/utils";
+import { dueWords, tomorrowMorning } from "./format";
+import { NoteComposer } from "@/components/activity/NoteComposer";
+import { Modal } from "@/components/ui/Overlay";
 import type { WorkItem } from "@/lib/types";
 
 /** Follow-ups, due reminders and overdue invoices, oldest first, each with its next step. */
@@ -60,7 +63,7 @@ export function WorkQueue({ items, now, onChanged }: { items: WorkItem[]; now: D
                     <LastTouched item={item} now={now} />
                   </Td>
                   <Td>
-                    <Owner name={item.ownerName} />
+                    <OwnerCell name={item.ownerName} first size={24} />
                   </Td>
                   <Td className="text-right">{actions(item)}</Td>
                 </tr>
@@ -94,6 +97,27 @@ export function WorkQueue({ items, now, onChanged }: { items: WorkItem[]; now: D
   );
 }
 
+/** Log a reach-out on a lead's timeline straight from the queue, with the lead page's composer. */
+function LogActivityModal({ lead, onClose, onLogged }: { lead: { id: string; label: string } | null; onClose: () => void; onLogged: () => void }) {
+  const { toast } = useToast();
+  return (
+    <Modal open={!!lead} onClose={onClose} title="Log activity" subtitle={lead?.label} size="sm">
+      {lead && (
+        <NoteComposer
+          autoFocus
+          postUrl={`/api/leads/${lead.id}/activities`}
+          kinds={["call", "whatsapp", "email", "sms", "meeting"]}
+          onAdded={() => {
+            toast(`Logged for ${lead.label}.`, "success");
+            onClose();
+            onLogged();
+          }}
+        />
+      )}
+    </Modal>
+  );
+}
+
 function ItemTitle({ item }: { item: WorkItem }) {
   return item.href ? (
     <Link href={item.href} className="text-ink-1 hover:underline">
@@ -108,7 +132,7 @@ function ItemContext({ item, now }: { item: WorkItem; now: Date }) {
   const parts: ReactNode[] = [];
   if (item.kind === "invoice") {
     parts.push(<span className="font-mono text-[13px]">Invoice #{item.invoiceNumber}</span>);
-    const late = item.dueAt ? daysSince(item.dueAt, now) : 0;
+    const late = item.dueAt ? differenceInUtcCalendarDays(now, new Date(item.dueAt)) : 0;
     if (late > 0) parts.push(<span className="text-overdue">{plural(late, "day")} overdue</span>);
   } else {
     if (item.kind === "reminder" && item.name) parts.push(item.name);
@@ -130,22 +154,7 @@ function ItemContext({ item, now }: { item: WorkItem; now: Date }) {
 
 function LastTouched({ item, now }: { item: WorkItem; now: Date }) {
   if (!item.lastTouchedAt) return <span className="text-ink-3">–</span>;
-  const stale = daysSince(item.lastTouchedAt, now) > 30;
-  return (
-    <time dateTime={item.lastTouchedAt} className={cn("whitespace-nowrap", stale ? "text-overdue" : "text-ink-2")}>
-      {ageWords(item.lastTouchedAt, now)}
-    </time>
-  );
-}
-
-function Owner({ name }: { name: string }) {
-  if (!name) return <span className="text-ink-3">–</span>;
-  return (
-    <span className="flex items-center gap-2 whitespace-nowrap text-ink-2">
-      <Avatar name={name} size={24} />
-      {name.split(" ")[0]}
-    </span>
-  );
+  return <Staleness since={item.lastTouchedAt} now={now} className="whitespace-nowrap text-ink-2" />;
 }
 
 interface Action {

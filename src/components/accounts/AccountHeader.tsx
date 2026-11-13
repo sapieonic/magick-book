@@ -1,4 +1,5 @@
 "use client";
+import { LinkButton } from "@/components/ui/Button";
 import { type ReactNode } from "react";
 import { format } from "date-fns";
 import { Money } from "@/components/ui/Money";
@@ -7,8 +8,10 @@ import { ProportionBar, segmentShares } from "@/components/ui/ProportionBar";
 import { StatusPill } from "@/components/ui/Badge";
 import { cn } from "@/lib/utils";
 import type { AccountDTO, AccountFinance, ExpenseDTO, InvoiceDTO } from "@/lib/types";
-import { OverflowMenu, type MenuItem } from "./OverflowMenu";
-import { daysOverdue, shortDate } from "./statement";
+import { OverflowMenu, type MenuItem } from "@/components/ui/OverflowMenu";
+import { daysPastDue, isOutstanding, isOverdue, paymentDate } from "@/lib/receivables";
+import { plural } from "@/lib/utils";
+import { shortDate } from "./statement";
 
 /** Name, status, the one-line facts and the account's actions. */
 export function AccountHeader({ account, actions, menu }: { account: AccountDTO; actions: ReactNode; menu: MenuItem[] }) {
@@ -50,8 +53,6 @@ export function AccountHeader({ account, actions, menu }: { account: AccountDTO;
   );
 }
 
-const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
-
 /** One side of the statement bar: coloured label with share, figure, caption. */
 function Side({ label, tone, value, caption, end }: { label: string; tone: string; value: number; caption: string; end?: boolean }) {
   return (
@@ -78,14 +79,15 @@ export function StatementBar({
   expenses: ExpenseDTO[];
   onAddExpense?: () => void;
 }) {
+  const now = new Date();
   const paidInvoices = invoices.filter((i) => i.status === "paid");
-  const open = invoices.filter((i) => i.status === "sent" || i.status === "overdue");
-  const lastPaid = paidInvoices.reduce<string | null>((max, i) => {
-    const d = i.paidAt ?? i.issuedAt;
+  const open = invoices.filter(isOutstanding);
+  const lastPaid = paidInvoices.reduce<Date | null>((max, i) => {
+    const d = paymentDate(i)!;
     return !max || d > max ? d : max;
   }, null);
-  const worstDays = Math.max(0, ...open.map((i) => daysOverdue(i)));
-  const late = worstDays > 0;
+  const late = open.some((i) => isOverdue(i, now));
+  const worstDays = Math.max(0, ...open.map((i) => daysPastDue(i, now)));
   const outstandingTone = late ? "text-overdue" : "text-due";
   const [paid, outstanding] = segmentShares([
     { key: "paid", label: "Paid", value: finance.paid, color: "var(--color-paid-fill)" },
@@ -104,7 +106,7 @@ export function StatementBar({
           <span className="text-[13px] text-ink-3">Billed to date</span>
           <Money value={finance.billed} className="figure text-[40px]" />
         </div>
-        <ProportionBar variant="bar" aria-label="Billed to date" segments={[paid, outstanding]} />
+        <ProportionBar variant="bar" size="md" aria-label="Billed to date" segments={[paid, outstanding]} />
         <div className="mt-2.5 flex justify-between gap-4">
           <Side
             label={`Paid · ${paid.pct}%`}
@@ -117,7 +119,7 @@ export function StatementBar({
             label={`Outstanding · ${outstanding.pct}%`}
             tone={outstandingTone}
             value={finance.outstanding}
-            caption={open.length ? `${plural(open.length, "invoice")}, ${late ? `${plural(worstDays, "day")} overdue` : "not yet due"}` : "Nothing owed"}
+            caption={open.length ? `${plural(open.length, "invoice")}, ${!late ? "not yet due" : worstDays > 0 ? `${plural(worstDays, "day")} overdue` : "overdue"}` : "Nothing owed"}
           />
         </div>
       </div>
@@ -130,9 +132,9 @@ export function StatementBar({
             <span className="text-[13px] text-ink-2">
               {expenses.length ? plural(expenses.length, "cost") + " recorded" : "None recorded for this account."}{" "}
               {onAddExpense && (
-                <button type="button" onClick={onAddExpense} className="link">
+                <LinkButton onClick={onAddExpense}>
                   Add expense
-                </button>
+                </LinkButton>
               )}
             </span>
           </dd>

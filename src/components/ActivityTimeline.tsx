@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import { Textarea } from "@/components/ui/Field";
-import { Button } from "@/components/ui/Button";
+import { Button, LinkButton } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/Misc";
 import { MEETING_TITLE, type ActivityKind } from "@/lib/constants";
 import { absoluteTime, cn, shortDate } from "@/lib/utils";
@@ -81,9 +81,9 @@ export function ActivityTimeline({
         </section>
       ))}
       {hidden > 0 && (
-        <button type="button" onClick={() => setExpanded(true)} className="link mt-3 text-[13px]">
+        <LinkButton onClick={() => setExpanded(true)} className="mt-3 text-[13px]">
           Show {hidden} earlier {hidden === 1 ? "entry" : "entries"}
-        </button>
+        </LinkButton>
       )}
     </div>
   );
@@ -119,9 +119,9 @@ function ActivityRow({ activity: a, onEdit }: { activity: ActivityDTO; onEdit?: 
             {onEdit && (
               <>
                 {meta && " · "}
-                <button type="button" onClick={() => setEditing(true)} aria-label="Edit note" className="link">
+                <LinkButton onClick={() => setEditing(true)} aria-label="Edit note">
                   Edit
-                </button>
+                </LinkButton>
               </>
             )}
           </p>

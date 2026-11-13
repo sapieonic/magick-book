@@ -10,7 +10,7 @@ import { StatusPill, Tag } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { Select } from "@/components/ui/Field";
-import { ErrorState, Skeleton } from "@/components/ui/Misc";
+import { ErrorState, RowsSkeleton } from "@/components/ui/Misc";
 import { Panel } from "@/components/ui/Panel";
 import { Table, Td, Th, TwoLine } from "@/components/ui/Table";
 import { useToast } from "@/components/ui/Toast";
@@ -98,7 +98,7 @@ export default function TeamPage() {
         >
           <Panel title="Members" meta={loading ? undefined : members.length} ruled>
             {loading ? (
-              <MembersSkeleton />
+              <RowsSkeleton rows={3} label="Loading members" />
             ) : (
               <Table>
                 <thead>
@@ -211,19 +211,5 @@ function RolePanel({ role }: { role: Role }) {
         ))}
       </ul>
     </Panel>
-  );
-}
-
-function MembersSkeleton() {
-  return (
-    <div className="space-y-3 py-3" aria-busy="true" aria-label="Loading members">
-      {[0, 1, 2].map((i) => (
-        <div key={i} className="flex items-center gap-3">
-          <Skeleton className="size-7 rounded-full" />
-          <Skeleton className="h-4 w-40" />
-          <Skeleton className="ml-auto h-4 w-24" />
-        </div>
-      ))}
-    </div>
   );
 }

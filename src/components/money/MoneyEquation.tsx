@@ -1,3 +1,4 @@
+import { LinkButton } from "@/components/ui/Button";
 import { type ReactNode } from "react";
 import { Panel } from "@/components/ui/Panel";
 import { Money, formatMoney } from "@/components/ui/Money";
@@ -58,9 +59,9 @@ export function MoneyEquation({
           <dt className="text-ink-3">Expenses</dt>
           <dd>
             {totals.expenses > 0 ? (
-              <button type="button" className="link" onClick={onShowExpenses} aria-label={`Expenses ${formatMoney(totals.expenses)}, show them`}>
+              <LinkButton onClick={onShowExpenses} aria-label={`Expenses ${formatMoney(totals.expenses)}, show them`}>
                 <Money value={totals.expenses} />
-              </button>
+              </LinkButton>
             ) : (
               <span className="text-ink-2">None recorded</span>
             )}

@@ -2,9 +2,9 @@
 import { useState, type FormEvent, type ReactNode } from "react";
 import { Panel } from "@/components/ui/Panel";
 import { Tag } from "@/components/ui/Badge";
-import { Button } from "@/components/ui/Button";
+import { Button, LinkButton } from "@/components/ui/Button";
 import { Money } from "@/components/ui/Money";
-import { Field, Input, Select, Textarea } from "@/components/ui/Field";
+import { AmountInput, Field, Input, Select, Textarea } from "@/components/ui/Field";
 import { useToast } from "@/components/ui/Toast";
 import { api, useApi } from "@/lib/client";
 import { DEFAULT_LEAD_CATEGORIES, DEFAULT_LEAD_CATEGORY, LEAD_SOURCES, formatCategoryLabel } from "@/lib/constants";
@@ -48,9 +48,9 @@ export function LeadFacts({ lead, canEdit, onSaved }: { lead: LeadDTO; canEdit: 
       actions={
         canEdit &&
         !editing && (
-          <button type="button" className="link" onClick={() => setEditing(true)} aria-label="Edit details">
+          <LinkButton onClick={() => setEditing(true)} aria-label="Edit details">
             Edit
-          </button>
+          </LinkButton>
         )
       }
     >
@@ -159,8 +159,8 @@ function FactsForm({ lead, onDone }: { lead: LeadDTO; onDone: (saved: boolean) =
         <Field label="Title">
           <Input value={form.title} onChange={set("title")} />
         </Field>
-        <Field label="Estimated value" hint="₹" error={errors.estValue}>
-          <Input inputMode="numeric" className="tnum" value={form.estValue} onChange={set("estValue")} />
+        <Field label="Estimated value" error={errors.estValue}>
+          <AmountInput value={form.estValue} onChange={set("estValue")} />
         </Field>
         <Field label="Source">
           <Select value={form.source} onChange={set("source")}>

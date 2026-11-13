@@ -4,7 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useState, type React
 export type ThemePref = "light" | "dark" | "system";
 export type ResolvedTheme = "light" | "dark";
 
-export const THEME_STORAGE_KEY = "mb-theme";
+const THEME_STORAGE_KEY = "mb-theme";
 
 /**
  * Inline script (no-flash). Runs before paint in <head> to set
