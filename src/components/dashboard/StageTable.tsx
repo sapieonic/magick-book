@@ -1,0 +1,80 @@
+import Link from "next/link";
+import { Panel } from "@/components/ui/Panel";
+import { Money, formatMoney } from "@/components/ui/Money";
+import { Table, Th, Td } from "@/components/ui/Table";
+import { segmentShares } from "@/components/ui/ProportionBar";
+import { stageColor } from "@/components/ui/stage";
+import { STAGE_META } from "@/lib/constants";
+import { ageWords, daysSince, plural } from "./format";
+import type { PipelineStageSummary } from "@/lib/types";
+
+/** Count, value, share and the longest-waiting lead for each pipeline stage. */
+export function StageTable({ pipeline, now }: { pipeline: PipelineStageSummary[]; now: Date }) {
+  const total = pipeline.reduce((s, p) => s + p.value, 0);
+  const rows = segmentShares(pipeline.map((p) => ({ ...p, key: p.stage, label: STAGE_META[p.stage].label, color: stageColor(p.stage) })));
+
+  return (
+    <Panel title="Pipeline by stage" className="max-md:hidden">
+      <Table>
+        <thead>
+          <tr>
+            <Th>Stage</Th>
+            <Th numeric>Leads</Th>
+            <Th numeric>Value</Th>
+            <Th>Share of {formatMoney(total, true)}</Th>
+            <Th>Oldest untouched</Th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r, i) => (
+            <tr key={r.key}>
+              <Td>{r.label}</Td>
+              <Td numeric>{r.count || "–"}</Td>
+              <Td numeric>
+                <Money value={r.value} />
+              </Td>
+              <Td className="w-[28%]">
+                <div className="h-2 min-w-24 rounded-full bg-hover" role="img" aria-label={`${r.pct}% of pipeline value`}>
+                  {r.value > 0 && <div className="h-2 rounded-full" style={{ width: `${Math.max(1, r.share * 100)}%`, background: r.color }} />}
+                </div>
+              </Td>
+              <Td className="text-ink-2">
+                <StageNote row={r} previous={rows[i - 1]} now={now} />
+              </Td>
+            </tr>
+          ))}
+        </tbody>
+      </Table>
+    </Panel>
+  );
+}
+
+function StageNote({ row, previous, now }: { row: PipelineStageSummary; previous?: PipelineStageSummary; now: Date }) {
+  if (row.stage === "won") {
+    const age = row.latest && ageWords(row.latest.lastActivityAt, now);
+    return row.latest ? (
+      <>
+        Last win {age === "today" ? age : `${age} ago`} ·{" "}
+        <Link href={`/leads/${row.latest.id}`} className="link">
+          {row.latest.company || row.latest.name}
+        </Link>
+      </>
+    ) : (
+      "No wins yet"
+    );
+  }
+  if (!row.oldest) {
+    return previous?.count
+      ? `${plural(previous.count, `${STAGE_META[previous.stage].label.toLowerCase()} lead`)} could move here`
+      : "No leads";
+  }
+  const days = daysSince(row.oldest.lastActivityAt, now);
+  return (
+    <>
+      <Link href={`/leads/${row.oldest.id}`} className="link">
+        {row.oldest.name}
+      </Link>{" "}
+      · <span className={days > 30 ? "text-overdue" : undefined}>{ageWords(row.oldest.lastActivityAt, now)}</span>
+    </>
+  );
+}
