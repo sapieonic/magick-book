@@ -1,49 +1,30 @@
-import { parseISO } from "date-fns";
-import type { InvoiceDTO } from "./types";
+import type {
+  AgingBucketDTO,
+  AgingKey,
+  CollectedDTO,
+  CollectedSeriesDTO,
+  ExpenseDTO,
+  InvoiceDTO,
+  MoneyTotals,
+} from "./types";
+import type { InvoiceStatus } from "./constants";
 
-export const AGING_BUCKETS = ["Current", "1–30 days", "31–60 days", "60+ days"] as const;
-export type AgingBucket = (typeof AGING_BUCKETS)[number];
+/** Pure money maths shared by `GET /api/money` and the Money page. All dates are UTC. */
 
-/** Stable Recharts dataKey + display name (avoids colliding with row.month / row.key). */
-export interface AccountSeries {
-  key: string;
-  name: string;
-}
+export const AGING_KEYS: readonly AgingKey[] = ["current", "d30", "d60", "d60plus"];
 
-export interface PaidByAccountMonth {
-  /** Short month label, e.g. "Mar" */
-  month: string;
-  /** Sortable key yyyy-MM (UTC) */
-  key: string;
-  /** Series key → amount paid that month */
-  [seriesKey: string]: string | number;
-}
+export const AGING_LABELS: Record<AgingKey, string> = {
+  current: "Current",
+  d30: "1–30 days",
+  d60: "31–60 days",
+  d60plus: "60+ days",
+};
 
-export interface PaidByAccountSeries {
-  /** Last N UTC calendar months, oldest → newest */
-  months: PaidByAccountMonth[];
-  /** Legend order: top accounts then Other (if present) */
-  accounts: AccountSeries[];
-  totalPaid: number;
-}
-
-export interface AgingRow {
-  bucket: AgingBucket;
-  amount: number;
-  count: number;
-}
-
-const OTHER_NAME = "Other accounts";
-const OTHER_KEY = "__other__";
-const TOP_ACCOUNTS = 5;
-const DEFAULT_MONTHS = 6;
-const MONTH_LABELS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"] as const;
+export const OTHER_SERIES_KEY = "other";
+const OTHER_SERIES_NAME = "Other accounts";
+const MONTH_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"] as const;
+const MONTH_LONG = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"] as const;
 const MS_PER_DAY = 86_400_000;
-
-/** UTC start of the calendar month containing `d`. */
-export function startOfUtcMonth(d: Date): Date {
-  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1));
-}
 
 /** UTC start of the calendar month `n` months before `d`'s month. */
 export function subUtcMonths(d: Date, n: number): Date {
@@ -54,8 +35,10 @@ export function utcMonthKey(d: Date): string {
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
 }
 
-export function utcMonthLabel(d: Date): string {
-  return MONTH_LABELS[d.getUTCMonth()]!;
+/** "2026-06" → "Jun" (or "June" with `long`). */
+export function monthLabel(key: string, long = false): string {
+  const m = Number(key.slice(5, 7)) - 1;
+  return (long ? MONTH_LONG : MONTH_SHORT)[m] ?? key;
 }
 
 /** Whole UTC calendar days from `b` to `a` (a − b). */
@@ -65,131 +48,183 @@ export function differenceInUtcCalendarDays(a: Date, b: Date): number {
   return Math.round((a0 - b0) / MS_PER_DAY);
 }
 
-function seriesKeyFor(accountName: string): string {
-  return `acct:${accountName}`;
+export function isOutstanding(inv: Pick<InvoiceDTO, "status">): boolean {
+  return inv.status === "sent" || inv.status === "overdue";
 }
 
-/** Payment date for charting: paidAt, else issuedAt for legacy paid rows. */
+/** Payment date: paidAt, else issuedAt for legacy paid rows; null when unpaid. */
 export function paymentDate(inv: InvoiceDTO): Date | null {
   if (inv.status !== "paid") return null;
-  if (inv.paidAt) return parseISO(inv.paidAt);
-  if (inv.issuedAt) return parseISO(inv.issuedAt);
-  return null;
+  const when = inv.paidAt ?? inv.issuedAt;
+  return when ? new Date(when) : null;
+}
+
+/** Days past the due date (falls back to the issue date). Negative = not yet due. */
+export function daysPastDue(inv: InvoiceDTO, now: Date): number {
+  return differenceInUtcCalendarDays(now, new Date(inv.dueAt ?? inv.issuedAt));
+}
+
+/** Aging band of an outstanding invoice; null for paid and draft invoices. */
+export function agingKey(inv: InvoiceDTO, now: Date): AgingKey | null {
+  if (!isOutstanding(inv)) return null;
+  const days = daysPastDue(inv, now);
+  if (days <= 0) return "current";
+  if (days <= 30) return "d30";
+  if (days <= 60) return "d60";
+  return "d60plus";
+}
+
+/** Status as the ledger shows it: a sent invoice past its due date reads as overdue. */
+export function displayStatus(inv: InvoiceDTO, now: Date): InvoiceStatus {
+  return inv.status === "sent" && daysPastDue(inv, now) > 0 ? "overdue" : inv.status;
+}
+
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+
+/** The ledger's "Age" cell: how late an open invoice is, or how long a paid one took. */
+export function invoiceAge(inv: InvoiceDTO, now: Date): { text: string; late: boolean } {
+  if (inv.status === "draft") return { text: "Not issued", late: false };
+  if (inv.status === "paid") {
+    const paid = paymentDate(inv)!;
+    const days = Math.max(0, differenceInUtcCalendarDays(paid, new Date(inv.issuedAt)));
+    return { text: days === 0 ? "Paid same day" : `${plural(days, "day")} to pay`, late: false };
+  }
+  const days = daysPastDue(inv, now);
+  if (days > 0) return { text: `${plural(days, "day")} overdue`, late: true };
+  if (days === 0) return { text: "Due today", late: false };
+  return { text: `Due in ${plural(-days, "day")}`, late: false };
+}
+
+/** Billed / paid / outstanding / expenses / margin in one pass over each list. */
+export function buildMoneyTotals(invoices: InvoiceDTO[], expenses: Pick<ExpenseDTO, "amount">[], now: Date): MoneyTotals {
+  const t: MoneyTotals = {
+    billed: 0, billedCount: 0, paid: 0, paidCount: 0,
+    outstanding: 0, outstandingCount: 0, overdueCount: 0, expenses: 0, margin: 0,
+  };
+  for (const inv of invoices) {
+    if (inv.status === "draft") continue;
+    t.billed += inv.amount;
+    t.billedCount += 1;
+    if (inv.status === "paid") {
+      t.paid += inv.amount;
+      t.paidCount += 1;
+    } else {
+      t.outstanding += inv.amount;
+      t.outstandingCount += 1;
+      if (daysPastDue(inv, now) > 0) t.overdueCount += 1;
+    }
+  }
+  for (const e of expenses) t.expenses += e.amount;
+  t.margin = t.billed > 0 ? Math.max(0, (t.billed - t.expenses) / t.billed) : 0;
+  return t;
+}
+
+/** Outstanding amount and count per aging band, with the accounts that owe it. */
+export function buildOutstandingAging(invoices: InvoiceDTO[], now: Date): AgingBucketDTO[] {
+  const sums = new Map(AGING_KEYS.map((k) => [k, { amount: 0, count: 0, byAccount: new Map<string, number>() }]));
+  for (const inv of invoices) {
+    const key = agingKey(inv, now);
+    if (!key) continue;
+    const slot = sums.get(key)!;
+    slot.amount += inv.amount;
+    slot.count += 1;
+    const name = inv.accountName?.trim() || "Unknown";
+    slot.byAccount.set(name, (slot.byAccount.get(name) ?? 0) + inv.amount);
+  }
+  return AGING_KEYS.map((key) => {
+    const { amount, count, byAccount } = sums.get(key)!;
+    const accounts = [...byAccount.entries()].sort((a, b) => b[1] - a[1]).map(([name]) => name);
+    return { key, amount, count, accounts };
+  });
 }
 
 /**
- * Stacked month-on-month paid totals by account (UTC month buckets).
- * Top accounts by total paid in the window; remainder rolled into "Other".
+ * Paid amounts per UTC month for the last `months` months, stacked by the
+ * `topN` accounts that paid most in the window plus an "Other accounts" series.
  */
-export function buildPaidByAccountMoM(
+export function buildCollectedByMonth(
   invoices: InvoiceDTO[],
-  opts: { months?: number; now?: Date; topN?: number } = {},
-): PaidByAccountSeries {
-  const monthsN = opts.months ?? DEFAULT_MONTHS;
-  const topN = opts.topN ?? TOP_ACCOUNTS;
-  const now = opts.now ?? new Date();
-  const windowStart = subUtcMonths(now, monthsN - 1);
+  now: Date,
+  opts: { months?: number; topN?: number } = {},
+): CollectedDTO {
+  const monthsN = opts.months ?? 6;
+  const topN = opts.topN ?? 2;
+  const monthKeys = Array.from({ length: monthsN }, (_, i) => utcMonthKey(subUtcMonths(now, monthsN - 1 - i)));
+  const monthIndex = new Map(monthKeys.map((k, i) => [k, i]));
 
-  // Build empty month slots oldest → newest.
-  const monthKeys: string[] = [];
-  const monthLabels: string[] = [];
-  for (let i = monthsN - 1; i >= 0; i--) {
-    const d = subUtcMonths(now, i);
-    monthKeys.push(utcMonthKey(d));
-    monthLabels.push(utcMonthLabel(d));
-  }
-
-  // Sum per account per month within the window.
-  const byAccount = new Map<string, Map<string, number>>();
-  const accountTotals = new Map<string, number>();
-  let totalPaid = 0;
-
+  const accounts = new Map<string, { name: string; total: number; perMonth: number[] }>();
   for (const inv of invoices) {
     const when = paymentDate(inv);
-    if (!when || when < windowStart) continue;
-    const mk = utcMonthKey(when);
-    if (!monthKeys.includes(mk)) continue;
-    const name = inv.accountName?.trim() || "Unknown";
-    if (!byAccount.has(name)) byAccount.set(name, new Map());
-    const monthMap = byAccount.get(name)!;
-    monthMap.set(mk, (monthMap.get(mk) ?? 0) + inv.amount);
-    accountTotals.set(name, (accountTotals.get(name) ?? 0) + inv.amount);
-    totalPaid += inv.amount;
-  }
-
-  const ranked = [...accountTotals.entries()].sort((a, b) => b[1] - a[1]);
-  const topNames = ranked.slice(0, topN).map(([n]) => n);
-  const rest = new Set(ranked.slice(topN).map(([n]) => n));
-  const accounts: AccountSeries[] = topNames.map((name) => ({
-    key: seriesKeyFor(name),
-    name,
-  }));
-  if (rest.size > 0) accounts.push({ key: OTHER_KEY, name: OTHER_NAME });
-
-  const months: PaidByAccountMonth[] = monthKeys.map((key, i) => {
-    const row: PaidByAccountMonth = { month: monthLabels[i]!, key };
-    for (const a of accounts) row[a.key] = 0;
-    for (const [name, monthMap] of byAccount) {
-      const amt = monthMap.get(key) ?? 0;
-      if (!amt) continue;
-      const sk = rest.has(name) ? OTHER_KEY : seriesKeyFor(name);
-      row[sk] = (row[sk] as number) + amt;
+    const m = when ? monthIndex.get(utcMonthKey(when)) : undefined;
+    if (m === undefined) continue;
+    let acc = accounts.get(inv.accountId);
+    if (!acc) {
+      acc = { name: inv.accountName?.trim() || "Unknown", total: 0, perMonth: new Array(monthsN).fill(0) };
+      accounts.set(inv.accountId, acc);
     }
-    return row;
-  });
-
-  return { months, accounts, totalPaid };
-}
-
-/** Outstanding (sent/overdue) amounts bucketed by UTC days past due. */
-export function buildOutstandingAging(
-  invoices: InvoiceDTO[],
-  opts: { now?: Date } = {},
-): AgingRow[] {
-  const now = opts.now ?? new Date();
-  const sums = new Map<AgingBucket, { amount: number; count: number }>();
-  for (const b of AGING_BUCKETS) sums.set(b, { amount: 0, count: 0 });
-
-  for (const inv of invoices) {
-    if (inv.status !== "sent" && inv.status !== "overdue") continue;
-    const due = inv.dueAt ? parseISO(inv.dueAt) : parseISO(inv.issuedAt);
-    const daysPast = differenceInUtcCalendarDays(now, due);
-    let bucket: AgingBucket;
-    if (daysPast <= 0) bucket = "Current";
-    else if (daysPast <= 30) bucket = "1–30 days";
-    else if (daysPast <= 60) bucket = "31–60 days";
-    else bucket = "60+ days";
-    const slot = sums.get(bucket)!;
-    slot.amount += inv.amount;
-    slot.count += 1;
+    acc.total += inv.amount;
+    acc.perMonth[m] += inv.amount;
   }
 
-  return AGING_BUCKETS.map((bucket) => ({
-    bucket,
-    amount: sums.get(bucket)!.amount,
-    count: sums.get(bucket)!.count,
-  }));
+  const ranked = [...accounts.entries()].sort((a, b) => b[1].total - a[1].total);
+  const top = ranked.slice(0, topN);
+  const rest = ranked.slice(topN);
+
+  const series: CollectedSeriesDTO[] = top.map(([id, a]) => ({ key: id, name: a.name, total: a.total }));
+  const perSeries = top.map(([, a]) => a.perMonth);
+  if (rest.length > 0) {
+    const other = new Array<number>(monthsN).fill(0);
+    let otherTotal = 0;
+    for (const [, a] of rest) {
+      a.perMonth.forEach((v, i) => (other[i] += v));
+      otherTotal += a.total;
+    }
+    series.push({ key: OTHER_SERIES_KEY, name: OTHER_SERIES_NAME, total: otherTotal });
+    perSeries.push(other);
+  }
+
+  const months = monthKeys.map((key, i) => {
+    const amounts = perSeries.map((s) => s[i]);
+    return { key, total: amounts.reduce((s, v) => s + v, 0), amounts };
+  });
+  return { months, series, total: series.reduce((s, x) => s + x.total, 0) };
 }
 
-/** Palette for stacked account series — brand-adjacent, distinct. */
-export const ACCOUNT_SERIES_COLORS = [
-  "#6d5cf5", // violet-500
-  "#2f9ae8", // brand-from
-  "#15a05a", // success
-  "#c8810a", // warn
-  "#d6483f", // danger
-  "#7b3ff2", // brand-to
-  "#8b8893", // muted → Other
-];
+/** What the invoice ledger is narrowed to: a side of the equation or an aging band. */
+export type LedgerFilter = "all" | "paid" | "outstanding" | AgingKey;
 
-export function accountColor(index: number, seriesKey: string): string {
-  if (seriesKey === OTHER_KEY) return ACCOUNT_SERIES_COLORS[ACCOUNT_SERIES_COLORS.length - 1]!;
-  return ACCOUNT_SERIES_COLORS[index % (ACCOUNT_SERIES_COLORS.length - 1)]!;
+export function matchesLedgerFilter(inv: InvoiceDTO, filter: LedgerFilter, now: Date): boolean {
+  if (filter === "all") return true;
+  if (filter === "paid") return inv.status === "paid";
+  if (filter === "outstanding") return isOutstanding(inv);
+  return agingKey(inv, now) === filter;
 }
 
-export const AGING_COLORS: Record<AgingBucket, string> = {
-  Current: "#15a05a",
-  "1–30 days": "#c8810a",
-  "31–60 days": "#d6483f",
-  "60+ days": "#9f2d26",
-};
+/** Case-insensitive match on account name or invoice number ("1023" or "#1023"). */
+export function matchesInvoiceQuery(inv: InvoiceDTO, query: string): boolean {
+  const q = query.trim().toLowerCase().replace(/^#/, "");
+  if (!q) return true;
+  return String(inv.number).includes(q) || (inv.accountName ?? "").toLowerCase().includes(q);
+}
+
+export interface LedgerGroups {
+  /** Most overdue first. */
+  outstanding: InvoiceDTO[];
+  /** Most recently paid first. */
+  paid: InvoiceDTO[];
+  /** Newest first. */
+  draft: InvoiceDTO[];
+}
+
+export function groupLedger(invoices: InvoiceDTO[], now: Date): LedgerGroups {
+  const groups: LedgerGroups = { outstanding: [], paid: [], draft: [] };
+  for (const inv of invoices) {
+    if (inv.status === "paid") groups.paid.push(inv);
+    else if (inv.status === "draft") groups.draft.push(inv);
+    else groups.outstanding.push(inv);
+  }
+  groups.outstanding.sort((a, b) => daysPastDue(b, now) - daysPastDue(a, now) || b.amount - a.amount);
+  groups.paid.sort((a, b) => paymentDate(b)!.getTime() - paymentDate(a)!.getTime());
+  groups.draft.sort((a, b) => new Date(b.issuedAt).getTime() - new Date(a.issuedAt).getTime());
+  return groups;
+}

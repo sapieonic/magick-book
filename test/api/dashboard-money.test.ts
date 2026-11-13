@@ -160,4 +160,53 @@ describe("GET /api/money", () => {
     expect(body.totals.outstanding).toBe(0);
     expect(body.totals.expenses).toBe(100);
   });
+
+  it("returns counts, aging bands and the collected-by-month series", async () => {
+    const acme = await models.Account.create({ workspaceId, ownerId: admin._id, name: "Acme", status: "active" });
+    const lumen = await models.Account.create({ workspaceId, ownerId: admin._id, name: "Lumen", status: "active" });
+    await models.Invoice.create([
+      { workspaceId, accountId: acme._id, number: 1, amount: 100, status: "sent", issuedAt: daysAgo(5), dueAt: daysAgo(-5) },
+      { workspaceId, accountId: acme._id, number: 2, amount: 200, status: "sent", issuedAt: daysAgo(30), dueAt: daysAgo(10) },
+      { workspaceId, accountId: lumen._id, number: 3, amount: 300, status: "overdue", issuedAt: daysAgo(90), dueAt: daysAgo(75) },
+      { workspaceId, accountId: lumen._id, number: 4, amount: 400, status: "paid", issuedAt: daysAgo(3), paidAt: new Date() },
+    ]);
+
+    const body = await (await (moneyRoute.GET as any)(jsonRequest("/api/money", "GET"))).json();
+    expect(Date.parse(body.asOf)).not.toBeNaN();
+    expect(body.totals).toMatchObject({ billedCount: 4, paidCount: 1, outstandingCount: 3, overdueCount: 2, outstanding: 600 });
+
+    const band = (key: string) => body.aging.find((b: { key: string }) => b.key === key);
+    expect(band("current")).toMatchObject({ amount: 100, count: 1, accounts: ["Acme"] });
+    expect(band("d30")).toMatchObject({ amount: 200, count: 1 });
+    expect(band("d60")).toMatchObject({ amount: 0, count: 0, accounts: [] });
+    expect(band("d60plus")).toMatchObject({ amount: 300, count: 1, accounts: ["Lumen"] });
+
+    expect(body.collected.months).toHaveLength(6);
+    expect(body.collected.total).toBe(400);
+    expect(body.collected.series).toEqual([{ key: String(lumen._id), name: "Lumen", total: 400 }]);
+    expect(body.collected.months.at(-1)).toMatchObject({ total: 400, amounts: [400] });
+    expect(body.invoices.find((i: { number: number }) => i.number === 2).dueAt).toBeTruthy();
+  });
+
+  it("scopes aging and collections to the standard user's accounts", async () => {
+    const adminAcc = await models.Account.create({ workspaceId, ownerId: admin._id, name: "AdminAcc", status: "active" });
+    const stanAcc = await models.Account.create({ workspaceId, ownerId: standard._id, name: "StanAcc", status: "active" });
+    await models.Invoice.create([
+      { workspaceId, accountId: adminAcc._id, number: 1, amount: 1000, status: "overdue", dueAt: daysAgo(10) },
+      { workspaceId, accountId: adminAcc._id, number: 2, amount: 1000, status: "paid", paidAt: new Date() },
+      { workspaceId, accountId: stanAcc._id, number: 3, amount: 7, status: "overdue", dueAt: daysAgo(10) },
+    ]);
+
+    session.user = standard;
+    const body = await (await (moneyRoute.GET as any)(jsonRequest("/api/money", "GET"))).json();
+    expect(body.aging.find((b: { key: string }) => b.key === "d30")).toMatchObject({ amount: 7, count: 1, accounts: ["StanAcc"] });
+    expect(body.collected.total).toBe(0);
+    expect(body.collected.series).toEqual([]);
+  });
+
+  it("rejects signed-out requests", async () => {
+    session.user = null;
+    const res = await (moneyRoute.GET as any)(jsonRequest("/api/money", "GET"));
+    expect(res.status).toBe(401);
+  });
 });
