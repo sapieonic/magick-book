@@ -1,209 +1,229 @@
 "use client";
 import { useState } from "react";
-import { ShieldCheck, User, Check, X, Plus, Lock, Trash2 } from "lucide-react";
-import { PageHeader } from "@/components/layout/PageHeader";
+import { Check, Minus, Plus, Trash2 } from "lucide-react";
+import { PageSplit } from "@/components/layout/Page";
 import { useSession } from "@/components/layout/SessionContext";
-import { InviteModal } from "@/components/settings/InviteModal";
-import { SettingsTabs } from "@/components/settings/SettingsTabs";
+import { InviteModal, ROLE_COPY } from "@/components/settings/InviteModal";
+import { AdminOnly, SettingsHeader } from "@/components/settings/SettingsTabs";
 import { Avatar } from "@/components/ui/Avatar";
-import { Badge } from "@/components/ui/Badge";
+import { StatusPill, Tag } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
-import { Card, PageLoader, ErrorState, EmptyState, Spinner } from "@/components/ui/Misc";
+import { useConfirm } from "@/components/ui/ConfirmDialog";
+import { Select } from "@/components/ui/Field";
+import { ErrorState, Skeleton } from "@/components/ui/Misc";
+import { Panel } from "@/components/ui/Panel";
+import { Table, Td, Th, TwoLine } from "@/components/ui/Table";
 import { useToast } from "@/components/ui/Toast";
 import { api, useApi } from "@/lib/client";
-import { cn } from "@/lib/utils";
+import { ROLES, type Role } from "@/lib/constants";
 import type { MemberDTO } from "@/lib/types";
 
-interface MembersResponse {
-  members: MemberDTO[];
-  isAdmin: boolean;
-}
 
-const ADMIN_PERKS = ["Sees & edits everything in the workspace", "Invite people & change roles", "Billing, invoices, expenses & settings"];
-const STANDARD_PERKS: [string, boolean][] = [
-  ["Sees only records they added (leads, accounts, $)", true],
-  ["Add & edit their own pipeline", true],
-  ["No team, billing or others' data", false],
-];
+const PERKS: Record<Role, [string, boolean][]> = {
+  admin: [
+    ["Sees and edits everything in the workspace", true],
+    ["Invites people and changes roles", true],
+    ["Invoices, expenses, settings and the audit log", true],
+  ],
+  standard: [
+    ["Sees only the leads, accounts and money they added", true],
+    ["Adds and edits their own pipeline", true],
+    ["No team, settings or other people's data", false],
+  ],
+};
 
 export default function TeamPage() {
   const me = useSession();
   const { toast } = useToast();
-  const { data, loading, error, refresh } = useApi<MembersResponse>("/api/members");
+  const confirm = useConfirm();
+  const isAdmin = me.role === "admin";
+  const { data, loading, error, refresh } = useApi<{ members: MemberDTO[] }>(isAdmin ? "/api/members" : null);
   const [inviting, setInviting] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
 
   const members = data?.members ?? [];
-  const canManage = data?.isAdmin ?? false;
 
-  async function changeRole(m: MemberDTO, role: string) {
+  async function mutate(m: MemberDTO, fn: () => Promise<unknown>, done: string, failed: string) {
     setBusyId(m.id);
     try {
-      await api.patch(`/api/members/${m.id}`, { role });
-      toast(`${m.name} is now ${role}.`, "success");
+      await fn();
+      toast(done, "success");
       refresh();
     } catch (e) {
-      toast(e instanceof Error ? e.message : "Couldn't change role", "error");
+      toast(e instanceof Error ? e.message : failed, "error");
     } finally {
       setBusyId(null);
     }
   }
 
+  function changeRole(m: MemberDTO, role: Role) {
+    return mutate(m, () => api.patch(`/api/members/${m.id}`, { role }), `${m.name} is now ${role === "admin" ? "an admin" : "a standard user"}.`, "Couldn't change role");
+  }
+
   async function remove(m: MemberDTO) {
-    setBusyId(m.id);
-    try {
-      await api.delete(`/api/members/${m.id}`);
-      toast(`${m.name} removed.`, "info");
-      refresh();
-    } catch (e) {
-      toast(e instanceof Error ? e.message : "Couldn't remove", "error");
-    } finally {
-      setBusyId(null);
-    }
+    const ok = await confirm({
+      title: `Remove ${m.name}?`,
+      description: "They lose access to this workspace. The leads and accounts they own stay put.",
+      confirmLabel: "Remove",
+      tone: "danger",
+    });
+    if (ok) await mutate(m, () => api.delete(`/api/members/${m.id}`), `${m.name} removed.`, "Couldn't remove");
   }
 
   return (
     <>
-      <PageHeader>
-        <nav className="flex items-center gap-1.5 text-[13px] text-muted">
-          <span>Settings</span>
-          <span className="text-faint">/</span>
-          <span className="font-display text-[20px] font-bold tracking-tight text-ink">Team &amp; roles</span>
-        </nav>
-        {me.role === "admin" && (
-          <Button variant="primary" className="ml-auto" onClick={() => setInviting(true)}>
-            <Plus className="size-4" /> Invite user
-          </Button>
-        )}
-      </PageHeader>
+      <SettingsHeader
+        title="Team & roles"
+        actions={
+          isAdmin && (
+            <Button variant="primary" onClick={() => setInviting(true)}>
+              <Plus className="size-4" strokeWidth={1.5} aria-hidden /> Invite
+            </Button>
+          )
+        }
+      />
 
-      <SettingsTabs />
-
-      <div className="px-6 py-6 lg:px-8">
-        <div className="mx-auto max-w-[1080px]">
-          {error ? (
-            <ErrorState message={error} onRetry={refresh} />
-          ) : loading ? (
-            <PageLoader />
-          ) : !canManage ? (
-            <EmptyState icon={<Lock className="size-6" />} title="Admins only" description="Team & roles is restricted to workspace admins." />
-          ) : (
-            <>
-              {/* Role explainer cards */}
-              <div className="grid gap-4 md:grid-cols-2">
-                <RoleCard icon={ShieldCheck} title="Admin" badge="All access" tone="violet">
-                  {ADMIN_PERKS.map((p) => (
-                    <Perk key={p} ok>{p}</Perk>
+      {!isAdmin ? (
+        <AdminOnly description="Team and roles are managed by workspace admins." />
+      ) : error ? (
+        <Panel>
+          <ErrorState message={error} onRetry={refresh} />
+        </Panel>
+      ) : (
+        <PageSplit
+          railLabel="Roles"
+          rail={(Object.keys(PERKS) as Role[]).map((r) => (
+            <RolePanel key={r} role={r} />
+          ))}
+        >
+          <Panel title="Members" meta={loading ? undefined : members.length} ruled>
+            {loading ? (
+              <MembersSkeleton />
+            ) : (
+              <Table>
+                <thead>
+                  <tr>
+                    <Th>Member</Th>
+                    <Th hideOnPhone>Email</Th>
+                    <Th>Role</Th>
+                    <Th hideOnPhone>Added by</Th>
+                    <Th hideOnPhone>Status</Th>
+                    <Th>
+                      <span className="sr-only">Actions</span>
+                    </Th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {members.map((m) => (
+                    <MemberRow
+                      key={m.id}
+                      m={m}
+                      busy={busyId === m.id}
+                      onRole={(role) => changeRole(m, role)}
+                      onRemove={() => remove(m)}
+                    />
                   ))}
-                </RoleCard>
-                <RoleCard icon={User} title="Standard user" badge="Limited" tone="neutral">
-                  {STANDARD_PERKS.map(([p, ok]) => (
-                    <Perk key={p} ok={ok}>{p}</Perk>
-                  ))}
-                </RoleCard>
-              </div>
+                </tbody>
+              </Table>
+            )}
+          </Panel>
+        </PageSplit>
+      )}
 
-              {/* Members */}
-              <h2 className="mb-3 mt-7 font-display text-[16px] font-bold text-ink">Members · {members.length}</h2>
-              <Card className="overflow-hidden">
-                <div className="overflow-x-auto">
-                <table className="w-full min-w-[720px]">
-                  <thead>
-                    <tr className="border-b border-line bg-canvas/60 text-left text-[11.5px] font-semibold uppercase tracking-wide text-muted">
-                      <th className="px-5 py-3">Member</th>
-                      <th className="px-5 py-3">Email</th>
-                      <th className="px-5 py-3">Role</th>
-                      <th className="px-5 py-3">Added by</th>
-                      <th className="px-5 py-3">Status</th>
-                      <th className="px-5 py-3" />
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-line">
-                    {members.map((m) => (
-                      <tr key={m.id} className="text-[13px]">
-                        <td className="px-5 py-3.5">
-                          <span className="inline-flex items-center gap-2.5">
-                            <Avatar name={m.name} size={30} />
-                            <span className="font-semibold text-ink">{m.name}</span>
-                            {m.isYou && <span className="text-[11.5px] text-faint">(you)</span>}
-                          </span>
-                        </td>
-                        <td className="px-5 py-3.5 text-muted">{m.email}</td>
-                        <td className="px-5 py-3.5">
-                          {m.isYou ? (
-                            <Badge tone="violet">Admin · owner</Badge>
-                          ) : (
-                            <span className="inline-flex items-center gap-2">
-                              <select
-                                value={m.role}
-                                disabled={busyId === m.id}
-                                onChange={(e) => changeRole(m, e.target.value)}
-                                className="cursor-pointer rounded-[var(--radius-sm)] border border-line-strong bg-paper px-2.5 py-1.5 text-[12.5px] font-semibold text-ink focus:border-violet-400 focus:outline-none focus:ring-2 focus:ring-violet-100 disabled:opacity-60"
-                              >
-                                <option value="admin">Admin</option>
-                                <option value="standard">Standard</option>
-                              </select>
-                              <span className="flex size-4 shrink-0 items-center justify-center">
-                                {busyId === m.id && <Spinner className="size-4" />}
-                              </span>
-                            </span>
-                          )}
-                        </td>
-                        <td className="px-5 py-3.5 text-muted">{m.invitedByName ?? "—"}</td>
-                        <td className="px-5 py-3.5">
-                          <Badge tone={m.status === "active" ? "success" : "warn"}>{m.status === "active" ? "Active" : "Invited"}</Badge>
-                        </td>
-                        <td className="px-5 py-3.5 text-right">
-                          {!m.isYou && (
-                            <button
-                              disabled={busyId === m.id}
-                              onClick={() => remove(m)}
-                              className="rounded-md p-1.5 text-faint transition-colors hover:bg-danger-bg hover:text-danger disabled:opacity-50"
-                              aria-label={`Remove ${m.name}`}
-                            >
-                              {busyId === m.id ? <Spinner className="size-4" /> : <Trash2 className="size-4" />}
-                            </button>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                </div>
-              </Card>
-            </>
-          )}
-        </div>
-      </div>
-
-      <InviteModal open={inviting} onClose={() => setInviting(false)} onInvited={() => refresh()} />
+      <InviteModal open={inviting} onClose={() => setInviting(false)} onInvited={refresh} />
     </>
   );
 }
 
-function RoleCard({ icon: Icon, title, badge, tone, children }: { icon: typeof ShieldCheck; title: string; badge: string; tone: "violet" | "neutral"; children: React.ReactNode }) {
+function MemberRow({ m, busy, onRole, onRemove }: { m: MemberDTO; busy: boolean; onRole: (r: Role) => void; onRemove: () => void }) {
+  const fixed = m.isOwner || m.isYou;
   return (
-    <Card className="p-5">
-      <div className="flex items-center gap-2.5">
-        <span className={cn("flex size-9 items-center justify-center rounded-[var(--radius-sm)]", tone === "violet" ? "bg-violet-100 text-violet-700" : "bg-canvas text-ink-soft")}>
-          <Icon className="size-[18px]" />
+    <tr>
+      <Td>
+        <span className="flex items-center gap-2.5 py-1.5">
+          <Avatar name={m.name} size={28} tone={m.isYou ? "ink" : "neutral"} className="shrink-0" />
+          <TwoLine
+            primary={
+              <>
+                <span className="font-medium text-ink-1">{m.name}</span>
+                {m.isYou && <span className="text-ink-3"> (you)</span>}
+              </>
+            }
+            secondary={m.email}
+            phoneOnly
+          />
         </span>
-        <h3 className="font-display text-[16px] font-bold text-ink">{title}</h3>
-        <Badge tone={tone} className="ml-1">{badge}</Badge>
-      </div>
-      <div className="my-4 border-t border-dashed border-line" />
-      <ul className="space-y-2.5">{children}</ul>
-    </Card>
+      </Td>
+      <Td hideOnPhone className="text-ink-2">{m.email}</Td>
+      <Td>
+        {fixed ? (
+          <span className="inline-flex items-center gap-2">
+            {ROLE_COPY[m.role].title}
+            {m.isOwner && <Tag>owner</Tag>}
+          </span>
+        ) : (
+          <div className="w-[150px]">
+            <Select
+              aria-label={`Role for ${m.name}`}
+              value={m.role}
+              disabled={busy}
+              onChange={(e) => onRole(e.target.value as Role)}
+              className="h-[30px]"
+            >
+              {ROLES.map((r) => (
+                <option key={r} value={r}>{ROLE_COPY[r].title}</option>
+              ))}
+            </Select>
+          </div>
+        )}
+      </Td>
+      <Td hideOnPhone className="text-ink-2">{m.invitedByName ?? "–"}</Td>
+      <Td hideOnPhone>
+        <StatusPill tone={m.status === "active" ? "paid" : "due"}>{m.status === "active" ? "Active" : "Invited"}</StatusPill>
+      </Td>
+      <Td className="w-10 text-right">
+        {!fixed && (
+          <Button variant="ghost" size="sm" onClick={onRemove} loading={busy} aria-label={`Remove ${m.name}`}>
+            <Trash2 className="size-4" strokeWidth={1.5} aria-hidden />
+          </Button>
+        )}
+      </Td>
+    </tr>
   );
 }
 
-function Perk({ ok, children }: { ok: boolean; children: React.ReactNode }) {
+function RolePanel({ role }: { role: Role }) {
   return (
-    <li className="flex items-start gap-2.5 text-[13px]">
-      <span className={cn("mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full", ok ? "bg-success-bg text-success" : "bg-danger-bg text-danger")}>
-        {ok ? <Check className="size-3" strokeWidth={3} /> : <X className="size-3" strokeWidth={3} />}
-      </span>
-      <span className={ok ? "text-ink-soft" : "text-muted"}>{children}</span>
-    </li>
+    <Panel title={ROLE_COPY[role].title} meta={role === "admin" ? "all access" : "limited"} ruled>
+      <ul>
+        {PERKS[role].map(([perk, allowed]) => (
+          <li key={perk} className="flex items-start gap-2.5 border-b border-line py-[9px] last:border-b-0">
+            {allowed ? (
+              <Check className="mt-0.5 size-4 shrink-0 text-paid" strokeWidth={1.5} aria-hidden />
+            ) : (
+              <Minus className="mt-0.5 size-4 shrink-0 text-ink-3" strokeWidth={1.5} aria-hidden />
+            )}
+            <span className={allowed ? "text-ink-1" : "text-ink-2"}>
+              <span className="sr-only">{allowed ? "Can: " : "Cannot: "}</span>
+              {perk}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </Panel>
+  );
+}
+
+function MembersSkeleton() {
+  return (
+    <div className="space-y-3 py-3" aria-busy="true" aria-label="Loading members">
+      {[0, 1, 2].map((i) => (
+        <div key={i} className="flex items-center gap-3">
+          <Skeleton className="size-7 rounded-full" />
+          <Skeleton className="h-4 w-40" />
+          <Skeleton className="ml-auto h-4 w-24" />
+        </div>
+      ))}
+    </div>
   );
 }

@@ -1,10 +1,11 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Phone, MessageCircle, Mail, MessageSquare, Eye, EyeOff, ArrowRight, Sparkles, Workflow, Receipt, Lock } from "lucide-react";
-import { Logo } from "@/components/ui/Misc";
+import { ArrowRight, Eye, EyeOff, Lock } from "lucide-react";
 import { Button } from "@/components/ui/Button";
-import { Input, Field } from "@/components/ui/Field";
+import { Input, Field, Label } from "@/components/ui/Field";
+import { Panel } from "@/components/ui/Panel";
+import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { useToast } from "@/components/ui/Toast";
 import { api } from "@/lib/client";
 
@@ -15,10 +16,12 @@ interface AuthConfig {
   allowedDomains: string | null;
 }
 
-const HIGHLIGHTS = [
-  { icon: Workflow, title: "Capture & qualify leads", body: "A drag-and-drop pipeline from New to Won." },
-  { icon: Sparkles, title: "Convert wins into accounts", body: "Contacts & company carry over in one click." },
-  { icon: Receipt, title: "Invoices & expenses per account", body: "See true margin on every relationship." },
+type Mode = "signin" | "signup";
+
+/** Seeded demo users (see src/lib/seed.ts). */
+const DEMO_ACCOUNTS = [
+  { email: "riya@acme.in", name: "Riya Nair", role: "Admin, owner" },
+  { email: "neha@acme.in", name: "Neha Gupta", role: "Standard user" },
 ];
 
 export function LoginClient() {
@@ -28,7 +31,7 @@ export function LoginClient() {
   const { toast } = useToast();
 
   const [config, setConfig] = useState<AuthConfig | null>(null);
-  const [tab, setTab] = useState<"signin" | "signup">("signin");
+  const [mode, setMode] = useState<Mode>("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPass, setShowPass] = useState(false);
@@ -38,182 +41,150 @@ export function LoginClient() {
     api.get<AuthConfig>("/api/auth/config").then(setConfig).catch(() => setConfig({ firebase: false, demo: true, firebaseConfig: null, allowedDomains: null }));
   }, []);
 
-  async function finish() {
-    router.replace(next);
-    router.refresh();
-  }
+  const demoMode = config !== null && !config.firebase;
+  const demoAccounts = demoMode ? DEMO_ACCOUNTS.filter((a) => !config.allowedDomains || config.allowedDomains.includes(`@${a.email.split("@")[1]}`)) : [];
 
-  async function handleEmail(e: React.FormEvent) {
-    e.preventDefault();
-    if (!email.trim()) return;
-    setBusy("email");
+  /** Run a sign-in attempt; on success go to `next`, on failure toast and re-enable. */
+  async function attempt(key: string, signIn: () => Promise<void>) {
+    setBusy(key);
     try {
-      if (config?.firebase) {
-        const fb = await import("@/lib/auth/firebase-client");
-        const idToken = await fb.firebaseSignInWithEmail(email.trim(), password, tab === "signup");
-        try {
-          await api.post("/api/auth/session", { idToken });
-        } catch (sessionErr) {
-          await fb.firebaseSignOut(); // server rejected (e.g. domain not allowed)
-          throw sessionErr;
-        }
-      } else {
-        // Demo mode — passwordless. The email picks which seeded user you are.
-        await api.post("/api/auth/demo", { email: email.trim() });
-      }
-      await finish();
+      await signIn();
+      router.replace(next);
+      router.refresh();
     } catch (err) {
       toast(err instanceof Error ? err.message : "Sign-in failed", "error");
       setBusy(null);
     }
   }
 
-  async function handleProvider(provider: "google" | "microsoft") {
+  /** Exchange a Firebase ID token for our session cookie; sign out of Firebase if the server refuses (e.g. domain not allowed). */
+  async function startSession(fb: typeof import("@/lib/auth/firebase-client"), idToken: string) {
+    try {
+      await api.post("/api/auth/session", { idToken });
+    } catch (sessionErr) {
+      await fb.firebaseSignOut();
+      throw sessionErr;
+    }
+  }
+
+  function signInWithEmail(address: string, key = address) {
+    return attempt(key, async () => {
+      if (config?.firebase) {
+        const fb = await import("@/lib/auth/firebase-client");
+        await startSession(fb, await fb.firebaseSignInWithEmail(address, password, mode === "signup"));
+      } else {
+        // Demo mode is passwordless: the email picks which seeded user you are.
+        await api.post("/api/auth/demo", { email: address });
+      }
+    });
+  }
+
+  function handleEmail(e: React.FormEvent) {
+    e.preventDefault();
+    if (email.trim()) signInWithEmail(email.trim(), "email");
+  }
+
+  function handleGoogle() {
     if (!config?.firebase) {
       toast("Google sign-in needs Firebase configured. Enter your email below to continue.", "info");
       return;
     }
-    setBusy(provider);
-    try {
+    attempt("google", async () => {
       const fb = await import("@/lib/auth/firebase-client");
-      const idToken = await fb.firebaseSignInWithProvider(provider);
-      try {
-        await api.post("/api/auth/session", { idToken });
-      } catch (sessionErr) {
-        await fb.firebaseSignOut(); // server rejected (e.g. domain not allowed)
-        throw sessionErr;
-      }
-      await finish();
-    } catch (err) {
-      toast(err instanceof Error ? err.message : "Sign-in failed", "error");
-      setBusy(null);
-    }
+      await startSession(fb, await fb.firebaseSignInWithProvider("google"));
+    });
   }
 
   return (
-    <div className="grid min-h-screen lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)]">
-      {/* ── Left: brand panel ─────────────────────────────────────────── */}
-      <div className="relative hidden flex-col justify-between overflow-hidden bg-[#1b1a1f] p-10 text-white lg:flex xl:p-14">
-        <div
-          className="pointer-events-none absolute inset-0 opacity-90"
-          style={{ background: "radial-gradient(120% 90% at 15% 0%, rgba(123,63,242,0.55), transparent 55%), radial-gradient(100% 80% at 100% 100%, rgba(47,154,232,0.45), transparent 50%)" }}
-        />
-        <div className="pointer-events-none absolute inset-0 opacity-[0.06]" style={{ backgroundImage: "radial-gradient(circle at 1px 1px, #fff 1px, transparent 0)", backgroundSize: "26px 26px" }} />
+    <Panel as="main" className="w-full max-w-[440px] animate-rise md:p-8">
+      <h2 className="text-[22px] font-semibold tracking-[-0.01em] text-ink-1">{mode === "signin" ? "Welcome back" : "Create your account"}</h2>
+      <p className="mt-1 text-ink-2">{mode === "signin" ? "Sign in to your MagickBook workspace." : "Start keeping your book in MagickBook."}</p>
 
-        <div className="relative">
-          <Logo size={34} withWordmark className="[&_span]:text-white [&_.brand-text]:text-white" />
-        </div>
+      <SegmentedControl
+        aria-label="Sign in or sign up"
+        className="mt-6 flex w-full"
+        value={mode}
+        onChange={setMode}
+        options={[
+          { value: "signin", label: "Sign in" },
+          { value: "signup", label: "Sign up" },
+        ]}
+      />
 
-        <div className="relative max-w-md animate-fade-up">
-          <h1 className="font-display text-[40px] font-extrabold leading-[1.05] tracking-tight xl:text-[46px]">
-            Your whole book of business, in one place.
-          </h1>
-          <p className="mt-4 text-[15px] leading-relaxed text-white/70">
-            Capture leads, walk them to a win, then run the account — contacts, invoices & expenses — without leaving the app.
-          </p>
+      <Button variant="secondary" size="lg" className="mt-5 w-full" loading={busy === "google"} onClick={handleGoogle}>
+        <GoogleMark /> Continue with Google
+      </Button>
 
-          <div className="stagger mt-9 space-y-3">
-            {HIGHLIGHTS.map((h) => (
-              <div key={h.title} className="flex items-start gap-3.5 rounded-[var(--radius-md)] border border-white/10 bg-white/5 p-3.5 backdrop-blur-sm">
-                <div className="flex size-9 shrink-0 items-center justify-center rounded-[var(--radius-sm)] bg-white/10 text-white">
-                  <h.icon className="size-[18px]" strokeWidth={2} />
-                </div>
-                <div>
-                  <p className="text-[13.5px] font-semibold">{h.title}</p>
-                  <p className="text-[12.5px] text-white/55">{h.body}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="relative flex items-center gap-4 text-[12px] text-white/45">
-          <span className="inline-flex items-center gap-1.5"><Phone className="size-3.5" /> Call</span>
-          <span className="inline-flex items-center gap-1.5"><MessageCircle className="size-3.5" /> WhatsApp</span>
-          <span className="inline-flex items-center gap-1.5"><MessageSquare className="size-3.5" /> SMS</span>
-          <span className="inline-flex items-center gap-1.5"><Mail className="size-3.5" /> Email</span>
-        </div>
+      <div className="my-5 flex items-center gap-3 text-[12px] text-ink-3">
+        <span className="h-px flex-1 bg-line" aria-hidden /> or with email <span className="h-px flex-1 bg-line" aria-hidden />
       </div>
 
-      {/* ── Right: sign-in ────────────────────────────────────────────── */}
-      <div className="flex items-center justify-center px-5 py-10 sm:px-10">
-        <div className="w-full max-w-[400px] animate-fade-up">
-          <div className="mb-7 lg:hidden">
-            <Logo size={30} withWordmark />
-          </div>
-
-          <div className="mb-1 flex items-center justify-between">
-            <h2 className="font-display text-[28px] font-bold tracking-tight text-ink">
-              {tab === "signin" ? "Welcome back 👋" : "Create your account"}
-            </h2>
-          </div>
-          <p className="text-[13.5px] text-muted">
-            {tab === "signin" ? "Sign in to your MagickBook workspace." : "Start your whole book of business."}
-          </p>
-
-          {/* Tabs */}
-          <div className="mt-6 grid grid-cols-2 gap-1 rounded-[var(--radius-md)] border border-line bg-canvas p-1">
-            {(["signin", "signup"] as const).map((t) => (
+      <form onSubmit={handleEmail} className="space-y-3.5">
+        <Field label="Work email" required>
+          <Input type="email" autoComplete="email" placeholder="you@company.com" value={email} onChange={(e) => setEmail(e.target.value)} />
+        </Field>
+        {config?.firebase && (
+          <div>
+            <Label htmlFor="login-password" required>
+              Password
+            </Label>
+            <div className="relative">
+              <Input
+                id="login-password"
+                type={showPass ? "text" : "password"}
+                autoComplete={mode === "signup" ? "new-password" : "current-password"}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="pr-10"
+              />
               <button
-                key={t}
-                onClick={() => setTab(t)}
-                className={`h-9 rounded-[var(--radius-sm)] text-[13px] font-semibold transition-all ${
-                  tab === t ? "bg-paper text-ink shadow-[var(--shadow-card)]" : "text-muted hover:text-ink"
-                }`}
+                type="button"
+                onClick={() => setShowPass((s) => !s)}
+                aria-label={showPass ? "Hide password" : "Show password"}
+                className="absolute right-1 top-1/2 flex size-7 -translate-y-1/2 items-center justify-center rounded-bar text-ink-3 hover:text-ink-1"
               >
-                {t === "signin" ? "Sign in" : "Sign up"}
+                {showPass ? <EyeOff className="size-4" strokeWidth={1.5} aria-hidden /> : <Eye className="size-4" strokeWidth={1.5} aria-hidden />}
               </button>
-            ))}
-          </div>
-
-          {/* OAuth — Google only for now */}
-          <div className="mt-5 space-y-2.5">
-            <Button variant="secondary" size="lg" className="w-full" loading={busy === "google"} onClick={() => handleProvider("google")}>
-              <GoogleMark /> Continue with Google
-            </Button>
-          </div>
-
-          <div className="my-5 flex items-center gap-3 text-[11px] font-medium uppercase tracking-wider text-faint">
-            <span className="h-px flex-1 bg-line" /> or with email <span className="h-px flex-1 bg-line" />
-          </div>
-
-          {/* Email form */}
-          <form onSubmit={handleEmail} className="space-y-3.5">
-            <Field label="Work email" required>
-              <Input type="email" autoComplete="email" placeholder="you@company.com" value={email} onChange={(e) => setEmail(e.target.value)} />
-            </Field>
-            {config?.firebase && (
-              <Field label="Password" required hint={<button type="button" onClick={() => setShowPass((s) => !s)} className="inline-flex items-center gap-1 hover:text-ink">{showPass ? <EyeOff className="size-3" /> : <Eye className="size-3" />} {showPass ? "hide" : "show"}</button>}>
-                <Input type={showPass ? "text" : "password"} autoComplete={tab === "signup" ? "new-password" : "current-password"} placeholder="••••••••" value={password} onChange={(e) => setPassword(e.target.value)} />
-              </Field>
-            )}
-            <Button type="submit" variant="primary" size="lg" className="w-full" loading={busy === "email"}>
-              {tab === "signin" ? "Sign in" : "Create account"} <ArrowRight className="size-4" />
-            </Button>
-          </form>
-
-          {config?.allowedDomains && (
-            <p className="mt-4 flex items-center justify-center gap-1.5 text-center text-[12px] text-muted">
-              <Lock className="size-3.5 text-faint" />
-              Only <span className="font-semibold text-ink-soft">{config.allowedDomains}</span> emails can sign in.
-            </p>
-          )}
-
-          {config && !config.firebase && (
-            <div className="mt-5 rounded-[var(--radius-md)] border border-dashed border-violet-200 bg-violet-50/60 p-3.5 text-[12.5px] leading-relaxed text-violet-800">
-              <p className="font-semibold">Demo mode is on.</p>
-              <p className="mt-0.5 text-violet-700/80">
-                Firebase isn&apos;t configured, so signing in is passwordless — enter any allowed email above to continue.
-              </p>
             </div>
-          )}
+          </div>
+        )}
+        <Button type="submit" variant="primary" size="lg" className="w-full" loading={busy === "email"}>
+          {mode === "signin" ? "Sign in" : "Create account"} <ArrowRight className="size-4" strokeWidth={1.5} aria-hidden />
+        </Button>
+      </form>
 
-          <p className="mt-6 text-center text-[11.5px] text-faint">
-            By continuing you agree to the Terms & Privacy Policy.
-          </p>
-        </div>
-      </div>
-    </div>
+      {config?.allowedDomains && (
+        <p className="mt-4 flex items-center justify-center gap-1.5 text-center text-[13px] text-ink-2">
+          <Lock className="size-3.5 shrink-0 text-ink-3" strokeWidth={1.5} aria-hidden />
+          <span>
+            Only <span className="font-medium text-ink-1">{config.allowedDomains}</span> emails can sign in.
+          </span>
+        </p>
+      )}
+
+      {demoMode && (
+        <section aria-labelledby="demo-mode" className="mt-5 rounded-card bg-hover p-3.5 text-[13px]">
+          <h3 id="demo-mode" className="font-semibold text-ink-1">Demo mode is on</h3>
+          <p className="mt-0.5 text-ink-2">Firebase isn&apos;t configured, so signing in is passwordless. Enter any allowed email above, or pick a demo account.</p>
+          {demoAccounts.length > 0 && (
+            <ul className="mt-3 space-y-1.5">
+              {demoAccounts.map((a) => (
+                <li key={a.email}>
+                  <Button variant="secondary" className="w-full justify-between" loading={busy === a.email} onClick={() => signInWithEmail(a.email)}>
+                    <span className="truncate">
+                      {a.name} <span className="font-normal text-ink-3">· {a.role}</span>
+                    </span>
+                    <span className="hidden font-mono text-[12px] text-ink-3 sm:inline">{a.email}</span>
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
+
+      <p className="mt-6 text-center text-[12px] text-ink-3">By continuing you agree to the Terms and Privacy Policy.</p>
+    </Panel>
   );
 }
 

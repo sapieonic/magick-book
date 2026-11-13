@@ -23,7 +23,8 @@ export const PATCH = route(async (req: NextRequest, ctx: Ctx) => {
 
   // Don't let the workspace owner be demoted (keep at least one admin).
   const ws = await Workspace.findById(user.workspaceId).lean<{ ownerId: unknown }>();
-  if (ws && String(ws.ownerId) === String(member._id) && b.role !== "admin") {
+  const isOwner = !!ws && String(ws.ownerId) === String(member._id);
+  if (isOwner && b.role !== "admin") {
     return fail("The workspace owner must stay an admin.", 409);
   }
 
@@ -33,7 +34,11 @@ export const PATCH = route(async (req: NextRequest, ctx: Ctx) => {
     ? (await User.findById(member.invitedById).select("name").lean<{ name: string }>())?.name ?? null
     : null;
   return ok({
-    member: serializeMember(member.toObject() as IUser, { invitedByName, isYou: String(member._id) === String(user._id) }),
+    member: serializeMember(member.toObject() as IUser, {
+      invitedByName,
+      isYou: String(member._id) === String(user._id),
+      isOwner,
+    }),
   });
 });
 

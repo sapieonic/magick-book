@@ -174,7 +174,10 @@ export function serializeActivity(a: IActivity, actorName = ""): ActivityDTO {
   };
 }
 
-export function serializeMember(u: IUser, opts: { invitedByName?: string | null; isYou?: boolean }): MemberDTO {
+export function serializeMember(
+  u: IUser,
+  opts: { invitedByName?: string | null; isYou?: boolean; isOwner?: boolean },
+): MemberDTO {
   return {
     id: id(u._id),
     name: u.name,
@@ -183,6 +186,7 @@ export function serializeMember(u: IUser, opts: { invitedByName?: string | null;
     status: u.status as MemberStatus,
     invitedByName: opts.invitedByName ?? null,
     isYou: !!opts.isYou,
+    isOwner: !!opts.isOwner,
   };
 }
 

@@ -61,6 +61,17 @@ describe("GET /api/members", () => {
     expect(body.members.map((m: { email: string }) => m.email).sort()).toEqual(["owner@x.com", "stan@x.com"]);
     const me = body.members.find((m: { email: string }) => m.email === "owner@x.com");
     expect(me.isYou).toBe(true);
+    expect(me.isOwner).toBe(true);
+    const stan = body.members.find((m: { email: string }) => m.email === "stan@x.com");
+    expect(stan.isOwner).toBe(false);
+  });
+
+  it("marks the owner for a different admin too", async () => {
+    session.user = (await models.User.create({ workspaceId, name: "A2", email: "a2@x.com", role: "admin", status: "active" })).toObject() as IUser;
+    const body = await (await membersRoute.GET()).json();
+    const owners = body.members.filter((m: { isOwner: boolean }) => m.isOwner).map((m: { email: string }) => m.email);
+    expect(owners).toEqual(["owner@x.com"]);
+    expect(body.members.find((m: { email: string }) => m.email === "a2@x.com").isYou).toBe(true);
   });
 
   it("isAdmin is false for a standard user", async () => {
@@ -114,6 +125,7 @@ describe("PATCH /api/members/:id (role change)", () => {
     const res = await memberIdRoute.PATCH(jsonRequest(`/api/members/${standard._id}`, "PATCH", { role: "admin" }), ctx({ id: String(standard._id) }));
     const { member } = await res.json();
     expect(member.role).toBe("admin");
+    expect(member.isOwner).toBe(false);
   });
 
   it("403 for a standard user", async () => {

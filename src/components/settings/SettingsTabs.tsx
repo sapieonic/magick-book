@@ -1,38 +1,41 @@
 "use client";
-import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { cn } from "@/lib/utils";
+import { Lock } from "lucide-react";
+import { PageHeader } from "@/components/layout/PageHeader";
+import { Panel } from "@/components/ui/Panel";
+import { EmptyState } from "@/components/ui/Misc";
+import { Tabs, type TabItem } from "@/components/ui/Tabs";
 
-const TABS = [
-  { href: "/settings/team", label: "Team & roles" },
-  { href: "/settings/categories", label: "Lead categories" },
-  { href: "/settings/reminders", label: "Reminders" },
-  { href: "/settings/audit", label: "Audit log" },
+type SettingsTab = "team" | "categories" | "reminders" | "audit";
+
+const TABS: TabItem<SettingsTab>[] = [
+  { key: "team", label: "Team & roles", href: "/settings/team" },
+  { key: "categories", label: "Lead categories", href: "/settings/categories" },
+  { key: "reminders", label: "Reminders", href: "/settings/reminders" },
+  { key: "audit", label: "Audit log", href: "/settings/audit" },
 ];
 
-/** Sub-navigation shared across the Settings pages. */
+/** Sub-navigation shared across the Settings pages: a glass strip of route tabs. */
 export function SettingsTabs() {
   const pathname = usePathname();
+  const active = TABS.find((t) => pathname === t.href || pathname.startsWith(`${t.href}/`))?.key ?? "team";
   return (
-    <div className="border-b border-line px-4 sm:px-6 lg:px-8">
-      <div className="flex gap-1">
-        {TABS.map((t) => {
-          const active = pathname === t.href || pathname.startsWith(t.href + "/");
-          return (
-            <Link
-              key={t.href}
-              href={t.href}
-              className={cn(
-                "relative px-3.5 py-3 text-[13.5px] font-semibold transition-colors",
-                active ? "text-violet-700" : "text-muted hover:text-ink",
-              )}
-            >
-              {t.label}
-              {active && <span className="absolute inset-x-2 -bottom-px h-0.5 rounded-full bg-violet-500" />}
-            </Link>
-          );
-        })}
-      </div>
+    <div className="glass rounded-panel px-4 pt-3.5 md:px-6">
+      <Tabs aria-label="Settings" value={active} tabs={TABS} className="border-b-0" />
     </div>
+  );
+}
+
+/** Top-bar title for a Settings page, under a "Settings" breadcrumb. */
+export function SettingsHeader({ title, actions }: { title: string; actions?: React.ReactNode }) {
+  return <PageHeader title={title} breadcrumb={[{ label: "Settings", href: TABS[0].href! }]} actions={actions} />;
+}
+
+/** Shown in place of an admin-only section to standard users. */
+export function AdminOnly({ description }: { description: string }) {
+  return (
+    <Panel>
+      <EmptyState icon={<Lock className="size-6" strokeWidth={1.5} aria-hidden />} title="Admins only" description={description} />
+    </Panel>
   );
 }

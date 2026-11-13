@@ -1,71 +1,105 @@
 "use client";
 import { useState } from "react";
 import { ScrollText } from "lucide-react";
-import { PageHeader } from "@/components/layout/PageHeader";
 import { useSession } from "@/components/layout/SessionContext";
-import { SettingsTabs } from "@/components/settings/SettingsTabs";
+import { AdminOnly, SettingsHeader } from "@/components/settings/SettingsTabs";
 import { AuditTimeline } from "@/components/AuditTimeline";
-import { Card, PageLoader, ErrorState, EmptyState } from "@/components/ui/Misc";
+import { Button } from "@/components/ui/Button";
+import { Field, Select } from "@/components/ui/Field";
+import { EmptyState, ErrorState, Skeleton } from "@/components/ui/Misc";
+import { Panel } from "@/components/ui/Panel";
 import { useApi } from "@/lib/client";
-import { AUDIT_ENTITIES } from "@/lib/constants";
-import { cn } from "@/lib/utils";
-import type { AuditLogDTO } from "@/lib/types";
+import { AUDIT_ACTION_META, AUDIT_ACTIONS, AUDIT_ENTITIES } from "@/lib/constants";
+import type { AuditLogDTO, MemberDTO } from "@/lib/types";
 
-const FILTERS = [{ key: "", label: "All" }, ...AUDIT_ENTITIES.map((e) => ({ key: e, label: e.charAt(0).toUpperCase() + e.slice(1) }))];
+type Filters = { entity: string; action: string; actorId: string };
+const NO_FILTERS: Filters = { entity: "", action: "", actorId: "" };
+
+const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
 export default function AuditLogPage() {
   const me = useSession();
-  const [entity, setEntity] = useState("");
-  const url = `/api/audit${entity ? `?entity=${entity}` : ""}`;
-  const { data, loading, error, refresh } = useApi<{ entries: AuditLogDTO[] }>(me.role === "admin" ? url : null);
+  const isAdmin = me.role === "admin";
+  const [filters, setFilters] = useState<Filters>(NO_FILTERS);
+  const query = new URLSearchParams(Object.entries(filters).filter(([, v]) => v)).toString();
+  const { data, loading, error, refresh } = useApi<{ entries: AuditLogDTO[] }>(isAdmin ? `/api/audit${query ? `?${query}` : ""}` : null);
+  const team = useApi<{ members: MemberDTO[] }>(isAdmin ? "/api/members" : null);
+
+  const entries = data?.entries ?? [];
+  const filtered = query !== "";
+  const set = (key: keyof Filters) => (e: React.ChangeEvent<HTMLSelectElement>) => setFilters((f) => ({ ...f, [key]: e.target.value }));
 
   return (
     <>
-      <PageHeader>
-        <nav className="flex items-center gap-1.5 text-[13px] text-muted">
-          <span>Settings</span>
-          <span className="text-faint">/</span>
-          <span className="font-display text-[20px] font-bold tracking-tight text-ink">Audit log</span>
-        </nav>
-      </PageHeader>
+      <SettingsHeader title="Audit log" />
 
-      <SettingsTabs />
+      {!isAdmin ? (
+        <AdminOnly description="The workspace audit log is visible to admins." />
+      ) : (
+        <>
+          <Panel aria-label="Filter the audit log">
+            <div className="flex flex-wrap items-end gap-3">
+              <Field label="Record" className="w-full sm:w-44">
+                <Select value={filters.entity} onChange={set("entity")}>
+                  <option value="">All records</option>
+                  {AUDIT_ENTITIES.map((e) => (
+                    <option key={e} value={e}>{capitalize(e)}</option>
+                  ))}
+                </Select>
+              </Field>
+              <Field label="Change" className="w-full sm:w-44">
+                <Select value={filters.action} onChange={set("action")}>
+                  <option value="">All changes</option>
+                  {AUDIT_ACTIONS.map((a) => (
+                    <option key={a} value={a}>{AUDIT_ACTION_META[a].label}</option>
+                  ))}
+                </Select>
+              </Field>
+              <Field label="Person" className="w-full sm:w-52">
+                <Select value={filters.actorId} onChange={set("actorId")}>
+                  <option value="">Everyone</option>
+                  {(team.data?.members ?? []).map((m) => (
+                    <option key={m.id} value={m.id}>{m.name}</option>
+                  ))}
+                </Select>
+              </Field>
+              {filtered && (
+                <Button type="button" variant="ghost" onClick={() => setFilters(NO_FILTERS)}>
+                  Clear filters
+                </Button>
+              )}
+            </div>
+          </Panel>
 
-      <div className="px-6 py-6 lg:px-8">
-        <div className="mx-auto max-w-[820px]">
-          {me.role !== "admin" ? (
-            <EmptyState icon={<ScrollText className="size-6" />} title="Admins only" description="The workspace audit log is visible to admins." />
-          ) : (
-            <>
-              <div className="mb-5 flex flex-wrap items-center gap-1.5">
-                {FILTERS.map((f) => (
-                  <button
-                    key={f.key}
-                    onClick={() => setEntity(f.key)}
-                    className={cn(
-                      "rounded-full border px-3 py-1.5 text-[12.5px] font-semibold transition-all",
-                      entity === f.key ? "border-violet-300 bg-violet-50 text-violet-700" : "border-line bg-paper text-muted hover:border-line-strong hover:text-ink",
-                    )}
-                  >
-                    {f.label}
-                  </button>
-                ))}
-              </div>
+          <Panel title="Workspace log" meta={loading ? undefined : entries.length} actions={<span>Newest first</span>} ruled>
+            <div className="pt-4">
               {error ? (
                 <ErrorState message={error} onRetry={refresh} />
               ) : loading ? (
-                <PageLoader label="Loading audit log…" />
-              ) : (data?.entries ?? []).length === 0 ? (
-                <EmptyState icon={<ScrollText className="size-6" />} title="No activity yet" description="Changes across the workspace will be recorded here." />
+                <div className="space-y-4" aria-busy="true" aria-label="Loading audit log">
+                  {[0, 1, 2, 3].map((i) => (
+                    <div key={i} className="flex gap-3">
+                      <Skeleton className="size-7 shrink-0 rounded-full" />
+                      <div className="flex-1 space-y-2">
+                        <Skeleton className="h-4 w-1/3" />
+                        <Skeleton className="h-3.5 w-1/2" />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : entries.length === 0 ? (
+                <EmptyState
+                  icon={<ScrollText className="size-6" strokeWidth={1.5} aria-hidden />}
+                  title={filtered ? "Nothing matches these filters" : "No activity yet"}
+                  description={filtered ? "Try a different record, change or person." : "Changes across the workspace are recorded here."}
+                />
               ) : (
-                <Card className="p-6">
-                  <AuditTimeline entries={data?.entries ?? []} showEntity />
-                </Card>
+                <AuditTimeline entries={entries} showEntity />
               )}
-            </>
-          )}
-        </div>
-      </div>
+            </div>
+          </Panel>
+        </>
+      )}
     </>
   );
 }

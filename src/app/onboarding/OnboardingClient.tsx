@@ -2,9 +2,10 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowRight, Check, Plus } from "lucide-react";
-import { Logo } from "@/components/ui/Misc";
 import { Button } from "@/components/ui/Button";
 import { Input, Field } from "@/components/ui/Field";
+import { Logo } from "@/components/ui/Misc";
+import { Panel } from "@/components/ui/Panel";
 import { useToast } from "@/components/ui/Toast";
 import { api } from "@/lib/client";
 import { cn } from "@/lib/utils";
@@ -40,72 +41,57 @@ export function OnboardingClient({ firstName }: { firstName: string }) {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-canvas px-5 py-10">
-      <div className="w-full max-w-xl animate-fade-up">
-        <div className="mb-8 flex justify-center">
-          <Logo size={30} withWordmark />
-        </div>
+    <div className="flex min-h-dvh flex-col items-center justify-center gap-6 px-3 py-10">
+      <Logo size={30} withWordmark />
 
-        <div className="overflow-hidden rounded-[var(--radius-xl)] border border-line bg-paper shadow-[var(--shadow-card)]">
-          <div className="px-8 pt-8">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-faint">Step 1 of 3</p>
-            <div className="mt-2.5 flex gap-1.5">
-              <span className="h-1.5 flex-1 rounded-full brand-gradient" />
-              <span className="h-1.5 flex-1 rounded-full bg-line" />
-              <span className="h-1.5 flex-1 rounded-full bg-line" />
-            </div>
+      <Panel as="main" className="w-full max-w-[560px] animate-rise md:px-10 md:py-9">
+        <form onSubmit={create}>
+          <h1 className="text-[24px] font-semibold leading-tight tracking-[-0.01em] text-ink-1 md:text-[28px]">
+            Welcome{firstName ? `, ${firstName}` : ""}. Let&apos;s set up your book.
+          </h1>
+          <p className="mt-2 text-ink-2">Name your workspace and you get a working pipeline straight away.</p>
+
+          <div className="mt-7 space-y-6 border-t border-line-strong pt-6">
+            <Field label="What's your business called?" required>
+              <Input autoFocus placeholder="e.g. Acme Logistics" value={name} onChange={(e) => setName(e.target.value)} className="h-11 text-[15px]" />
+            </Field>
+
+            <fieldset>
+              <legend className="mb-2 text-[12px] font-medium text-ink-2">
+                What do you mostly do? <span className="font-normal text-ink-3">Optional</span>
+              </legend>
+              <div className="flex flex-wrap gap-2">
+                {FOCUSES.map((f) => {
+                  const active = focuses.includes(f);
+                  const Icon = active ? Check : Plus;
+                  return (
+                    <button
+                      type="button"
+                      key={f}
+                      aria-pressed={active}
+                      onClick={() => toggle(f)}
+                      className={cn(
+                        "inline-flex h-[34px] items-center gap-1.5 rounded-full border px-3.5 text-[13px] font-medium transition-colors",
+                        active ? "border-accent bg-accent-tint text-accent" : "border-line-strong bg-control text-ink-2 hover:text-ink-1",
+                      )}
+                    >
+                      <Icon className="size-4" strokeWidth={1.5} aria-hidden />
+                      {f}
+                    </button>
+                  );
+                })}
+              </div>
+            </fieldset>
           </div>
 
-          <form onSubmit={create} className="px-8 pb-8 pt-6">
-            <h1 className="font-display text-[27px] font-bold leading-tight tracking-tight text-ink">
-              Welcome{firstName ? `, ${firstName}` : ""} — let&apos;s set up your book 📒
-            </h1>
-            <p className="mt-2 text-[14px] leading-relaxed text-muted">
-              No jargon, no empty dashboards. Answer one thing and we&apos;ll get you a working pipeline.
-            </p>
-
-            <div className="mt-7 space-y-5">
-              <Field label="What's your business called?" required>
-                <Input autoFocus placeholder="e.g. Acme Logistics" value={name} onChange={(e) => setName(e.target.value)} className="h-12 text-[15px]" />
-              </Field>
-
-              <div>
-                <p className="mb-2 text-[12.5px] font-semibold text-ink-soft">
-                  What do you mostly do? <span className="font-normal text-faint">(optional)</span>
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  {FOCUSES.map((f) => {
-                    const active = focuses.includes(f);
-                    return (
-                      <button
-                        type="button"
-                        key={f}
-                        onClick={() => toggle(f)}
-                        className={cn(
-                          "inline-flex items-center gap-1.5 rounded-full border px-3.5 py-2 text-[13px] font-medium transition-all",
-                          active
-                            ? "border-violet-300 bg-violet-50 text-violet-700"
-                            : "border-line-strong bg-paper text-ink-soft hover:border-faint",
-                        )}
-                      >
-                        {active ? <Check className="size-3.5" /> : <Plus className="size-3.5 opacity-50" />}
-                        {f}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-8 flex items-center gap-4">
-              <Button type="submit" variant="primary" size="lg" loading={busy}>
-                Create my workspace <ArrowRight className="size-4" />
-              </Button>
-              <span className="text-[12.5px] text-faint">takes 10 seconds</span>
-            </div>
-          </form>
-        </div>
-      </div>
+          <div className="mt-8 flex flex-wrap items-center gap-x-4 gap-y-2">
+            <Button type="submit" variant="primary" size="lg" loading={busy}>
+              Create my workspace <ArrowRight className="size-4" strokeWidth={1.5} aria-hidden />
+            </Button>
+            <span className="text-[13px] text-ink-3">Takes about ten seconds</span>
+          </div>
+        </form>
+      </Panel>
     </div>
   );
 }
