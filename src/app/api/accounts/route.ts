@@ -4,11 +4,14 @@ import { connectDB } from "@/lib/db";
 import { Account, Contact, type IAccount, type IContact } from "@/lib/models";
 import { requireUser } from "@/lib/auth/server";
 import { accountScope } from "@/lib/rbac";
-import { ownerNameMap, audit } from "@/lib/services";
+import { ownerNameMap, audit, accountFinances } from "@/lib/services";
 import { ACCOUNT_STATUSES } from "@/lib/constants";
+import type { AccountListFinance, AccountListItem } from "@/lib/types";
 import { Types } from "mongoose";
 
-// GET /api/accounts — list with primary contact + contact counts.
+const NO_FINANCE: AccountListFinance = { billed: 0, paid: 0, outstanding: 0, expenses: 0, margin: 0, overdue: 0 };
+
+// GET /api/accounts — list with primary contact, contact counts and a money rollup per row.
 export const GET = route(async (req: NextRequest) => {
   const user = await requireUser();
   await connectDB();
@@ -27,13 +30,14 @@ export const GET = route(async (req: NextRequest) => {
     .map((a) => a.primaryContactId)
     .filter((x): x is NonNullable<typeof x> => Boolean(x));
 
-  const [primaryContacts, counts, names] = await Promise.all([
+  const [primaryContacts, counts, names, finances] = await Promise.all([
     Contact.find({ _id: { $in: primaryIds }, deletedAt: null }).lean<IContact[]>(),
     Contact.aggregate<{ _id: Types.ObjectId; n: number }>([
       { $match: { accountId: { $in: accIds }, deletedAt: null } },
       { $group: { _id: "$accountId", n: { $sum: 1 } } },
     ]),
     ownerNameMap(accounts.map((a) => a.ownerId)),
+    accountFinances(accIds),
   ]);
 
   const pcMap = new Map(primaryContacts.map((c) => [String(c._id), c]));
@@ -49,16 +53,16 @@ export const GET = route(async (req: NextRequest) => {
     archived: await Account.countDocuments(accountScope(user, { archived: true })),
   };
 
-  return ok({
-    accounts: accounts.map((a) =>
-      serializeAccount(a, {
-        ownerName: names.get(String(a.ownerId)) ?? "",
-        primaryContact: a.primaryContactId ? pcMap.get(String(a.primaryContactId)) ?? null : null,
-        contactCount: countMap.get(String(a._id)) ?? 0,
-      }),
-    ),
-    tabCounts,
-  });
+  const rows: AccountListItem[] = accounts.map((a) => ({
+    ...serializeAccount(a, {
+      ownerName: names.get(String(a.ownerId)) ?? "",
+      primaryContact: a.primaryContactId ? pcMap.get(String(a.primaryContactId)) ?? null : null,
+      contactCount: countMap.get(String(a._id)) ?? 0,
+    }),
+    finance: finances.get(String(a._id)) ?? NO_FINANCE,
+  }));
+
+  return ok({ accounts: rows, tabCounts });
 });
 
 // POST /api/accounts — create an account directly (with optional primary contact).

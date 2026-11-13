@@ -15,12 +15,15 @@ async function load(scope: Record<string, unknown>, id: string) {
   return acc;
 }
 
-// GET /api/accounts/:id — account + finance summary.
+// GET /api/accounts/:id — account + finance summary. An archived account still
+// resolves (with `deletedAt` set) so its page can offer Restore.
 export const GET = route(async (_req: NextRequest, ctx: Ctx) => {
   const user = await requireUser();
   await connectDB();
   const { id } = await ctx.params;
-  const acc = await load(accountScope(user), id);
+  const acc =
+    (await Account.findOne({ _id: id, ...accountScope(user) }).lean<IAccount>()) ??
+    (await load(accountScope(user, { archived: true }), id));
 
   const [finance, primary, contactCount, names] = await Promise.all([
     accountFinance(acc._id),

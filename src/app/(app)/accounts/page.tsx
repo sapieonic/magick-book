@@ -1,125 +1,111 @@
 "use client";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
-import { Search, Plus, Building2, RotateCcw, Archive, X } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Archive, Building2, Plus, Search, X } from "lucide-react";
+import { Page } from "@/components/layout/Page";
 import { PageHeader } from "@/components/layout/PageHeader";
+import { AccountsTable, ACCOUNT_SORT } from "@/components/accounts/AccountsTable";
 import { NewAccountModal } from "@/components/accounts/AccountModals";
-import { Avatar } from "@/components/ui/Avatar";
-import { Badge } from "@/components/ui/Badge";
+import { RowsSkeleton } from "@/components/accounts/parts";
 import { Button } from "@/components/ui/Button";
-import { Card, PageLoader, ErrorState, EmptyState } from "@/components/ui/Misc";
-import { useToast } from "@/components/ui/Toast";
+import { Input, Select } from "@/components/ui/Field";
+import { EmptyState, ErrorState, Skeleton } from "@/components/ui/Misc";
+import { Money } from "@/components/ui/Money";
+import { Portal } from "@/components/ui/Overlay";
+import { Panel } from "@/components/ui/Panel";
+import { SegmentedControl } from "@/components/ui/SegmentedControl";
+import { Pagination, sortRows, usePagination, useSort } from "@/components/ui/Table";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
-import { Time } from "@/components/ui/Time";
-import { SortHeader, useSort, sortRows, usePagination, Pagination } from "@/components/ui/Table";
+import { useToast } from "@/components/ui/Toast";
 import { api, useApi } from "@/lib/client";
-import { ACCOUNT_STATUS_META } from "@/lib/constants";
-import { formatINRCompact, cn } from "@/lib/utils";
-import type { AccountDTO } from "@/lib/types";
+import type { AccountListItem } from "@/lib/types";
+
+type View = "all" | "active" | "at_risk" | "churned" | "archived";
 
 interface AccountsResponse {
-  accounts: AccountDTO[];
-  tabCounts: { all: number; active: number; at_risk: number; churned: number; archived: number };
+  accounts: AccountListItem[];
+  tabCounts: Record<Exclude<View, "all">, number> & { all: number };
 }
 
-const TABS = [
-  { key: "", label: "All", countKey: "all" },
-  { key: "active", label: "Active", countKey: "active" },
-  { key: "at_risk", label: "At risk", countKey: "at_risk" },
-  { key: "churned", label: "Churned", countKey: "churned" },
-  { key: "archived", label: "Archived", countKey: "archived" },
-] as const;
+const VIEWS: { value: View; label: string }[] = [
+  { value: "all", label: "All" },
+  { value: "active", label: "Active" },
+  { value: "at_risk", label: "At risk" },
+  { value: "churned", label: "Churned" },
+  { value: "archived", label: "Archived" },
+];
 
-const SORT_ACCESSORS: Record<string, (a: AccountDTO) => string | number | null | undefined> = {
-  name: (a) => a.name.toLowerCase(),
-  contacts: (a) => a.contactCount,
-  value: (a) => a.value,
-  status: (a) => ACCOUNT_STATUS_META[a.status].label.toLowerCase(),
-  lastActivity: (a) => (a.lastActivityAt ? new Date(a.lastActivityAt).getTime() : null),
-};
-
-const EMPTY_COPY: Record<string, { title: string; description: string }> = {
-  active: { title: "No active accounts", description: "Accounts in good standing will show up here." },
-  at_risk: { title: "No at-risk accounts", description: "Accounts flagged as at risk will appear here." },
-  churned: { title: "No churned accounts", description: "Accounts that have churned will be listed here." },
+const EMPTY: Record<View, { title: string; description: string }> = {
+  all: { title: "No accounts yet", description: "Convert a won lead, or create an account directly." },
+  active: { title: "No active accounts", description: "Accounts in good standing show up here." },
+  at_risk: { title: "No accounts at risk", description: "Accounts flagged as at risk show up here." },
+  churned: { title: "No churned accounts", description: "Accounts that have churned are listed here." },
+  archived: { title: "Nothing archived", description: "Accounts you archive show up here and can be restored." },
 };
 
 export default function AccountsPage() {
-  const router = useRouter();
   const { toast } = useToast();
   const confirm = useConfirm();
-  const [status, setStatus] = useState("");
+  const [view, setView] = useState<View>("all");
   const [q, setQ] = useState("");
+  const [owner, setOwner] = useState("");
   const [creating, setCreating] = useState(false);
   const [restoringId, setRestoringId] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [archiving, setArchiving] = useState(false);
 
-  const archivedView = status === "archived";
+  const archived = view === "archived";
   const params = new URLSearchParams();
-  if (archivedView) params.set("archived", "1");
-  else if (status) params.set("status", status);
+  if (archived) params.set("archived", "1");
+  else if (view !== "all") params.set("status", view);
   if (q.trim()) params.set("q", q.trim());
-  const url = `/api/accounts${params.toString() ? `?${params}` : ""}`;
-  const { data, loading, error, refresh } = useApi<AccountsResponse>(url);
-  const accounts = data?.accounts ?? [];
+  const qs = params.toString();
+  const { data, error, refresh } = useApi<AccountsResponse>(`/api/accounts${qs ? `?${qs}` : ""}`);
+
+  const accounts = useMemo(() => data?.accounts ?? [], [data]);
+  const owners = useMemo(() => {
+    const byId = new Map(accounts.map((a) => [a.ownerId, a.ownerName || "No owner"]));
+    return [...byId].sort((a, b) => a[1].localeCompare(b[1]));
+  }, [accounts]);
+  const visible = useMemo(() => (owner ? accounts.filter((a) => a.ownerId === owner) : accounts), [accounts, owner]);
 
   const { sort, toggle } = useSort();
-  const sorted = useMemo(() => sortRows(accounts, sort, SORT_ACCESSORS), [accounts, sort.key, sort.dir]);
+  const sorted = useMemo(() => sortRows(visible, sort, ACCOUNT_SORT), [visible, sort]);
   const { page, setPage, pageCount, pageRows, total, pageSize } = usePagination(sorted, 25);
+  useEffect(() => setPage(1), [sort, q, view, owner, setPage]);
 
-  // Re-sorting or re-filtering should return to the first page.
-  useEffect(() => setPage(1), [sort.key, sort.dir, q, status, setPage]);
-
-  // Drop selections that no longer exist after a refresh/search (e.g. archived rows).
+  // Drop selections that disappeared after a refresh, search or filter.
   useEffect(() => {
     setSelected((prev) => {
-      const valid = new Set(accounts.map((a) => a.id));
-      let changed = false;
-      const next = new Set<string>();
-      for (const id of prev) {
-        if (valid.has(id)) next.add(id);
-        else changed = true;
-      }
-      return changed ? next : prev;
+      const live = new Set(visible.map((a) => a.id));
+      const next = new Set([...prev].filter((id) => live.has(id)));
+      return next.size === prev.size ? prev : next;
     });
-  }, [accounts]);
+  }, [visible]);
 
-  const pageIds = pageRows.map((a) => a.id);
-  const allSelected = pageIds.length > 0 && pageIds.every((id) => selected.has(id));
-  const someSelected = pageIds.some((id) => selected.has(id));
-  const selectAllRef = useRef<HTMLInputElement>(null);
-  useEffect(() => {
-    if (selectAllRef.current) selectAllRef.current.indeterminate = !allSelected && someSelected;
-  }, [allSelected, someSelected]);
+  const selection = {
+    ids: selected,
+    toggle: (id: string) =>
+      setSelected((prev) => {
+        const next = new Set(prev);
+        if (!next.delete(id)) next.add(id);
+        return next;
+      }),
+    set: (ids: string[], on: boolean) =>
+      setSelected((prev) => {
+        const next = new Set(prev);
+        for (const id of ids) {
+          if (on) next.add(id);
+          else next.delete(id);
+        }
+        return next;
+      }),
+  };
 
-  function clearSelection() {
-    setSelected(new Set());
-  }
-
-  function toggleRow(id: string) {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }
-
-  function toggleAll() {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (allSelected) pageIds.forEach((id) => next.delete(id));
-      else pageIds.forEach((id) => next.add(id));
-      return next;
-    });
-  }
-
-  async function restore(id: string, name: string) {
-    setRestoringId(id);
+  async function restore(a: AccountListItem) {
+    setRestoringId(a.id);
     try {
-      await api.patch(`/api/accounts/${id}`, { action: "restore" });
-      toast(`${name} restored.`, "success");
+      await api.patch(`/api/accounts/${a.id}`, { action: "restore" });
+      toast(`${a.name} restored.`, "success");
       refresh();
     } catch (e) {
       toast(e instanceof Error ? e.message : "Could not restore", "error");
@@ -130,211 +116,188 @@ export default function AccountsPage() {
 
   async function bulkArchive() {
     const ids = [...selected];
-    if (ids.length === 0) return;
+    const noun = ids.length === 1 ? "account" : "accounts";
     const ok = await confirm({
-      title: `Archive ${ids.length} ${ids.length === 1 ? "account" : "accounts"}?`,
-      description: "They will be hidden from the active lists. You can restore them anytime from the Archived view.",
+      title: `Archive ${ids.length} ${noun}?`,
+      description: "They leave the active lists. Restore them any time from Archived.",
       confirmLabel: "Archive",
       tone: "danger",
     });
     if (!ok) return;
     setArchiving(true);
-    try {
-      // allSettled so one failure doesn't strand the rest — some may have archived server-side.
-      const results = await Promise.allSettled(ids.map((id) => api.delete(`/api/accounts/${id}`)));
-      const failed = results.filter((r) => r.status === "rejected").length;
-      const done = ids.length - failed;
-      if (done > 0) toast(`${done} ${done === 1 ? "account" : "accounts"} archived.`, "success");
-      if (failed > 0) toast(`${failed} couldn't be archived — try again.`, "error");
-    } finally {
-      // Always reconcile so the UI matches the server, regardless of partial failure.
-      clearSelection();
-      refresh();
-      setArchiving(false);
-    }
+    // allSettled: one failure must not strand the rest, some may already be archived server-side.
+    const results = await Promise.allSettled(ids.map((id) => api.delete(`/api/accounts/${id}`)));
+    const failed = results.filter((r) => r.status === "rejected").length;
+    const done = ids.length - failed;
+    if (done > 0) toast(`${done} ${done === 1 ? "account" : "accounts"} archived.`, "success");
+    if (failed > 0) toast(`${failed} could not be archived. Try again.`, "error");
+    setSelected(new Set());
+    setArchiving(false);
+    refresh();
   }
 
-  const emptyCopy = EMPTY_COPY[status];
+  const filtering = Boolean(q.trim() || owner);
+  const counts = data?.tabCounts;
 
   return (
-    <>
-      <PageHeader>
-        <h1 className="font-display text-[22px] font-bold tracking-tight text-ink">Accounts</h1>
+    <Page>
+      <PageHeader
+        title="Accounts"
+        actions={
+          <Button onClick={() => setCreating(true)}>
+            <Plus className="size-4" strokeWidth={1.5} aria-hidden /> New account
+          </Button>
+        }
+      />
 
-        <div className="ml-2 hidden items-center gap-1 md:flex">
-          {TABS.map((t) => (
-            <button
-              key={t.key}
-              onClick={() => { setStatus(t.key); clearSelection(); }}
-              className={cn(
-                "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[12.5px] font-semibold transition-all",
-                status === t.key ? "border-violet-300 bg-violet-50 text-violet-700" : "border-line bg-paper text-muted hover:border-line-strong hover:text-ink",
-              )}
-            >
-              {t.label}
-              <span className="text-faint tnum">{data?.tabCounts[t.countKey] ?? 0}</span>
-            </button>
-          ))}
+      <Summary rows={data ? visible : null} archived={archived} />
+
+      <Panel aria-label="Accounts ledger">
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <div className="max-w-full overflow-x-auto">
+            <SegmentedControl
+              aria-label="Show"
+              value={view}
+              onChange={(v) => {
+                setView(v);
+                setSelected(new Set());
+              }}
+              options={VIEWS.map((v) => ({
+                value: v.value,
+                label: (
+                  <>
+                    {v.label}
+                    {counts && <span className="tnum font-normal text-ink-3">{counts[v.value]}</span>}
+                  </>
+                ),
+              }))}
+            />
+          </div>
+          <div className="relative min-w-40 flex-1 sm:max-w-64">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-ink-3" strokeWidth={1.5} aria-hidden />
+            <Input type="search" aria-label="Filter accounts by name" placeholder="Filter by name" value={q} onChange={(e) => setQ(e.target.value)} className="pl-8" />
+          </div>
+          {(owners.length > 1 || owner) && (
+            <Select aria-label="Owner" value={owner} onChange={(e) => setOwner(e.target.value)} className="w-auto min-w-36">
+              <option value="">All owners</option>
+              {owners.map(([id, name]) => (
+                <option key={id} value={id}>
+                  {name}
+                </option>
+              ))}
+            </Select>
+          )}
         </div>
 
-        <div className="relative ml-auto hidden max-w-xs flex-1 sm:block">
-          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-faint" />
-          <input
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="Search accounts"
-            className="h-10 w-full rounded-[var(--radius-md)] border border-line bg-paper pl-9 pr-3 text-[13.5px] text-ink placeholder:text-faint focus:border-violet-400 focus:outline-none focus:ring-4 focus:ring-violet-100"
-          />
-        </div>
-
-        <Button variant="primary" onClick={() => setCreating(true)} className="ml-auto sm:ml-0">
-          <Plus className="size-4" /> New account
-        </Button>
-      </PageHeader>
-
-      <div className="px-6 py-6 lg:px-8">
         {error ? (
           <ErrorState message={error} onRetry={refresh} />
-        ) : loading ? (
-          <PageLoader label="Loading accounts…" />
-        ) : accounts.length === 0 ? (
-          archivedView ? (
+        ) : !data ? (
+          <RowsSkeleton rows={6} label="Loading accounts" />
+        ) : visible.length === 0 ? (
+          filtering ? (
             <EmptyState
-              icon={<Building2 className="size-6" />}
-              title="Nothing archived"
-              description="Accounts you archive will show up here and can be restored."
-            />
-          ) : q ? (
-            <EmptyState
-              icon={<Building2 className="size-6" />}
+              icon={<Building2 className="size-6" strokeWidth={1.5} />}
               title="No matching accounts"
-              description="Try a different search or filter."
+              description="Try a different name or owner."
+              action={
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    setQ("");
+                    setOwner("");
+                  }}
+                >
+                  Clear filters
+                </Button>
+              }
             />
-          ) : emptyCopy ? (
-            <EmptyState icon={<Building2 className="size-6" />} title={emptyCopy.title} description={emptyCopy.description} />
           ) : (
             <EmptyState
-              icon={<Building2 className="size-6" />}
-              title="No accounts yet"
-              description="Convert a won lead, or create an account directly."
-              action={<Button variant="primary" onClick={() => setCreating(true)}><Plus className="size-4" /> New account</Button>}
+              icon={<Building2 className="size-6" strokeWidth={1.5} />}
+              title={EMPTY[view].title}
+              description={EMPTY[view].description}
+              action={
+                view === "all" && (
+                  <Button variant="primary" onClick={() => setCreating(true)}>
+                    <Plus className="size-4" strokeWidth={1.5} aria-hidden /> New account
+                  </Button>
+                )
+              }
             />
           )
         ) : (
           <>
-            <Card className="overflow-hidden">
-              <div className="overflow-x-auto">
-              <table className="w-full min-w-[720px]">
-                <thead>
-                  <tr className="border-b border-line bg-canvas/60 text-left text-[11.5px] font-semibold uppercase tracking-wide text-muted">
-                    {!archivedView && (
-                      <th className="w-10 px-5 py-3">
-                        <input
-                          ref={selectAllRef}
-                          type="checkbox"
-                          aria-label="Select all accounts on this page"
-                          checked={allSelected}
-                          onChange={toggleAll}
-                          className="size-4 cursor-pointer rounded border-line-strong accent-violet-600"
-                        />
-                      </th>
-                    )}
-                    <th className="px-5 py-3"><SortHeader label="Account" sortKey="name" sort={sort} onToggle={toggle} /></th>
-                    <th className="px-5 py-3">Primary contact</th>
-                    <th className="px-5 py-3 text-center"><SortHeader label="Contacts" sortKey="contacts" sort={sort} onToggle={toggle} /></th>
-                    <th className="px-5 py-3 text-right"><SortHeader label="Value / MRR" sortKey="value" sort={sort} onToggle={toggle} align="right" /></th>
-                    <th className="px-5 py-3"><SortHeader label="Status" sortKey="status" sort={sort} onToggle={toggle} /></th>
-                    <th className="px-5 py-3 text-right">
-                      {archivedView ? "" : <SortHeader label="Last activity" sortKey="lastActivity" sort={sort} onToggle={toggle} align="right" />}
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-line">
-                  {pageRows.map((a) => {
-                    const meta = ACCOUNT_STATUS_META[a.status];
-                    const isSelected = selected.has(a.id);
-                    return (
-                      <tr
-                        key={a.id}
-                        onClick={() => !archivedView && router.push(`/accounts/${a.id}`)}
-                        className={cn(
-                          "transition-colors",
-                          archivedView ? "" : "cursor-pointer hover:bg-violet-50/40",
-                          isSelected && "bg-violet-50/60",
-                        )}
-                      >
-                        {!archivedView && (
-                          <td className="px-5 py-3.5" onClick={(e) => e.stopPropagation()}>
-                            <input
-                              type="checkbox"
-                              aria-label={`Select ${a.name}`}
-                              checked={isSelected}
-                              onChange={() => toggleRow(a.id)}
-                              className="size-4 cursor-pointer rounded border-line-strong accent-violet-600"
-                            />
-                          </td>
-                        )}
-                        <td className="px-5 py-3.5">
-                          <div className="flex items-center gap-3">
-                            <span className="flex size-8 items-center justify-center rounded-[var(--radius-sm)] bg-violet-50 text-violet-600">
-                              <Building2 className="size-4" />
-                            </span>
-                            <div>
-                              <p className="text-[13.5px] font-semibold text-ink">{a.name}</p>
-                              {a.domain && <p className="text-[11.5px] text-faint">{a.domain}</p>}
-                            </div>
-                          </div>
-                        </td>
-                        <td className="px-5 py-3.5 text-[13px] text-ink-soft">
-                          {a.primaryContact ? (
-                            <span className="inline-flex items-center gap-2">
-                              <Avatar name={a.primaryContact.name} size={22} /> {a.primaryContact.name}
-                            </span>
-                          ) : "—"}
-                        </td>
-                        <td className="px-5 py-3.5 text-center font-mono text-[13px] text-ink-soft tnum">{a.contactCount}</td>
-                        <td className="px-5 py-3.5 text-right font-mono text-[13px] font-semibold text-ink tnum">{a.value > 0 ? `${formatINRCompact(a.value)}/mo` : "—"}</td>
-                        <td className="px-5 py-3.5"><Badge tint={meta.tint}>{meta.label}</Badge></td>
-                        <td className="px-5 py-3.5 text-right">
-                          {archivedView ? (
-                            <Button
-                              size="sm"
-                              variant="secondary"
-                              loading={restoringId === a.id}
-                              onClick={(e) => { e.stopPropagation(); restore(a.id, a.name); }}
-                            >
-                              <RotateCcw className="size-3.5" /> Restore
-                            </Button>
-                          ) : (
-                            <Time value={a.lastActivityAt} className="text-[12.5px] text-faint" />
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-              </div>
-            </Card>
+            <AccountsTable
+              rows={pageRows}
+              all={sorted}
+              archived={archived}
+              sort={sort}
+              onSort={toggle}
+              selection={selection}
+              restoringId={restoringId}
+              onRestore={restore}
+            />
             <Pagination page={page} pageCount={pageCount} total={total} pageSize={pageSize} onPage={setPage} />
           </>
         )}
-      </div>
+      </Panel>
 
-      {!archivedView && selected.size > 0 && (
-        <div className="fixed inset-x-0 z-50 mx-auto flex w-fit items-center gap-3 rounded-full border border-line bg-paper px-4 py-2.5 shadow-[var(--shadow-pop)] bottom-[calc(5rem+env(safe-area-inset-bottom))] md:bottom-6">
-          <span className="text-[13px] font-semibold text-ink tnum">{selected.size} selected</span>
-          <span className="h-5 w-px bg-line" />
-          <Button size="sm" variant="danger" loading={archiving} onClick={bulkArchive}>
-            <Archive className="size-3.5" /> Archive
-          </Button>
-          <Button size="sm" variant="ghost" onClick={clearSelection}>
-            <X className="size-3.5" /> Clear
-          </Button>
-        </div>
+      {!archived && selected.size > 0 && (
+        <Portal>
+          <div
+            role="region"
+            aria-label="Bulk actions"
+            className="glass-pop fixed inset-x-0 bottom-[calc(5rem+env(safe-area-inset-bottom))] z-40 mx-auto flex w-fit items-center gap-3 rounded-full py-2 pl-4 pr-2 md:bottom-6"
+          >
+            <span className="tnum font-medium text-ink-1">{selected.size} selected</span>
+            <Button size="sm" variant="danger" loading={archiving} onClick={bulkArchive}>
+              <Archive className="size-3.5" strokeWidth={1.5} aria-hidden /> Archive
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>
+              <X className="size-3.5" strokeWidth={1.5} aria-hidden /> Clear
+            </Button>
+          </div>
+        </Portal>
       )}
 
-      <NewAccountModal open={creating} onClose={() => setCreating(false)} onCreated={() => refresh()} />
-    </>
+      {creating && <NewAccountModal onClose={() => setCreating(false)} onCreated={() => refresh()} />}
+    </Page>
+  );
+}
+
+/** One line over the ledger: how many accounts, their monthly value, and where the money stands. */
+function Summary({ rows, archived }: { rows: AccountListItem[] | null; archived: boolean }) {
+  if (!rows) {
+    return (
+      <Panel aria-label="Summary">
+        <Skeleton className="h-5 w-3/4" />
+      </Panel>
+    );
+  }
+  const sum = (pick: (a: AccountListItem) => number) => rows.reduce((s, a) => s + pick(a), 0);
+  const overdue = sum((a) => a.finance.overdue);
+  const overdueCount = rows.filter((a) => a.finance.overdue > 0).length;
+  const fig = "font-medium text-ink-1";
+  return (
+    <Panel aria-label="Summary">
+      <p className="text-[15px] text-ink-2">
+        <span className={fig}>
+          <span className="tnum">{rows.length}</span> {archived ? "archived " : ""}
+          {rows.length === 1 ? "account" : "accounts"}
+        </span>
+        {" worth "}
+        <Money value={sum((a) => a.value)} compact className={fig} /> a month · <Money value={sum((a) => a.finance.billed)} compact className={fig} />{" "}
+        billed · <Money value={sum((a) => a.finance.outstanding)} compact className={fig} /> outstanding
+        {overdue > 0 && (
+          <>
+            {", "}
+            <span className="font-medium text-overdue">
+              <Money value={overdue} compact /> overdue
+            </span>{" "}
+            across <span className="tnum">{overdueCount}</span> {overdueCount === 1 ? "account" : "accounts"}
+          </>
+        )}
+      </p>
+    </Panel>
   );
 }
