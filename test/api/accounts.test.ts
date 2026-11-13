@@ -217,6 +217,81 @@ describe("DELETE /api/accounts/:id soft-delete", () => {
   });
 });
 
+describe("an archived account's sub-resources", () => {
+  /** An archived account owned by `standard`, with one live child of each kind. */
+  async function archived() {
+    const acc = await makeAccount(standard, { name: "Gone", deletedAt: new Date(), deletedBy: standard._id });
+    const accountId = acc._id;
+    const [contact, invoice, expense, doc] = await Promise.all([
+      models.Contact.create({ workspaceId, accountId, name: "Asha" }),
+      models.Invoice.create({ workspaceId, accountId, number: 7, amount: 500, status: "sent" }),
+      models.Expense.create({ workspaceId, accountId, amount: 80, category: "Travel", vendor: "Uber" }),
+      models.Document.create({ workspaceId, accountId, kind: "proposal", title: "Pitch", fileKey: "k", fileName: "p.pdf", uploadedById: standard._id }),
+      models.Activity.create({ workspaceId, accountId, kind: "note", title: "Note added", detail: "hi" }),
+    ]);
+    return { id: String(accountId), contact, invoice, expense, doc };
+  }
+
+  async function reads(id: string) {
+    const req = (path: string) => jsonRequest(`/api/accounts/${id}/${path}`, "GET");
+    const res = await Promise.all([
+      contactsRoute.GET(req("contacts"), ctx({ id })),
+      invoicesRoute.GET(req("invoices"), ctx({ id })),
+      expensesRoute.GET(req("expenses"), ctx({ id })),
+      documentsRoute.GET(req("documents"), ctx({ id })),
+      activityRoute.GET(req("activity"), ctx({ id })),
+      accountAuditRoute.GET(req("audit"), ctx({ id })),
+    ]);
+    return res.map((r) => r.status);
+  }
+
+  it("stay readable for the owner and an admin", async () => {
+    const { id } = await archived();
+    session.user = standard;
+    expect(await reads(id)).toEqual([200, 200, 200, 200, 200, 200]);
+    session.user = admin;
+    expect(await reads(id)).toEqual([200, 200, 200, 200, 200, 200]);
+    const body = async (r: Promise<Response>) => r.then((x) => x.json());
+    const req = (path: string) => jsonRequest(`/api/accounts/${id}/${path}`, "GET");
+    expect((await body(contactsRoute.GET(req("contacts"), ctx({ id })))).contacts).toHaveLength(1);
+    expect((await body(invoicesRoute.GET(req("invoices"), ctx({ id })))).invoices).toHaveLength(1);
+    expect((await body(expensesRoute.GET(req("expenses"), ctx({ id })))).expenses).toHaveLength(1);
+    expect((await body(documentsRoute.GET(req("documents"), ctx({ id })))).documents).toHaveLength(1);
+    expect((await body(activityRoute.GET(req("activity"), ctx({ id })))).activities).toHaveLength(1);
+  });
+
+  it("404 for another standard user", async () => {
+    const { id } = await archived();
+    session.user = (await models.User.create({ workspaceId, name: "Other", email: "o@x.com", role: "standard", status: "active" })).toObject() as IUser;
+    expect(await reads(id)).toEqual([404, 404, 404, 404, 404, 404]);
+  });
+
+  it("refuse every write with a 404", async () => {
+    const { id, contact, expense, doc } = await archived();
+    session.user = standard;
+    const statuses = await Promise.all([
+      contactsRoute.POST(jsonRequest(`/api/accounts/${id}/contacts`, "POST", { name: "New" }), ctx({ id })),
+      contactIdRoute.PATCH(jsonRequest("/x", "PATCH", { name: "Renamed" }), ctx({ id, contactId: String(contact._id) })),
+      contactIdRoute.DELETE(jsonRequest("/x", "DELETE"), ctx({ id, contactId: String(contact._id) })),
+      invoicesRoute.POST(jsonRequest(`/api/accounts/${id}/invoices`, "POST", { amount: 100 }), ctx({ id })),
+      expensesRoute.POST(jsonRequest(`/api/accounts/${id}/expenses`, "POST", { amount: 100 }), ctx({ id })),
+      expenseIdRoute.PATCH(jsonRequest("/x", "PATCH", { amount: 90 }), ctx({ id, expenseId: String(expense._id) })),
+      expenseIdRoute.DELETE(jsonRequest("/x", "DELETE"), ctx({ id, expenseId: String(expense._id) })),
+      documentsRoute.POST(jsonRequest(`/api/accounts/${id}/documents`, "POST", {}), ctx({ id })),
+      documentIdRoute.DELETE(jsonRequest("/x", "DELETE"), ctx({ id, docId: String(doc._id) })),
+      activityRoute.POST(jsonRequest(`/api/accounts/${id}/activity`, "POST", { kind: "note", detail: "x" }), ctx({ id })),
+      accountIdRoute.PATCH(jsonRequest(`/api/accounts/${id}`, "PATCH", { name: "Back" }), ctx({ id })),
+    ]);
+    expect(statuses.map((r) => r.status)).toEqual(Array(11).fill(404));
+    expect(await models.Contact.countDocuments({ accountId: id, deletedAt: null })).toBe(1);
+    expect(await models.Expense.countDocuments({ accountId: id, deletedAt: null })).toBe(1);
+  });
+
+  it("404 on a malformed account id instead of a 500", async () => {
+    expect((await contactsRoute.GET(jsonRequest("/x", "GET"), ctx({ id: "nope" }))).status).toBe(404);
+  });
+});
+
 describe("contacts sub-route", () => {
   it("lists contacts primary-first and adds a contact", async () => {
     const acc = await makeAccount(admin);
@@ -379,11 +454,77 @@ describe("expense item route", () => {
     expect(entry!.changes.map((c) => c.field).sort()).toEqual(["amount", "billable", "category"]);
   });
 
-  it("rejects a non-positive amount and an unknown category", async () => {
+  it("logs the edit on the account timeline", async () => {
+    const { acc, exp, params } = await seed();
+    await expenseIdRoute.PATCH(jsonRequest(`/api/accounts/${acc._id}/expenses/${exp._id}`, "PATCH", { amount: 950 }), ctx(params));
+    const entry = await models.Activity.findOne({ accountId: acc._id, kind: "expense" }).lean();
+    expect(entry).toMatchObject({ title: "Travel expense edited", detail: "Uber · ₹950" });
+  });
+
+  it("rejects bad input without writing", async () => {
     const { acc, exp, params } = await seed();
     const url = `/api/accounts/${acc._id}/expenses/${exp._id}`;
-    expect((await expenseIdRoute.PATCH(jsonRequest(url, "PATCH", { amount: 0 }), ctx(params))).status).toBe(400);
-    expect((await expenseIdRoute.PATCH(jsonRequest(url, "PATCH", { category: "Nope" }), ctx(params))).status).toBe(400);
+    for (const body of [
+      { amount: 0 },
+      { amount: "Infinity" },
+      { category: "Nope" },
+      { date: null },
+      { date: "soon" },
+      { vendor: "x".repeat(201) },
+    ]) {
+      expect((await expenseIdRoute.PATCH(jsonRequest(url, "PATCH", body), ctx(params))).status).toBe(400);
+    }
+    expect((await models.Expense.findById(exp._id).lean())).toMatchObject({ amount: 800, category: "Travel", vendor: "Uber" });
+    expect(await models.AuditLog.countDocuments({ entity: "expense" })).toBe(0);
+  });
+
+  it("rejects an Infinity amount on create too", async () => {
+    const acc = await makeAccount(admin);
+    const res = await expensesRoute.POST(jsonRequest(`/api/accounts/${acc._id}/expenses`, "POST", { amount: "Infinity" }), ctx({ id: String(acc._id) }));
+    expect(res.status).toBe(400);
+  });
+
+  it("skips the write, the audit and the activity bump when nothing changed", async () => {
+    const { acc, exp, params } = await seed();
+    const before = new Date("2026-01-01T00:00:00.000Z");
+    await models.Account.updateOne({ _id: acc._id }, { lastActivityAt: before });
+    const res = await expenseIdRoute.PATCH(
+      jsonRequest(`/api/accounts/${acc._id}/expenses/${exp._id}`, "PATCH", { amount: 800, category: "Travel", vendor: " Uber " }),
+      ctx(params),
+    );
+    expect(res.status).toBe(200);
+    expect((await res.json()).expense).toMatchObject({ amount: 800, vendor: "Uber" });
+    expect((await models.Account.findById(acc._id).lean())!.lastActivityAt).toEqual(before);
+    expect(await models.AuditLog.countDocuments({ entity: "expense" })).toBe(0);
+    expect(await models.Activity.countDocuments({ accountId: acc._id })).toBe(0);
+  });
+
+  it("restores an archived expense back into the list, with audit and activity", async () => {
+    const { acc, exp, params } = await seed();
+    const url = `/api/accounts/${acc._id}/expenses/${exp._id}`;
+    await expenseIdRoute.DELETE(jsonRequest(url, "DELETE"), ctx(params));
+    const res = await expenseIdRoute.PATCH(jsonRequest(url, "PATCH", { action: "restore" }), ctx(params));
+    expect(res.status).toBe(200);
+    expect((await res.json()).expense.id).toBe(String(exp._id));
+    const fresh = await models.Expense.findById(exp._id).lean();
+    expect(fresh!.deletedAt ?? null).toBeNull();
+    expect(fresh!.deletedBy ?? null).toBeNull();
+    expect(await models.AuditLog.countDocuments({ entity: "expense", action: "restore", accountId: acc._id })).toBe(1);
+    const titles = (await models.Activity.find({ accountId: acc._id }).sort({ createdAt: 1 }).lean()).map((a) => a.title);
+    expect(titles).toEqual(["Travel expense removed", "Travel expense restored"]);
+    // Restoring a live expense finds nothing archived.
+    expect((await expenseIdRoute.PATCH(jsonRequest(url, "PATCH", { action: "restore" }), ctx(params))).status).toBe(404);
+  });
+
+  it("only lets the owner (or an admin) restore", async () => {
+    const { acc, exp, params } = await seed(standard);
+    await models.Expense.updateOne({ _id: exp._id }, { deletedAt: new Date() });
+    const other = (await models.User.create({ workspaceId, name: "Other", email: "o@x.com", role: "standard", status: "active" })).toObject() as IUser;
+    session.user = other;
+    const url = `/api/accounts/${acc._id}/expenses/${exp._id}`;
+    expect((await expenseIdRoute.PATCH(jsonRequest(url, "PATCH", { action: "restore" }), ctx(params))).status).toBe(404);
+    session.user = admin;
+    expect((await expenseIdRoute.PATCH(jsonRequest(url, "PATCH", { action: "restore" }), ctx(params))).status).toBe(200);
   });
 
   it("soft-deletes, drops out of the list and the finance rollup", async () => {
@@ -396,6 +537,7 @@ describe("expense item route", () => {
     const detail = await (await accountIdRoute.GET(jsonRequest(`/api/accounts/${acc._id}`, "GET"), ctx({ id: String(acc._id) }))).json();
     expect(detail.finance.expenses).toBe(0);
     expect(await models.AuditLog.countDocuments({ entity: "expense", action: "delete", accountId: acc._id })).toBe(1);
+    expect(await models.Activity.countDocuments({ accountId: acc._id, title: "Travel expense removed" })).toBe(1);
     // A second delete finds nothing live.
     expect((await expenseIdRoute.DELETE(jsonRequest(`/api/accounts/${acc._id}/expenses/${exp._id}`, "DELETE"), ctx(params))).status).toBe(404);
   });

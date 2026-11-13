@@ -4,24 +4,26 @@ import { LinkButton, buttonClasses } from "@/components/ui/Button";
 import { DatedList } from "@/components/ui/Misc";
 import { Panel } from "@/components/ui/Panel";
 import { DOCUMENT_KIND_META } from "@/lib/constants";
+import { shortDate } from "@/lib/dates";
 import { formatBytes } from "@/lib/utils";
 import type { ActivityDTO, ContactDTO, DocumentDTO, ReminderDTO } from "@/lib/types";
-import { shortDate } from "./statement";
 
 export const openDocument = (accountId: string, docId: string) =>
   window.open(`/api/accounts/${accountId}/documents/${docId}`, "_blank", "noopener");
 
 /** "Type · 412 KB · uploader · 12 May" under a document title. */
 export function documentMeta(d: DocumentDTO): string {
-  return [DOCUMENT_KIND_META[d.kind].label, formatBytes(d.fileSize), d.uploadedByName, shortDate(d.createdAt)].filter(Boolean).join(" · ");
+  return [DOCUMENT_KIND_META[d.kind].label, formatBytes(d.fileSize), d.uploadedByName, shortDate(d.createdAt, "auto")].filter(Boolean).join(" · ");
 }
 
 /** One-line summary of an activity entry; notes show their text. */
 const activityLine = (a: ActivityDTO) => (a.kind === "note" ? `Note: ${a.detail}` : a.detail ? `${a.title} · ${a.detail}` : a.title);
 
-export function PrimaryContactPanel({ contact, onAll, onAdd }: { contact: ContactDTO | null; onAll: () => void; onAdd: () => void }) {
+/* Rail panels: without `onAdd` / `onUpload` (an archived account) they only read. */
+
+export function PrimaryContactPanel({ contact, onAll, onAdd }: { contact: ContactDTO | null; onAll: () => void; onAdd?: () => void }) {
   return (
-    <Panel title="Primary contact" ruled actions={contact ? <LinkButton onClick={onAll}>All contacts</LinkButton> : <LinkButton onClick={onAdd}>Add</LinkButton>}>
+    <Panel title="Primary contact" ruled actions={contact ? <LinkButton onClick={onAll}>All contacts</LinkButton> : onAdd && <LinkButton onClick={onAdd}>Add</LinkButton>}>
       {contact ? (
         <>
           <div className="flex items-center gap-3 pb-2.5 pt-3">
@@ -56,9 +58,9 @@ export function PrimaryContactPanel({ contact, onAll, onAdd }: { contact: Contac
   );
 }
 
-export function DocumentsRailPanel({ accountId, documents, onUpload }: { accountId: string; documents: DocumentDTO[]; onUpload: () => void }) {
+export function DocumentsRailPanel({ accountId, documents, onUpload }: { accountId: string; documents: DocumentDTO[]; onUpload?: () => void }) {
   return (
-    <Panel title="Documents" ruled actions={<LinkButton onClick={onUpload}>Upload</LinkButton>}>
+    <Panel title="Documents" ruled actions={onUpload && <LinkButton onClick={onUpload}>Upload</LinkButton>}>
       {documents.length === 0 ? (
         <p className="py-[9px] text-[13px] text-ink-3">No proposals or agreements on file.</p>
       ) : (
@@ -77,12 +79,13 @@ export function DocumentsRailPanel({ accountId, documents, onUpload }: { account
   );
 }
 
-export function RemindersPanel({ reminders, onAdd }: { reminders: ReminderDTO[]; onAdd: () => void }) {
+/** Reminders are personal: this lists the viewer's own open reminders on the account. */
+export function RemindersPanel({ reminders, onAdd }: { reminders: ReminderDTO[]; onAdd?: () => void }) {
   return (
-    <Panel title="Reminders" ruled actions={<LinkButton onClick={onAdd}>Add</LinkButton>}>
+    <Panel title="Your reminders" meta="open" ruled actions={onAdd && <LinkButton onClick={onAdd}>Add</LinkButton>}>
       <DatedList
-        empty="Nothing scheduled."
-        items={reminders.map((r) => ({ key: r.id, date: shortDate(r.dueAt), text: r.title }))}
+        empty="You have no open reminders on this account."
+        items={reminders.map((r) => ({ key: r.id, date: shortDate(r.dueAt, "auto"), text: r.title }))}
       />
     </Panel>
   );
@@ -93,7 +96,7 @@ export function RecentActivityPanel({ activities, onAll }: { activities: Activit
     <Panel title="Recent activity" ruled actions={<LinkButton onClick={onAll}>All activity</LinkButton>}>
       <DatedList
         empty="No activity yet."
-        items={activities.slice(0, 5).map((a) => ({ key: a.id, date: shortDate(a.createdAt), text: activityLine(a) }))}
+        items={activities.slice(0, 5).map((a) => ({ key: a.id, date: shortDate(a.createdAt, "auto"), text: activityLine(a) }))}
       />
     </Panel>
   );

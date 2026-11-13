@@ -18,7 +18,6 @@ import { api, useApi } from "@/lib/client";
 import { ROLES, type Role } from "@/lib/constants";
 import type { MemberDTO } from "@/lib/types";
 
-
 const PERKS: Record<Role, [string, boolean][]> = {
   admin: [
     ["Sees and edits everything in the workspace", true],
@@ -130,7 +129,7 @@ export default function TeamPage() {
         </PageSplit>
       )}
 
-      <InviteModal open={inviting} onClose={() => setInviting(false)} onInvited={refresh} />
+      {inviting && <InviteModal onClose={() => setInviting(false)} onInvited={refresh} />}
     </>
   );
 }
@@ -162,7 +161,7 @@ function MemberRow({ m, busy, onRole, onRemove }: { m: MemberDTO; busy: boolean;
             {m.isOwner && <Tag>owner</Tag>}
           </span>
         ) : (
-          <div className="w-[150px]">
+          <div className="w-[150px] max-md:w-[124px]">
             <Select
               aria-label={`Role for ${m.name}`}
               value={m.role}

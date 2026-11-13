@@ -9,23 +9,29 @@ import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/Misc";
 import { Table, Th, Td, TwoLine } from "@/components/ui/Table";
 import { useToast } from "@/components/ui/Toast";
-import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { api } from "@/lib/client";
 import { STAGE_META } from "@/lib/constants";
 import { Staleness } from "@/components/ui/Staleness";
-import { differenceInUtcCalendarDays } from "@/lib/receivables";
+import { businessDay, calendarDaysBetween, dueWords } from "@/lib/dates";
 import { cn, plural } from "@/lib/utils";
-import { dueWords, tomorrowMorning } from "./format";
+import { useInvoiceActions } from "@/components/invoices/useInvoiceActions";
 import { NoteComposer } from "@/components/activity/NoteComposer";
 import { Modal } from "@/components/ui/Overlay";
 import type { WorkItem } from "@/lib/types";
 
+/** Rows the phone list shows before "Show N more". */
+const PHONE_LIMIT = 4;
+
 /** Follow-ups, due reminders and overdue invoices, oldest first, each with its next step. */
 export function WorkQueue({ items, now, onChanged }: { items: WorkItem[]; now: Date; onChanged: () => void }) {
   const [logging, setLogging] = useState<{ id: string; label: string } | null>(null);
+  const [showAll, setShowAll] = useState(false);
+  const invoices = useInvoiceActions(onChanged);
   const actions = (item: WorkItem, phone?: boolean) => (
-    <RowActions item={item} now={now} phone={phone} onChanged={onChanged} onLog={setLogging} />
+    <RowActions item={item} now={now} phone={phone} invoices={invoices} onChanged={onChanged} onLog={setLogging} />
   );
+  const phoneItems = showAll ? items : items.slice(0, PHONE_LIMIT);
+  const hidden = items.length - phoneItems.length;
 
   return (
     <Panel title="Work queue" meta={items.length || undefined} actions={items.length > 1 && <span className="text-ink-3">Oldest first</span>} ruled>
@@ -72,7 +78,7 @@ export function WorkQueue({ items, now, onChanged }: { items: WorkItem[]; now: D
           </Table>
 
           <ul className="md:hidden">
-            {items.map((item) => (
+            {phoneItems.map((item) => (
               <li key={item.id} className="border-b border-line py-3 last:border-b-0">
                 <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-0.5">
                   <span className="font-medium">
@@ -90,6 +96,11 @@ export function WorkQueue({ items, now, onChanged }: { items: WorkItem[]; now: D
               </li>
             ))}
           </ul>
+          {items.length > PHONE_LIMIT && (
+            <Button variant="ghost" className="mt-1 w-full md:hidden" aria-expanded={showAll} onClick={() => setShowAll((v) => !v)}>
+              {showAll ? "Show fewer" : `Show ${hidden} more`}
+            </Button>
+          )}
         </>
       )}
       <LogActivityModal lead={logging} onClose={() => setLogging(null)} onLogged={onChanged} />
@@ -132,7 +143,7 @@ function ItemContext({ item, now }: { item: WorkItem; now: Date }) {
   const parts: ReactNode[] = [];
   if (item.kind === "invoice") {
     parts.push(<span className="font-mono text-[13px]">Invoice #{item.invoiceNumber}</span>);
-    const late = item.dueAt ? differenceInUtcCalendarDays(now, new Date(item.dueAt)) : 0;
+    const late = item.dueAt ? calendarDaysBetween(now, item.dueAt) : 0;
     if (late > 0) parts.push(<span className="text-overdue">{plural(late, "day")} overdue</span>);
   } else {
     if (item.kind === "reminder" && item.name) parts.push(item.name);
@@ -162,27 +173,29 @@ interface Action {
   label: string;
   /** Accessible name when the visible label alone is ambiguous. */
   aria: string;
-  run: () => Promise<string | null | void>;
+  /** Resolves to a toast message, or nothing when the action toasts for itself. */
+  run: () => Promise<string | void>;
 }
 
-/** Inline next steps, backed by the leads, reminders and invoices APIs. */
+/** Inline next steps, backed by the leads and reminders APIs and the shared invoice actions. */
 function RowActions({
   item,
   now,
   phone,
+  invoices,
   onChanged,
   onLog,
 }: {
   item: WorkItem;
   now: Date;
   phone?: boolean;
+  invoices: ReturnType<typeof useInvoiceActions>;
   onChanged: () => void;
   onLog: (lead: { id: string; label: string }) => void;
 }) {
   const { toast } = useToast();
-  const confirm = useConfirm();
   const [busy, setBusy] = useState<string | null>(null);
-  const snoozeTo = tomorrowMorning(now).toISOString();
+  const snoozeTo = businessDay(now, 1, 9).toISOString();
 
   const list: Action[] = [];
   if (item.kind === "followup" && item.leadId) {
@@ -220,29 +233,12 @@ function RowActions({
         },
       },
     );
-  } else if (item.kind === "invoice" && item.invoiceId) {
-    const invoice = `invoice #${item.invoiceNumber}`;
+  } else if (item.kind === "invoice" && item.invoiceId && item.invoiceNumber != null) {
+    // The shared hook confirms, toasts and refreshes on its own.
+    const invoice = { id: item.invoiceId, number: item.invoiceNumber, amount: item.value };
     list.push(
-      {
-        key: "remind",
-        label: "Send reminder",
-        aria: `Send reminder for ${invoice}`,
-        run: async () => {
-          await api.patch(`/api/invoices/${item.invoiceId}`, { action: "remind" });
-          return `Payment reminder sent to ${item.name}.`;
-        },
-      },
-      {
-        key: "paid",
-        label: "Mark paid",
-        aria: `Mark paid: ${invoice}`,
-        run: async () => {
-          const yes = await confirm({ title: `Mark ${invoice} as paid?`, description: `Records the payment from ${item.name} today.`, confirmLabel: "Mark paid" });
-          if (!yes) return null;
-          await api.patch(`/api/invoices/${item.invoiceId}`, { status: "paid" });
-          return `Invoice #${item.invoiceNumber} marked paid.`;
-        },
-      },
+      { key: "remind", label: "Send reminder", aria: `Send reminder for invoice #${invoice.number}`, run: () => invoices.remind(invoice) },
+      { key: "paid", label: "Mark paid", aria: `Mark paid: invoice #${invoice.number}`, run: () => invoices.markPaid(invoice) },
     );
   }
 

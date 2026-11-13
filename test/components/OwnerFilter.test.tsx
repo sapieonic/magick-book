@@ -2,7 +2,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { OwnerFilter, type OwnerOption } from "@/components/ui/OwnerFilter";
+import { OwnerFilter } from "@/components/ui/OwnerFilter";
+import type { OwnerOption } from "@/lib/leadFilters";
 
 const owners: OwnerOption[] = [
   { id: "a", name: "Amit", count: 2 },
@@ -82,13 +83,22 @@ describe("OwnerFilter — popover open/close", () => {
     expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
   });
 
-  it("closes on Escape and restores aria-expanded", async () => {
+  it("closes on Escape, restores aria-expanded and returns focus to the trigger", async () => {
     const user = userEvent.setup();
     renderFilter();
     await open(user);
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
     expect(trigger()).toHaveAttribute("aria-expanded", "false");
+    expect(trigger()).toHaveFocus();
+  });
+
+  it("renders the popover in <body>, outside the panel that holds the trigger", async () => {
+    const user = userEvent.setup();
+    const { container } = renderFilter();
+    await open(user);
+    expect(container).not.toContainElement(screen.getByRole("listbox"));
+    expect(screen.getByRole("listbox").parentElement).toBe(document.body);
   });
 
   it("closes on an outside click", async () => {
@@ -246,26 +256,26 @@ describe("OwnerFilter — clearing", () => {
   });
 });
 
-describe("OwnerFilter — 'Only my leads' shortcut", () => {
+describe("OwnerFilter — 'Only mine' shortcut", () => {
   it("is hidden when no currentUserId is given", async () => {
     const user = userEvent.setup();
     renderFilter();
     await open(user);
-    expect(screen.queryByRole("button", { name: /Only my leads/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Only mine/i })).not.toBeInTheDocument();
   });
 
   it("is hidden when the current user owns no leads in the pool", async () => {
     const user = userEvent.setup();
     renderFilter({ currentUserId: "nobody" });
     await open(user);
-    expect(screen.queryByRole("button", { name: /Only my leads/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Only mine/i })).not.toBeInTheDocument();
   });
 
   it("selects only the current user when clicked", async () => {
     const user = userEvent.setup();
     const { onChange } = renderFilter({ currentUserId: "me" });
     await open(user);
-    await user.click(screen.getByRole("button", { name: /Only my leads/i }));
+    await user.click(screen.getByRole("button", { name: /Only mine/i }));
     expect(onChange).toHaveBeenCalledWith(["me"]);
   });
 
@@ -273,7 +283,7 @@ describe("OwnerFilter — 'Only my leads' shortcut", () => {
     const user = userEvent.setup();
     const { onChange } = renderFilter({ currentUserId: "me", value: ["me"] });
     await open(user);
-    await user.click(screen.getByRole("button", { name: /Only my leads/i }));
+    await user.click(screen.getByRole("button", { name: /Only mine/i }));
     expect(onChange).toHaveBeenCalledWith([]);
   });
 
@@ -282,7 +292,7 @@ describe("OwnerFilter — 'Only my leads' shortcut", () => {
     const { onChange } = renderFilter({ currentUserId: "me", value: ["a", "me"] });
     await open(user);
     // value is not exactly [me], so it is not considered "mine only" and re-selects me.
-    await user.click(screen.getByRole("button", { name: /Only my leads/i }));
+    await user.click(screen.getByRole("button", { name: /Only mine/i }));
     expect(onChange).toHaveBeenCalledWith(["me"]);
   });
 });

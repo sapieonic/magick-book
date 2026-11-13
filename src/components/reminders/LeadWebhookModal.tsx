@@ -30,7 +30,7 @@ export function LeadWebhookModal({
   async function remove() {
     try {
       await api.delete(`/api/reminders/settings?leadId=${leadId}`);
-      toast("Override removed — this lead uses your default webhook.", "info");
+      toast("Override removed. This lead uses your default webhook.", "info");
       onClose();
     } catch (e) {
       toast(e instanceof Error ? e.message : "Couldn't remove", "error");
@@ -38,7 +38,7 @@ export function LeadWebhookModal({
   }
 
   return (
-    <Modal open onClose={onClose} title="Webhook for this lead" subtitle={`Reminders on ${leadName} call this API instead of your default.`} size="md">
+    <Modal open onClose={onClose} title="Webhook for this lead" subtitle={`Reminders on ${leadName} call this API instead of your default.`}>
       {error ? (
         <ErrorState message={error} onRetry={refresh} />
       ) : loading || !data ? (
@@ -48,10 +48,7 @@ export function LeadWebhookModal({
           initial={data.setting}
           defaultTemplate={data.defaultTemplate}
           saveExtra={{ leadId }}
-          onSaved={() => {
-            toast("Lead webhook saved.", "success");
-            onClose();
-          }}
+          onSaved={onClose}
           onRemove={data.hasOverride ? remove : undefined}
         />
       )}

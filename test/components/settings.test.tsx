@@ -10,13 +10,21 @@ const H = vi.hoisted(() => ({
   responses: {} as Record<string, unknown>,
   api: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), put: vi.fn(), delete: vi.fn() },
   replace: vi.fn(),
+  search: "",
+  sessionUser: null as { role: "admin" | "standard" } | null,
+  redirect: vi.fn((url: string) => {
+    throw new Error(`redirect:${url}`);
+  }),
 }));
 
 vi.mock("next/navigation", () => ({
   usePathname: () => H.pathname,
-  useSearchParams: () => new URLSearchParams(),
+  useSearchParams: () => new URLSearchParams(H.search),
   useRouter: () => ({ replace: H.replace, refresh: vi.fn(), push: vi.fn(), prefetch: vi.fn() }),
+  redirect: H.redirect,
 }));
+
+vi.mock("@/lib/auth/server", () => ({ getSessionUser: async () => H.sessionUser }));
 
 vi.mock("@/components/layout/SessionContext", () => ({
   useSession: () => ({ id: "me", name: "Riya Nair", email: "riya@acme.in", role: H.role, status: "active", authProvider: "demo", workspaceId: "w1", workspaceName: "Acme" }),
@@ -38,6 +46,8 @@ import TeamPage from "@/app/(app)/settings/team/page";
 import AuditLogPage from "@/app/(app)/settings/audit/page";
 import { WebhookForm } from "@/components/reminders/WebhookForm";
 import { LoginClient } from "@/app/login/LoginClient";
+import { safeNextPath } from "@/app/login/next-path";
+import SettingsIndexPage from "@/app/(app)/settings/page";
 import { ToastProvider } from "@/components/ui/Toast";
 import { ConfirmProvider } from "@/components/ui/ConfirmDialog";
 
@@ -59,6 +69,18 @@ beforeEach(() => {
   H.responses = {};
   Object.values(H.api).forEach((f) => f.mockReset());
   H.replace.mockReset();
+  H.search = "";
+});
+
+describe("/settings", () => {
+  it("opens Team for admins and Categories for standard users", async () => {
+    H.sessionUser = { role: "admin" };
+    await expect(SettingsIndexPage()).rejects.toThrow("redirect:/settings/team");
+    H.sessionUser = { role: "standard" };
+    await expect(SettingsIndexPage()).rejects.toThrow("redirect:/settings/categories");
+    H.sessionUser = null;
+    await expect(SettingsIndexPage()).rejects.toThrow("redirect:/login");
+  });
 });
 
 describe("SettingsTabs", () => {
@@ -79,7 +101,7 @@ describe("Team page", () => {
   ];
 
   it("lets an admin change roles and remove others, never the owner", async () => {
-    H.responses["/api/members"] = { members, isAdmin: true };
+    H.responses["/api/members"] = { members };
     H.api.patch.mockResolvedValue({});
     H.api.delete.mockResolvedValue({});
     wrap(<TeamPage />);
@@ -96,9 +118,21 @@ describe("Team page", () => {
     await waitFor(() => expect(H.api.delete).toHaveBeenCalledWith("/api/members/karan"));
   });
 
+  it("opens the invite form blank again after a cancel", async () => {
+    H.responses["/api/members"] = { members };
+    wrap(<TeamPage />);
+    await userEvent.click(screen.getByRole("button", { name: "Invite" }));
+    await userEvent.type(screen.getByLabelText(/Work email/), "sam@acme.in");
+    await userEvent.click(screen.getByRole("radio", { name: /Admin/ }));
+    await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    await userEvent.click(screen.getByRole("button", { name: "Invite" }));
+    expect(screen.getByLabelText(/Work email/)).toHaveValue("");
+    expect(screen.getByRole("radio", { name: /Standard user/ })).toBeChecked();
+  });
+
   it("shows the admins-only state to a standard user", () => {
     H.role = "standard";
-    H.responses["/api/members"] = { members, isAdmin: false };
+    H.responses["/api/members"] = { members };
     wrap(<TeamPage />);
     expect(screen.getByText("Admins only")).toBeInTheDocument();
     expect(screen.queryByRole("table")).toBeNull();
@@ -115,7 +149,7 @@ describe("Audit log page", () => {
 
   it("offers record, change and person filters", () => {
     H.responses["/api/audit"] = { entries: [] };
-    H.responses["/api/members"] = { members: [member({ id: "karan", name: "Karan Rao" })], isAdmin: true };
+    H.responses["/api/members"] = { members: [member({ id: "karan", name: "Karan Rao" })] };
     wrap(<AuditLogPage />);
     expect(screen.getByLabelText("Record")).toBeInTheDocument();
     expect(screen.getByLabelText("Change")).toBeInTheDocument();
@@ -169,6 +203,23 @@ describe("LoginClient", () => {
     expect(screen.queryByRole("button", { name: /Riya Nair/ })).toBeNull();
   });
 
+  it("never follows ?next= off the site", async () => {
+    H.api.get.mockResolvedValue({ firebase: false, demo: true, firebaseConfig: null, allowedDomains: null });
+    H.api.post.mockResolvedValue({});
+    H.search = "next=//example.org";
+    wrap(<LoginClient />);
+    await userEvent.click(await screen.findByRole("button", { name: /Riya Nair/ }));
+    await waitFor(() => expect(H.replace).toHaveBeenCalledWith("/dashboard"));
+  });
+
+  it("hides demo sign-in when it is turned off, and says sign-in is not set up when nothing is", async () => {
+    H.api.get.mockResolvedValue({ firebase: false, demo: false, firebaseConfig: null, allowedDomains: null });
+    wrap(<LoginClient />);
+    expect(await screen.findByRole("alert")).toHaveTextContent("Sign-in isn't set up.");
+    expect(screen.queryByText("Demo mode is on")).toBeNull();
+    expect(screen.queryByRole("button", { name: /Riya Nair|Continue with Google|Sign in/ })).toBeNull();
+  });
+
   it("asks for a password and hides demo mode when Firebase is configured", async () => {
     H.api.get.mockResolvedValue({ firebase: true, demo: false, firebaseConfig: {}, allowedDomains: null });
     wrap(<LoginClient />);
@@ -177,4 +228,18 @@ describe("LoginClient", () => {
     expect(screen.getByLabelText(/^Password/)).toHaveAttribute("type", "text");
     expect(screen.queryByText("Demo mode is on")).toBeNull();
   });
+});
+
+describe("safeNextPath", () => {
+  it("keeps paths on this site", () => {
+    expect(safeNextPath("/accounts/42?tab=invoices#top")).toBe("/accounts/42?tab=invoices#top");
+    expect(safeNextPath("/leads")).toBe("/leads");
+  });
+
+  it.each([null, "", "https://example.org", "//example.org", "/\\example.org", "/\t/example.org", "\t//example.org", "javascript:alert(1)", "dashboard"])(
+    "falls back to the dashboard for %j",
+    (next) => {
+      expect(safeNextPath(next)).toBe("/dashboard");
+    },
+  );
 });

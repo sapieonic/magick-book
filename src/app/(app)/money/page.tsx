@@ -6,14 +6,16 @@ import { PageHeader } from "@/components/layout/PageHeader";
 import { MoneyEquation } from "@/components/money/MoneyEquation";
 import { AgingBuckets } from "@/components/money/AgingBuckets";
 import { CollectedByMonth } from "@/components/money/CollectedByMonth";
-import { InvoiceTable } from "@/components/money/InvoiceTable";
+import { InvoiceTable, ledgerCsvRows } from "@/components/money/InvoiceTable";
 import { ExpenseTable } from "@/components/money/ExpenseTable";
+import { csvFilename, downloadCsv } from "@/components/money/csv";
 import { Panel } from "@/components/ui/Panel";
-import { Button } from "@/components/ui/Button";
+import { Button, LinkButton } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Field";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { EmptyState, ErrorState, RowsSkeleton, Skeleton } from "@/components/ui/Misc";
 import { useApi } from "@/lib/client";
+import { isoDay } from "@/lib/dates";
 import { matchesInvoiceQuery, matchesLedgerFilter, type LedgerFilter } from "@/lib/money-charts";
 import { AGING_LABELS } from "@/lib/receivables";
 import type { AgingKey, MoneySummary } from "@/lib/types";
@@ -52,6 +54,8 @@ export default function MoneyPage() {
     setFilter("all");
     setQuery("");
   };
+  /** Exactly the rows the ledger shows under the current filter and search. */
+  const exportCsv = () => downloadCsv(csvFilename("Invoices", isoDay(now)), ledgerCsvRows(invoices, now));
 
   return (
     <Page>
@@ -64,7 +68,12 @@ export default function MoneyPage() {
         <MoneySkeleton />
       ) : (
         <>
-          <PageSplit railLabel="Collections" rail={<CollectedByMonth collected={data.collected} className="md:col-span-2 xl:col-span-1" />}>
+          {/* From xl the two columns stretch to one height, so neither leaves bare ground above the ledger. */}
+          <PageSplit
+            className="xl:items-stretch"
+            railLabel="Collections"
+            rail={<CollectedByMonth collected={data.collected} className="md:col-span-2 xl:col-span-1 xl:flex-1" />}
+          >
             <MoneyEquation totals={data.totals} filter={filter} onFilter={narrowInvoices} onShowExpenses={() => setView("expenses")} />
             <AgingBuckets aging={data.aging} selected={isAging(filter) ? filter : null} onSelect={(k) => narrowInvoices(k ?? "all")} />
           </PageSplit>
@@ -72,7 +81,7 @@ export default function MoneyPage() {
           <Panel aria-label="Ledger">
             <div className="mb-2 flex flex-wrap items-center gap-x-4 gap-y-2.5">
               <SegmentedControl
-                aria-label="Ledger"
+                aria-label="Show"
                 value={view}
                 onChange={setView}
                 options={[
@@ -102,6 +111,11 @@ export default function MoneyPage() {
                         <X className="size-3.5" strokeWidth={1.5} aria-hidden />
                       </button>
                     </span>
+                  )}
+                  {invoices.length > 0 && (
+                    <LinkButton className="ml-auto text-[13px]" onClick={exportCsv}>
+                      Export CSV
+                    </LinkButton>
                   )}
                 </>
               )}

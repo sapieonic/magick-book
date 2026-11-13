@@ -316,13 +316,6 @@
     border-top: 1px solid var(--color-ink-1);
     border-bottom: 0;
   }
-  .ledger-sticky th {
-    position: sticky;
-    top: 0;
-    z-index: 1;
-    background: var(--color-surface);
-  }
-
   .skeleton {
     background: var(--color-sunk);
     animation: mb-skeleton 1.4s ease-in-out infinite;

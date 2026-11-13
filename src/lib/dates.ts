@@ -69,6 +69,7 @@ const SHORT_YEAR = fmt({ day: "numeric", month: "short", year: "numeric" });
 const LONG = fmt({ weekday: "long", day: "numeric", month: "long", year: "numeric" });
 const WEEKDAY_DAY = fmt({ weekday: "short", day: "numeric" });
 const MONTH_YEAR = fmt({ month: "long", year: "numeric" });
+const MONTH = fmt({ month: "long" });
 const DATE_TIME = fmt({ dateStyle: "medium", timeStyle: "short" });
 
 const valid = (d: DateLike) => !Number.isNaN(toDate(d).getTime());
@@ -87,6 +88,8 @@ export function shortDate(date: DateLike, year: boolean | "auto" = true, now: Da
 export const longDate = (date: DateLike) => (valid(date) ? LONG.format(toDate(date)) : "");
 /** "Fri 13". */
 export const weekdayDay = (date: DateLike) => (valid(date) ? WEEKDAY_DAY.format(toDate(date)) : "");
+/** "November". */
+export const monthName = (date: DateLike) => (valid(date) ? MONTH.format(toDate(date)) : "");
 /** "November 2026". */
 export const monthYear = (date: DateLike) => (valid(date) ? MONTH_YEAR.format(toDate(date)) : "");
 /** "13 Nov 2026, 4:05 pm": tooltips and stored activity text. */

@@ -7,11 +7,13 @@ import { Money } from "@/components/ui/Money";
 import { Panel } from "@/components/ui/Panel";
 import { StatusPill } from "@/components/ui/Badge";
 import { Table, Td, Th, TwoLine } from "@/components/ui/Table";
+import { useInvoiceActions } from "@/components/invoices/useInvoiceActions";
+import { csvFilename, downloadCsv } from "@/components/money/csv";
+import { isoDay, shortDate } from "@/lib/dates";
 import { isOutstanding, isOverdue } from "@/lib/receivables";
 import type { ExpenseDTO, InvoiceDTO } from "@/lib/types";
 import { cn, plural } from "@/lib/utils";
-import { buildStatement, longDate, overdueLabel, type StatementEntry } from "./statement";
-import { useInvoiceActions } from "@/components/invoices/useInvoiceActions";
+import { buildStatement, expenseLabel, overdueLabel, statementCsvRows, type StatementEntry } from "./statement";
 
 export function InvoiceStatus({ invoice }: { invoice: InvoiceDTO }) {
   return isOverdue(invoice, new Date()) ? <StatusPill tone="overdue">{overdueLabel(invoice)}</StatusPill> : <StatusPill status={invoice.status} />;
@@ -29,32 +31,42 @@ const WIDE_COL = "max-2xl:hidden";
 function describe(e: StatementEntry) {
   if (e.kind === "invoice") return <>Invoice <InvoiceNumber n={e.invoice.number} /></>;
   if (e.kind === "payment") return <>Payment for <InvoiceNumber n={e.invoice.number} /></>;
-  return <>{e.expense.vendor ? `${e.expense.category} · ${e.expense.vendor}` : `${e.expense.category} expense`}</>;
+  return <>{expenseLabel(e.expense)}</>;
 }
 
 /**
  * Overview main: every invoice, payment and expense in date order (newest
- * first) with the outstanding balance after each, and inline Mark paid /
- * Download on invoice rows.
+ * first) with the outstanding balance after each, inline Mark paid (unless
+ * `readOnly`) and Download on invoice rows, and the whole statement as CSV.
  */
 export function StatementTable({
+  accountName,
   invoices,
   expenses,
   loading,
+  readOnly,
   onChanged,
   onNewInvoice,
 }: {
+  accountName: string;
   invoices: InvoiceDTO[];
   expenses: ExpenseDTO[];
   loading: boolean;
+  readOnly?: boolean;
   onChanged: () => void | Promise<void>;
   onNewInvoice?: () => void;
 }) {
-  const { entries, totals } = useMemo(() => buildStatement(invoices, expenses), [invoices, expenses]);
+  const statement = useMemo(() => buildStatement(invoices, expenses), [invoices, expenses]);
+  const { entries, totals } = statement;
   const actions = useInvoiceActions(onChanged);
+  const download = () => downloadCsv(csvFilename(accountName, "statement", isoDay()), statementCsvRows(statement));
 
   return (
-    <Panel title="Statement" meta="every invoice, payment and cost, with the balance after each">
+    <Panel
+      title="Statement"
+      meta="every invoice, payment and cost, with the balance after each"
+      actions={!loading && entries.length > 0 && <LinkButton onClick={download}>Download statement</LinkButton>}
+    >
       {loading ? (
         <RowsSkeleton />
       ) : entries.length === 0 ? (
@@ -92,11 +104,11 @@ export function StatementTable({
               const moved = e.kind === "payment" || (e.kind === "invoice" && e.counted);
               return (
                 <tr key={e.key} className={e.kind === "invoice" ? undefined : "text-ink-2"}>
-                  <Td className={cn(WIDE_COL, "tnum whitespace-nowrap text-ink-2")}>{longDate(e.date)}</Td>
+                  <Td className={cn(WIDE_COL, "tnum whitespace-nowrap text-ink-2")}>{shortDate(e.date)}</Td>
                   <Td>
                     <TwoLine className="py-1.5" primary={describe(e)} secondary={
                         <span className="flex flex-wrap items-center gap-x-2 gap-y-1 2xl:hidden">
-                          <span className="tnum">{longDate(e.date)}</span>
+                          <span className="tnum">{shortDate(e.date)}</span>
                           {inv && <InvoiceStatus invoice={inv} />}
                         </span>
                       }
@@ -123,7 +135,7 @@ export function StatementTable({
                             Download
                           </LinkButton>
                         )}
-                        {isOutstanding(inv) && (
+                        {!readOnly && isOutstanding(inv) && (
                           <Button size="sm" loading={actions.busyId === inv.id} onClick={() => actions.markPaid(inv)} aria-label={`Mark invoice #${inv.number} paid`}>
                             Mark paid
                           </Button>

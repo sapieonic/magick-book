@@ -1,6 +1,10 @@
 import { initials, cn } from "@/lib/utils";
 
-/** Initials disc. `tone="ink"` marks the signed-in user; everyone else is neutral. */
+/**
+ * Initials disc. `tone="ink"` marks the signed-in user; everyone else is neutral.
+ * Initials never drop below 12px; under 24px they switch to the condensed face
+ * so two wide letters still fit the disc.
+ */
 export function Avatar({
   name,
   size = 28,
@@ -17,9 +21,10 @@ export function Avatar({
       className={cn(
         "inline-flex shrink-0 items-center justify-center rounded-full font-semibold",
         tone === "ink" ? "bg-ink-1 text-on-ink" : "bg-sunk text-ink-1",
+        size < 24 && "font-condensed",
         className,
       )}
-      style={{ width: size, height: size, fontSize: Math.max(10, Math.round(size * 0.4)) }}
+      style={{ width: size, height: size, fontSize: Math.max(12, Math.round(size * 0.4)) }}
       title={name || undefined}
       aria-hidden
     >

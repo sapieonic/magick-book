@@ -17,9 +17,9 @@ vi.mock("@/lib/client", () => ({
 }));
 
 import DashboardPage from "@/app/(app)/dashboard/page";
-import { summaryPhrases, collectedComparison, dueWords } from "@/components/dashboard/format";
+import { summaryPhrases, collectedComparison } from "@/components/dashboard/format";
 
-const AS_OF = new Date(2026, 10, 13, 10, 0).toISOString(); // Friday 13 November 2026
+const AS_OF = new Date("2026-11-13T10:00:00+05:30").toISOString(); // Friday 13 November 2026, 10am IST
 const daysBefore = (n: number) => new Date(new Date(AS_OF).getTime() - n * 86400000).toISOString();
 
 const blank = { stage: null, value: 0, dueAt: null, lastTouchedAt: null, leadId: null, reminderId: null, invoiceId: null, invoiceNumber: null, company: "", href: null };
@@ -59,7 +59,7 @@ function sample(over: Partial<DashboardData> = {}): DashboardData {
       debtors: [{ accountId: "a2", name: "Samarthya", amount: 791096, invoices: 2 }],
       collected: { thisMonth: 1840, lastMonth: 590000, payments: 1, latest: { accountId: "a3", accountName: "Brewtiful", number: 1018 } },
     },
-    upcoming: [{ id: "u1", title: "Renewal call", dueAt: new Date(2026, 10, 18, 11).toISOString(), entityLabel: "Ashish", href: null }],
+    upcoming: [{ id: "u1", title: "Renewal call", dueAt: new Date("2026-11-18T11:00:00+05:30").toISOString(), entityLabel: "Ashish", href: null }],
     ...over,
   };
 }
@@ -91,12 +91,10 @@ describe("format helpers", () => {
     );
   });
 
-  it("compares collections and ages in words", () => {
+  it("compares collections in words", () => {
     expect(collectedComparison(1840, 590000, "October")).toBe("down from ₹5.9L in October");
     expect(collectedComparison(9000, 100, "October")).toBe("up from ₹100 in October");
     expect(collectedComparison(5, 0, "October")).toBe("nothing collected in October");
-    const now = new Date(AS_OF);
-    expect(dueWords(daysBefore(3), now)).toBe("due 3 days ago");
   });
 });
 
@@ -140,7 +138,7 @@ describe("Today page", () => {
     await user.click(screen.getAllByRole("button", { name: "Done with reminder: Send revised quote" })[0]);
     expect(H.api.patch).toHaveBeenCalledWith("/api/reminders/r1", { action: "complete" });
     await user.click(screen.getAllByRole("button", { name: "Snooze reminder until tomorrow: Send revised quote" })[0]);
-    expect(H.api.patch).toHaveBeenCalledWith("/api/reminders/r1", { action: "snooze", dueAt: new Date(2026, 10, 14, 9).toISOString() });
+    expect(H.api.patch).toHaveBeenCalledWith("/api/reminders/r1", { action: "snooze", dueAt: new Date("2026-11-14T09:00:00+05:30").toISOString() });
     expect(H.refresh).toHaveBeenCalledTimes(2);
   });
 
@@ -163,6 +161,19 @@ describe("Today page", () => {
     await user.click(within(dialog).getByRole("button", { name: "Log call" }));
     expect(H.api.post).toHaveBeenCalledWith("/api/leads/l1/activities", { kind: "call", detail: "Asked for a revised quote" });
     expect(H.refresh).toHaveBeenCalled();
+  });
+
+  it("collapses the phone queue to the first four rows", async () => {
+    const user = userEvent.setup();
+    const many = Array.from({ length: 6 }, (_, i) => ({ ...queue[1], id: `lead-${i}`, title: `Call back #${i}` }));
+    H.data = sample({ queue: many });
+    renderPage();
+    const panel = screen.getByRole("heading", { name: /Work queue/ }).closest("section")!;
+    const list = within(panel).getByRole("list");
+    expect(list.children).toHaveLength(4);
+    await user.click(screen.getByRole("button", { name: "Show 2 more" }));
+    expect(list.children).toHaveLength(6);
+    expect(screen.getByRole("button", { name: "Show fewer" })).toHaveAttribute("aria-expanded", "true");
   });
 
   it("shows a designed empty queue", () => {

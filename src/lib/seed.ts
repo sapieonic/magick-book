@@ -2,8 +2,8 @@ import { Types } from "mongoose";
 import { connectDBForSeed } from "./db-seed-helper";
 import { Workspace, User, Lead, Account, Contact, Invoice, Expense, Activity } from "./models";
 import { DEFAULT_LEAD_CATEGORIES, type LeadStage } from "./constants";
+import { DAY_MS } from "./dates";
 
-const DAY = 86400000;
 const HOUR = 3600000;
 const now = () => Date.now();
 const ago = (ms: number) => new Date(now() - ms);
@@ -126,7 +126,7 @@ export async function seedDatabase({ force = false }: { force?: boolean } = {}):
       status: opts.status,
       plan: opts.plan,
       value: opts.value,
-      customerSince: ago(opts.sinceDaysAgo * DAY),
+      customerSince: ago(opts.sinceDaysAgo * DAY_MS),
       primaryContactId: primary._id,
       lastActivityAt: ago(opts.lastActivityMs),
     });
@@ -160,7 +160,7 @@ export async function seedDatabase({ force = false }: { force?: boolean } = {}):
     value: 40000,
     owner: riya._id,
     sinceDaysAgo: 20,
-    lastActivityMs: 1 * DAY,
+    lastActivityMs: 1 * DAY_MS,
     primary: { name: "Priya Sharma", title: "Head of Ops", email: "priya@lumen.in", phone: "+91 80467 33449" },
     others: [{ name: "Rohit K.", title: "Founder", email: "rohit@lumen.in" }],
   });
@@ -174,7 +174,7 @@ export async function seedDatabase({ force = false }: { force?: boolean } = {}):
     value: 120000,
     owner: karan._id,
     sinceDaysAgo: 200,
-    lastActivityMs: 9 * DAY,
+    lastActivityMs: 9 * DAY_MS,
     primary: { name: "Maya Iyer", title: "VP Sales", email: "maya@brightline.io", phone: "+91 99887 22110" },
     others: [
       { name: "Arjun P.", title: "Finance" },
@@ -191,7 +191,7 @@ export async function seedDatabase({ force = false }: { force?: boolean } = {}):
     value: 22000,
     owner: neha._id,
     sinceDaysAgo: 40,
-    lastActivityMs: 3 * DAY,
+    lastActivityMs: 3 * DAY_MS,
     primary: { name: "Dev Mehta", title: "Owner", email: "dev@novafoods.in", phone: "+91 98200 55330" },
   });
 
@@ -222,33 +222,33 @@ export async function seedDatabase({ force = false }: { force?: boolean } = {}):
     value: 0,
     owner: neha._id,
     sinceDaysAgo: 300,
-    lastActivityMs: 30 * DAY,
+    lastActivityMs: 30 * DAY_MS,
     primary: { name: "Aisha Khan", title: "Director", email: "aisha@orbitmedia.in" },
     others: [{ name: "Tom B.", title: "Producer" }],
   });
 
   // ---- Invoices (for Acme — mirrors the wireframe invoice list) -------
   await Invoice.insertMany([
-    { workspaceId: wsId, accountId: acme._id, number: 1042, issuedAt: ago(28 * DAY), dueAt: ago(14 * DAY), amount: 110000, status: "overdue" },
-    { workspaceId: wsId, accountId: acme._id, number: 1040, issuedAt: ago(32 * DAY), dueAt: ago(18 * DAY), amount: 55000, status: "sent" },
-    { workspaceId: wsId, accountId: acme._id, number: 1038, issuedAt: ago(42 * DAY), dueAt: ago(28 * DAY), amount: 95000, status: "paid", paidAt: ago(30 * DAY) },
-    { workspaceId: wsId, accountId: acme._id, number: 1031, issuedAt: ago(70 * DAY), dueAt: ago(56 * DAY), amount: 140000, status: "paid", paidAt: ago(58 * DAY) },
+    { workspaceId: wsId, accountId: acme._id, number: 1042, issuedAt: ago(28 * DAY_MS), dueAt: ago(14 * DAY_MS), amount: 110000, status: "overdue" },
+    { workspaceId: wsId, accountId: acme._id, number: 1040, issuedAt: ago(32 * DAY_MS), dueAt: ago(18 * DAY_MS), amount: 55000, status: "sent" },
+    { workspaceId: wsId, accountId: acme._id, number: 1038, issuedAt: ago(42 * DAY_MS), dueAt: ago(28 * DAY_MS), amount: 95000, status: "paid", paidAt: ago(30 * DAY_MS) },
+    { workspaceId: wsId, accountId: acme._id, number: 1031, issuedAt: ago(70 * DAY_MS), dueAt: ago(56 * DAY_MS), amount: 140000, status: "paid", paidAt: ago(58 * DAY_MS) },
     // Spread paid invoices across accounts/months for the Money charts.
-    { workspaceId: wsId, accountId: lumen._id, number: 1039, issuedAt: ago(20 * DAY), dueAt: ago(6 * DAY), amount: 40000, status: "paid", paidAt: ago(12 * DAY) },
-    { workspaceId: wsId, accountId: lumen._id, number: 1043, issuedAt: ago(5 * DAY), dueAt: ago(-9 * DAY), amount: 40000, status: "sent" },
-    { workspaceId: wsId, accountId: brightline._id, number: 1035, issuedAt: ago(100 * DAY), dueAt: ago(86 * DAY), amount: 120000, status: "paid", paidAt: ago(90 * DAY) },
-    { workspaceId: wsId, accountId: brightline._id, number: 1041, issuedAt: ago(45 * DAY), dueAt: ago(10 * DAY), amount: 120000, status: "overdue" },
-    { workspaceId: wsId, accountId: pine._id, number: 1036, issuedAt: ago(55 * DAY), dueAt: ago(41 * DAY), amount: 60000, status: "paid", paidAt: ago(40 * DAY) },
-    { workspaceId: wsId, accountId: pine._id, number: 1044, issuedAt: ago(8 * DAY), dueAt: ago(-6 * DAY), amount: 60000, status: "sent" },
+    { workspaceId: wsId, accountId: lumen._id, number: 1039, issuedAt: ago(20 * DAY_MS), dueAt: ago(6 * DAY_MS), amount: 40000, status: "paid", paidAt: ago(12 * DAY_MS) },
+    { workspaceId: wsId, accountId: lumen._id, number: 1043, issuedAt: ago(5 * DAY_MS), dueAt: ago(-9 * DAY_MS), amount: 40000, status: "sent" },
+    { workspaceId: wsId, accountId: brightline._id, number: 1035, issuedAt: ago(100 * DAY_MS), dueAt: ago(86 * DAY_MS), amount: 120000, status: "paid", paidAt: ago(90 * DAY_MS) },
+    { workspaceId: wsId, accountId: brightline._id, number: 1041, issuedAt: ago(45 * DAY_MS), dueAt: ago(10 * DAY_MS), amount: 120000, status: "overdue" },
+    { workspaceId: wsId, accountId: pine._id, number: 1036, issuedAt: ago(55 * DAY_MS), dueAt: ago(41 * DAY_MS), amount: 60000, status: "paid", paidAt: ago(40 * DAY_MS) },
+    { workspaceId: wsId, accountId: pine._id, number: 1044, issuedAt: ago(8 * DAY_MS), dueAt: ago(-6 * DAY_MS), amount: 60000, status: "sent" },
   ]);
 
   // ---- Expenses (for Acme — mirrors the wireframe expense list) -------
   await Expense.insertMany([
-    { workspaceId: wsId, accountId: acme._id, date: ago(26 * DAY), category: "Telephony", vendor: "Twilio call minutes", amount: 6200, billable: true },
-    { workspaceId: wsId, accountId: acme._id, date: ago(31 * DAY), category: "Travel", vendor: "Onboarding visit", amount: 4000, billable: false },
-    { workspaceId: wsId, accountId: acme._id, date: ago(38 * DAY), category: "Software", vendor: "WhatsApp API", amount: 2800, billable: true },
-    { workspaceId: wsId, accountId: acme._id, date: ago(15 * DAY), category: "Marketing", vendor: "Field campaign", amount: 12000, billable: false },
-    { workspaceId: wsId, accountId: lumen._id, date: ago(10 * DAY), category: "Software", vendor: "Analytics seat", amount: 3500, billable: true },
+    { workspaceId: wsId, accountId: acme._id, date: ago(26 * DAY_MS), category: "Telephony", vendor: "Twilio call minutes", amount: 6200, billable: true },
+    { workspaceId: wsId, accountId: acme._id, date: ago(31 * DAY_MS), category: "Travel", vendor: "Onboarding visit", amount: 4000, billable: false },
+    { workspaceId: wsId, accountId: acme._id, date: ago(38 * DAY_MS), category: "Software", vendor: "WhatsApp API", amount: 2800, billable: true },
+    { workspaceId: wsId, accountId: acme._id, date: ago(15 * DAY_MS), category: "Marketing", vendor: "Field campaign", amount: 12000, billable: false },
+    { workspaceId: wsId, accountId: lumen._id, date: ago(10 * DAY_MS), category: "Software", vendor: "Analytics seat", amount: 3500, billable: true },
   ]);
 
   // ---- Leads (board) ---------------------------------------------------
@@ -286,8 +286,8 @@ export async function seedDatabase({ force = false }: { force?: boolean } = {}):
       order: opts.order,
       notes: opts.notes,
       convertedAccountId: opts.convertedAccountId,
-      createdAt: ago(opts.createdDaysAgo * DAY),
-      lastActivityAt: ago(opts.lastActivityMs ?? opts.createdDaysAgo * DAY),
+      createdAt: ago(opts.createdDaysAgo * DAY_MS),
+      lastActivityAt: ago(opts.lastActivityMs ?? opts.createdDaysAgo * DAY_MS),
     });
   }
 
@@ -310,10 +310,10 @@ export async function seedDatabase({ force = false }: { force?: boolean } = {}):
   });
 
   await makeLead({ name: "Dev Mehta", company: "Nova Foods", phone: "+91 98200 55330", stage: "new", category: "healthcare", estValue: 80000, owner: neha._id, order: 0, createdDaysAgo: 2 });
-  const aishaLead = await makeLead({ name: "Aisha Khan", company: "Orbit Media", phone: "+91 99001 23456", stage: "contacted", category: "collection", tags: ["called"], owner: riya._id, order: 0, createdDaysAgo: 6, lastActivityMs: 1 * DAY });
+  const aishaLead = await makeLead({ name: "Aisha Khan", company: "Orbit Media", phone: "+91 99001 23456", stage: "contacted", category: "collection", tags: ["called"], owner: riya._id, order: 0, createdDaysAgo: 6, lastActivityMs: 1 * DAY_MS });
   await makeLead({ name: "Sam Toh", company: "Pine & Co", phone: "+91 90011 44556", stage: "contacted", category: "insurance", estValue: 200000, owner: riya._id, order: 1, createdDaysAgo: 8 });
   await makeLead({ name: "Leo Park", company: "Wavelength", email: "leo@wavelength.io", stage: "qualified", category: "automobile", estValue: 90000, owner: karan._id, order: 1, createdDaysAgo: 7 });
-  const mayaLead = await makeLead({ name: "Maya Iyer", company: "Brightline", phone: "+91 99887 22110", stage: "proposal", category: "finance", estValue: 340000, owner: karan._id, order: 0, createdDaysAgo: 12, lastActivityMs: 2 * DAY, notes: "Proposal sent — following up." });
+  const mayaLead = await makeLead({ name: "Maya Iyer", company: "Brightline", phone: "+91 99887 22110", stage: "proposal", category: "finance", estValue: 340000, owner: karan._id, order: 0, createdDaysAgo: 12, lastActivityMs: 2 * DAY_MS, notes: "Proposal sent — following up." });
   await makeLead({ name: "Acme Logistics", company: "Acme Logistics", stage: "won", category: "automobile", estValue: 85000, owner: riya._id, order: 0, createdDaysAgo: 80, convertedAccountId: acme._id });
   // a few more "new" so the column count feels alive
   await makeLead({ name: "Ravi Shah", company: "Delta Traders", phone: "+91 90090 12121", stage: "new", category: "collection", estValue: 60000, owner: riya._id, order: 1, createdDaysAgo: 1 });
@@ -344,27 +344,27 @@ export async function seedDatabase({ force = false }: { force?: boolean } = {}):
 
   // ---- Activity timeline for the Priya lead (page 7) ------------------
   await Activity.insertMany([
-    { workspaceId: wsId, leadId: priyaLead._id, actorId: riya._id, kind: "lead_created", title: "Lead created", detail: "from Website", createdAt: ago(5 * DAY) },
-    { workspaceId: wsId, leadId: priyaLead._id, actorId: riya._id, kind: "stage_change", title: "Contacted", createdAt: ago(4 * DAY) },
-    { workspaceId: wsId, leadId: priyaLead._id, actorId: riya._id, kind: "whatsapp", title: "WhatsApp reply", detail: '"Yes, send me the details."', createdAt: ago(3 * DAY) },
-    { workspaceId: wsId, leadId: priyaLead._id, actorId: riya._id, kind: "call", title: "Call logged · 4m12s", detail: "Outbound — Aria summarised the call.", createdAt: ago(2 * DAY) },
-    { workspaceId: wsId, leadId: priyaLead._id, actorId: riya._id, kind: "note", title: "Note", detail: "Wants the proposal to cover onboarding + 3 months support.", createdAt: ago(1 * DAY) },
+    { workspaceId: wsId, leadId: priyaLead._id, actorId: riya._id, kind: "lead_created", title: "Lead created", detail: "from Website", createdAt: ago(5 * DAY_MS) },
+    { workspaceId: wsId, leadId: priyaLead._id, actorId: riya._id, kind: "stage_change", title: "Contacted", createdAt: ago(4 * DAY_MS) },
+    { workspaceId: wsId, leadId: priyaLead._id, actorId: riya._id, kind: "whatsapp", title: "WhatsApp reply", detail: '"Yes, send me the details."', createdAt: ago(3 * DAY_MS) },
+    { workspaceId: wsId, leadId: priyaLead._id, actorId: riya._id, kind: "call", title: "Call logged · 4m12s", detail: "Outbound — Aria summarised the call.", createdAt: ago(2 * DAY_MS) },
+    { workspaceId: wsId, leadId: priyaLead._id, actorId: riya._id, kind: "note", title: "Note", detail: "Wants the proposal to cover onboarding + 3 months support.", createdAt: ago(1 * DAY_MS) },
     { workspaceId: wsId, leadId: priyaLead._id, actorId: riya._id, kind: "note", title: "Note", detail: "Decision maker is the COO — loop her in on the next call.", createdAt: ago(6 * HOUR) },
     { workspaceId: wsId, leadId: priyaLead._id, actorId: riya._id, kind: "stage_change", title: "Qualified", detail: "Budget confirmed on call. Ready for proposal.", createdAt: ago(3 * HOUR) },
   ]);
 
   // ---- A couple of notes on other leads so board cards show comment counts ----
   await Activity.insertMany([
-    { workspaceId: wsId, leadId: mayaLead._id, actorId: karan._id, kind: "note", title: "Note", detail: "Sent the proposal PDF. Following up Thursday.", createdAt: ago(2 * DAY) },
-    { workspaceId: wsId, leadId: mayaLead._id, actorId: karan._id, kind: "note", title: "Note", detail: "Asked for a small discount on the annual plan.", createdAt: ago(1 * DAY) },
+    { workspaceId: wsId, leadId: mayaLead._id, actorId: karan._id, kind: "note", title: "Note", detail: "Sent the proposal PDF. Following up Thursday.", createdAt: ago(2 * DAY_MS) },
+    { workspaceId: wsId, leadId: mayaLead._id, actorId: karan._id, kind: "note", title: "Note", detail: "Asked for a small discount on the annual plan.", createdAt: ago(1 * DAY_MS) },
     { workspaceId: wsId, leadId: mayaLead._id, actorId: karan._id, kind: "note", title: "Note", detail: "Legal review in progress on their side.", createdAt: ago(5 * HOUR) },
     { workspaceId: wsId, leadId: aishaLead._id, actorId: riya._id, kind: "note", title: "Note", detail: "Left a voicemail — try WhatsApp next.", createdAt: ago(20 * HOUR) },
   ]);
 
   // ---- Activity for Acme account --------------------------------------
   await Activity.insertMany([
-    { workspaceId: wsId, accountId: acme._id, actorId: riya._id, kind: "converted", title: "Converted from lead", detail: "Karan Rao set as primary contact", createdAt: ago(75 * DAY) },
-    { workspaceId: wsId, accountId: acme._id, actorId: karan._id, kind: "invoice", title: "Invoice #1042 sent", detail: "₹1,10,000", createdAt: ago(28 * DAY) },
+    { workspaceId: wsId, accountId: acme._id, actorId: riya._id, kind: "converted", title: "Converted from lead", detail: "Karan Rao set as primary contact", createdAt: ago(75 * DAY_MS) },
+    { workspaceId: wsId, accountId: acme._id, actorId: karan._id, kind: "invoice", title: "Invoice #1042 sent", detail: "₹1,10,000", createdAt: ago(28 * DAY_MS) },
     { workspaceId: wsId, accountId: acme._id, actorId: riya._id, kind: "call", title: "Quarterly review call", detail: "Renewal looks healthy.", createdAt: ago(2 * HOUR) },
   ]);
 }

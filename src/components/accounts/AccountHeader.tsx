@@ -1,22 +1,21 @@
 "use client";
-import { LinkButton } from "@/components/ui/Button";
 import { type ReactNode } from "react";
-import { format } from "date-fns";
-import { Money } from "@/components/ui/Money";
+import { LinkButton } from "@/components/ui/Button";
+import { Money, formatMoney } from "@/components/ui/Money";
 import { Panel } from "@/components/ui/Panel";
 import { ProportionBar, segmentShares } from "@/components/ui/ProportionBar";
 import { StatusPill } from "@/components/ui/Badge";
-import { cn } from "@/lib/utils";
-import type { AccountDTO, AccountFinance, ExpenseDTO, InvoiceDTO } from "@/lib/types";
 import { OverflowMenu, type MenuItem } from "@/components/ui/OverflowMenu";
+import { marginFigures } from "@/components/money/margin";
+import { monthYear, shortDate } from "@/lib/dates";
 import { daysPastDue, isOutstanding, isOverdue, paymentDate } from "@/lib/receivables";
-import { plural } from "@/lib/utils";
-import { shortDate } from "./statement";
+import type { AccountDTO, AccountFinance, ExpenseDTO, InvoiceDTO } from "@/lib/types";
+import { cn, plural } from "@/lib/utils";
 
 /** Name, status, the one-line facts and the account's actions. */
 export function AccountHeader({ account, actions, menu }: { account: AccountDTO; actions: ReactNode; menu: MenuItem[] }) {
   const facts: ReactNode[] = [];
-  if (account.customerSince) facts.push(`Customer since ${format(new Date(account.customerSince), "MMM yyyy")}`);
+  if (account.customerSince) facts.push(`Customer since ${monthYear(account.customerSince)}`);
   if (account.ownerName) facts.push(`owned by ${account.ownerName}`);
   if (account.industry) facts.push(account.industry);
   if (account.plan) facts.push(`${account.plan} plan`);
@@ -60,9 +59,40 @@ function Side({ label, tone, value, caption, end }: { label: string; tone: strin
     <div className={cn("min-w-0", end && "text-right")}>
       <div className={cn("text-[13px] font-medium", tone)}>{label}</div>
       <Money value={value} className="figure text-[22px]" />
-      <div className="text-[13px] text-ink-3">{caption}</div>
+      <div className="min-h-[1lh] text-[13px] text-ink-3">{caption}</div>
     </div>
   );
+}
+
+const total = (rows: { amount: number }[]) => rows.reduce((s, r) => s + r.amount, 0);
+
+/**
+ * Captions under the statement figures. The figures are the server rollup;
+ * the lists only add detail. "Nothing" is said only when the figure is zero,
+ * and a count only when the list adds up to the figure, so a caption can
+ * never contradict the number above it (say, while a list is still loading).
+ */
+function captions(finance: AccountFinance, invoices: InvoiceDTO[], expenses: ExpenseDTO[], now: Date) {
+  const paid = invoices.filter((i) => i.status === "paid");
+  const open = invoices.filter(isOutstanding);
+  const lastPaid = paid.reduce<Date | null>((max, i) => {
+    const d = paymentDate(i)!;
+    return !max || d > max ? d : max;
+  }, null);
+  const worstDays = Math.max(0, ...open.map((i) => daysPastDue(i, now)));
+  const owedWhen = open.some((i) => isOverdue(i, now)) ? (worstDays > 0 ? `${plural(worstDays, "day")} overdue` : "overdue") : "not yet due";
+
+  return {
+    paid: !finance.paid ? "Nothing paid yet" : total(paid) === finance.paid && lastPaid ? `${plural(paid.length, "invoice")}, last on ${shortDate(lastPaid, "auto", now)}` : "",
+    outstanding: !finance.outstanding
+      ? "Nothing owed"
+      : total(open) === finance.outstanding
+        ? `${plural(open.length, "invoice")}, ${owedWhen}`
+        : finance.overdue
+          ? `${formatMoney(finance.overdue)} overdue`
+          : "Not yet due",
+    expenses: !finance.expenses ? "None recorded for this account." : total(expenses) === finance.expenses ? `${plural(expenses.length, "cost")} recorded.` : "",
+  };
 }
 
 /**
@@ -80,16 +110,9 @@ export function StatementBar({
   expenses: ExpenseDTO[];
   onAddExpense?: () => void;
 }) {
-  const now = new Date();
-  const paidInvoices = invoices.filter((i) => i.status === "paid");
-  const open = invoices.filter(isOutstanding);
-  const lastPaid = paidInvoices.reduce<Date | null>((max, i) => {
-    const d = paymentDate(i)!;
-    return !max || d > max ? d : max;
-  }, null);
-  const late = open.some((i) => isOverdue(i, now));
-  const worstDays = Math.max(0, ...open.map((i) => daysPastDue(i, now)));
-  const outstandingTone = late ? "text-overdue" : "text-due";
+  const caption = captions(finance, invoices, expenses, new Date());
+  const margin = marginFigures(finance);
+  const late = finance.overdue > 0;
   const [paid, outstanding] = segmentShares([
     { key: "paid", label: "Paid", value: finance.paid, color: "var(--color-paid-fill)" },
     {
@@ -109,19 +132,8 @@ export function StatementBar({
         </div>
         <ProportionBar variant="bar" size="md" aria-label="Billed to date" segments={[paid, outstanding]} />
         <div className="mt-2.5 flex justify-between gap-4">
-          <Side
-            label={`Paid · ${paid.pct}%`}
-            tone="text-paid"
-            value={finance.paid}
-            caption={paidInvoices.length ? `${plural(paidInvoices.length, "invoice")}, last on ${shortDate(lastPaid!)}` : "Nothing paid yet"}
-          />
-          <Side
-            end
-            label={`Outstanding · ${outstanding.pct}%`}
-            tone={outstandingTone}
-            value={finance.outstanding}
-            caption={open.length ? `${plural(open.length, "invoice")}, ${!late ? "not yet due" : worstDays > 0 ? `${plural(worstDays, "day")} overdue` : "overdue"}` : "Nothing owed"}
-          />
+          <Side label={`Paid · ${paid.pct}%`} tone="text-paid" value={finance.paid} caption={caption.paid} />
+          <Side end label={`Outstanding · ${outstanding.pct}%`} tone={late ? "text-overdue" : "text-due"} value={finance.outstanding} caption={caption.outstanding} />
         </div>
       </div>
 
@@ -131,22 +143,17 @@ export function StatementBar({
           <dd className="flex flex-wrap items-baseline gap-x-2">
             <Money value={finance.expenses} className={cn("figure text-[22px]", !finance.expenses && "text-ink-3")} />
             <span className="text-[13px] text-ink-2">
-              {expenses.length ? plural(expenses.length, "cost") + " recorded" : "None recorded for this account."}{" "}
-              {onAddExpense && (
-                <LinkButton onClick={onAddExpense}>
-                  Add expense
-                </LinkButton>
-              )}
+              {caption.expenses} {onAddExpense && <LinkButton onClick={onAddExpense}>Add expense</LinkButton>}
             </span>
           </dd>
         </div>
         <div>
           <dt className="text-[13px] text-ink-3">Margin</dt>
           {finance.expenses > 0 ? (
-            <dd className="flex flex-wrap items-baseline gap-x-2">
-              <span className="figure text-[22px]">{Math.round(finance.margin * 100)}%</span>
-              <span className="text-[13px] text-ink-2">
-                <Money value={Math.max(0, finance.billed - finance.expenses)} /> kept after costs
+            <dd className={cn("flex flex-wrap items-baseline gap-x-2", margin.negative ? "text-overdue" : "text-ink-2")}>
+              {margin.pct && <span className={cn("figure text-[22px]", !margin.negative && "text-ink-1")}>{margin.pct}</span>}
+              <span className="text-[13px]">
+                <Money value={margin.amount} /> after costs
               </span>
             </dd>
           ) : (

@@ -137,6 +137,21 @@ describe("LeadBoard keyboard moves", () => {
     expect(screen.getByRole("dialog", { name: "Mark as lost" })).toBeInTheDocument();
   });
 
+  it("keeps focus on the board when P parks a card into the collapsed Parked lane", async () => {
+    const user = userEvent.setup();
+    renderBoard([lead({ id: "n1", name: "Asha", stage: "new", order: 0 }), lead({ id: "n2", name: "Bela", stage: "new", order: 1 })]);
+
+    screen.getByRole("link", { name: "Asha" }).focus();
+    await user.keyboard("p");
+    expect(patch).toHaveBeenCalledWith("/api/leads/n1/stage", { stage: "parked", order: 0 });
+    // Asha is out of sight in the folded lane: the card that took her place gets focus.
+    await waitFor(() => expect(screen.getByRole("link", { name: "Bela" })).toHaveFocus());
+
+    await user.keyboard("p");
+    // The lane is empty now, so focus lands on the Parked shelf that holds both.
+    await waitFor(() => expect(screen.getByRole("button", { name: /Parked 2/ })).toHaveFocus());
+  });
+
   it("describes the shortcuts to assistive tech", () => {
     renderBoard([lead({ id: "n1", name: "Asha" })]);
     expect(screen.getByRole("link", { name: "Asha" })).toHaveAccessibleDescription(/Press 1 to 5/);
@@ -220,6 +235,23 @@ describe("LeadBoard inline quick-add", () => {
 
     expect(post).toHaveBeenCalledWith("/api/leads", { name: "Meera", company: "", phone: "+91 98765 43210", estValue: 45000, stage: "contacted" });
     await waitFor(() => expect(onChanged).toHaveBeenCalled());
+  });
+});
+
+describe("LeadBoard stage jump (tablet)", () => {
+  it("offers the five stages as jump tabs that scroll their lane into view", async () => {
+    const user = userEvent.setup();
+    const scrollIntoView = vi.fn();
+    Element.prototype.scrollIntoView = scrollIntoView;
+    renderBoard([lead({ id: "q1", name: "Asha", stage: "qualified", estValue: 90000 })]);
+    const nav = screen.getByRole("navigation", { name: "Stages" });
+    const tabs = within(nav).getAllByRole("button");
+    expect(tabs.map((t) => t.textContent!.replace(/\s+/g, " "))).toEqual(["1 New0–", "2 Contacted0–", "3 Qualified1₹90k", "4 Proposal0–", "5 Won0–"]);
+
+    scrollIntoView.mockClear();
+    await user.click(tabs[2]);
+    expect(scrollIntoView).toHaveBeenCalledTimes(1);
+    expect(scrollIntoView.mock.contexts[0]).toBe(screen.getByTestId("col-qualified"));
   });
 });
 

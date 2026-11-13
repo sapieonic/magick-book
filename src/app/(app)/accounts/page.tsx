@@ -20,6 +20,7 @@ import { useToast } from "@/components/ui/Toast";
 import { api, useApi } from "@/lib/client";
 import { deriveOwners, filterByOwners } from "@/lib/leadFilters";
 import type { AccountListItem } from "@/lib/types";
+import { cn, plural } from "@/lib/utils";
 
 type View = "all" | "active" | "at_risk" | "churned" | "archived";
 
@@ -116,9 +117,8 @@ export default function AccountsPage() {
 
   async function bulkArchive() {
     const ids = [...selected];
-    const noun = ids.length === 1 ? "account" : "accounts";
     const ok = await confirm({
-      title: `Archive ${ids.length} ${noun}?`,
+      title: `Archive ${plural(ids.length, "account")}?`,
       description: "They leave the active lists. Restore them any time from Archived.",
       confirmLabel: "Archive",
       tone: "danger",
@@ -129,7 +129,7 @@ export default function AccountsPage() {
     const results = await Promise.allSettled(ids.map((id) => api.delete(`/api/accounts/${id}`)));
     const failed = results.filter((r) => r.status === "rejected").length;
     const done = ids.length - failed;
-    if (done > 0) toast(`${done} ${done === 1 ? "account" : "accounts"} archived.`, "success");
+    if (done > 0) toast(`${plural(done, "account")} archived.`, "success");
     if (failed > 0) toast(`${failed} could not be archived. Try again.`, "error");
     setSelected(new Set());
     setArchiving(false);
@@ -272,10 +272,7 @@ function Summary({ rows, archived }: { rows: AccountListItem[] | null; archived:
   return (
     <Panel aria-label="Summary">
       <p className="text-[15px] text-ink-2">
-        <span className={fig}>
-          <span className="tnum">{rows.length}</span> {archived ? "archived " : ""}
-          {rows.length === 1 ? "account" : "accounts"}
-        </span>
+        <span className={cn("tnum", fig)}>{plural(rows.length, archived ? "archived account" : "account")}</span>
         {" worth "}
         <Money value={sum((a) => a.value)} compact className={fig} /> a month · <Money value={sum((a) => a.finance.billed)} compact className={fig} />{" "}
         billed · <Money value={sum((a) => a.finance.outstanding)} compact className={fig} /> outstanding
@@ -285,7 +282,7 @@ function Summary({ rows, archived }: { rows: AccountListItem[] | null; archived:
             <span className="font-medium text-overdue">
               <Money value={overdue} compact /> overdue
             </span>{" "}
-            across <span className="tnum">{overdueCount}</span> {overdueCount === 1 ? "account" : "accounts"}
+            across <span className="tnum">{plural(overdueCount, "account")}</span>
           </>
         )}
       </p>

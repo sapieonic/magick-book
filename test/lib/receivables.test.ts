@@ -1,11 +1,10 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import {
   agingDate,
   agingKey,
   buildOutstandingAging,
   collections,
   daysPastDue,
-  differenceInUtcCalendarDays,
   displayStatus,
   isOutstanding,
   isOverdue,
@@ -15,8 +14,10 @@ import {
   type InvoiceLike,
 } from "@/lib/receivables";
 
-const now = new Date("2026-08-15T12:00:00.000Z");
+const now = new Date("2026-08-15T12:00:00.000Z"); // 17:30 IST, 15 Aug
 const utc = (d: string) => `${d}T00:00:00.000Z`;
+/** An IST wall-clock time ("2026-08-15T02:00") as an instant. */
+const ist = (wall: string) => new Date(`${wall}:00.000+05:30`);
 
 type Row = InvoiceLike & { accountId: string; accountName?: string; number: number };
 let seq = 1000;
@@ -36,8 +37,7 @@ describe("dates", () => {
     expect(agingDate({ issuedAt: utc("2026-08-01"), dueAt: null }).toISOString()).toBe(utc("2026-08-01"));
   });
 
-  it("counts whole UTC calendar days, ignoring the local offset", () => {
-    expect(differenceInUtcCalendarDays(new Date("2026-08-15T01:00:00.000Z"), new Date("2026-08-14T23:00:00.000Z"))).toBe(1);
+  it("counts whole calendar days", () => {
     expect(daysPastDue({ issuedAt: now, dueAt: utc("2026-08-15") }, now)).toBe(0);
     expect(daysPastDue({ issuedAt: now, dueAt: utc("2026-08-14") }, now)).toBe(1);
     expect(daysPastDue({ issuedAt: now, dueAt: new Date(utc("2026-08-22")) }, now)).toBe(-7);
@@ -113,9 +113,10 @@ describe("rollupMoney", () => {
     expect(t.margin).toBeCloseTo(0.8);
   });
 
-  it("reports zero margin rather than a negative one, and zero when nothing is billed", () => {
-    expect(rollupMoney(invoices, [{ amount: 5000 }], now).margin).toBe(0);
+  it("reports a negative margin when expenses outrun billing, and zero when nothing is billed", () => {
+    expect(rollupMoney(invoices, [{ amount: 3500 }], now).margin).toBeCloseTo(-1);
     expect(rollupMoney([], [{ amount: 10 }], now).margin).toBe(0);
+    expect(rollupMoney([inv({ status: "draft", amount: 500 })], [{ amount: 10 }], now).margin).toBe(0);
   });
 });
 
@@ -135,14 +136,14 @@ describe("rankDebtors", () => {
 });
 
 describe("collections", () => {
-  it("totals this UTC month and last by payment date, latest payment first", () => {
+  it("totals this month and last by payment date, latest payment first", () => {
     const early = inv({ status: "paid", amount: 840, paidAt: utc("2026-08-02"), number: 1017 });
     const late = inv({ status: "paid", amount: 1000, paidAt: utc("2026-08-10"), number: 1018 });
     const c = collections(
       [
         early,
         late,
-        inv({ status: "paid", amount: 590000, paidAt: "2026-07-31T22:00:00.000Z" }), // July in UTC
+        inv({ status: "paid", amount: 590000, paidAt: ist("2026-07-31T23:30") }), // July
         inv({ status: "paid", amount: 5, paidAt: utc("2026-06-30") }), // June: neither
         inv({ status: "sent", amount: 123 }),
       ],
@@ -156,5 +157,61 @@ describe("collections", () => {
   it("rolls the previous month over the year boundary", () => {
     const c = collections([inv({ status: "paid", amount: 70, paidAt: utc("2026-12-28") })], new Date(utc("2027-01-05")));
     expect(c).toMatchObject({ thisMonth: 0, lastMonth: 70 });
+  });
+});
+
+/**
+ * Days and months are IST calendar days and months, whatever the host's zone:
+ * the 00:00–05:30 IST window is the previous UTC day, which is where UTC maths
+ * went wrong. Run under UTC (servers) and a negative-offset zone.
+ */
+describe.each(["UTC", "America/Los_Angeles"])("IST business days with TZ=%s", (tz) => {
+  const original = process.env.TZ;
+  beforeAll(() => {
+    process.env.TZ = tz;
+  });
+  afterAll(() => {
+    process.env.TZ = original;
+  });
+
+  it("runs in the requested host zone", () => {
+    expect(new Date(2026, 0, 1).getTimezoneOffset()).toBe(tz === "UTC" ? 0 : 480);
+  });
+
+  it("is not overdue until the IST due date is over", () => {
+    // Created 02:00 IST on 13 Nov (20:30 UTC on the 12th), due 14 days later: 27 Nov IST.
+    const created = ist("2026-11-13T02:00");
+    const invoice = inv({ issuedAt: created, dueAt: new Date(created.getTime() + 14 * 86_400_000) });
+    expect(daysPastDue(invoice, ist("2026-11-27T10:00"))).toBe(0);
+    expect(isOverdue(invoice, ist("2026-11-27T10:00"))).toBe(false);
+    expect(isOverdue(invoice, ist("2026-11-27T23:59"))).toBe(false);
+    expect(daysPastDue(invoice, ist("2026-11-28T00:01"))).toBe(1);
+    expect(isOverdue(invoice, ist("2026-11-28T00:01"))).toBe(true);
+  });
+
+  it("puts the 00:00–05:30 IST window on the IST day, not the UTC one", () => {
+    const due = ist("2026-08-14T03:00"); // 21:30 UTC on 13 Aug
+    expect(daysPastDue({ issuedAt: due, dueAt: due }, ist("2026-08-14T23:00"))).toBe(0); // 17:30 UTC, still the 14th
+    expect(daysPastDue({ issuedAt: due, dueAt: due }, ist("2026-08-15T05:00"))).toBe(1); // 23:30 UTC on the 14th
+    expect(agingKey(inv({ dueAt: due }), ist("2026-08-15T05:00"))).toBe("d30");
+    expect(agingKey(inv({ dueAt: ist("2026-07-16T01:00") }), ist("2026-08-15T05:00"))).toBe("d30"); // 30 days
+    expect(agingKey(inv({ dueAt: ist("2026-07-15T23:00") }), ist("2026-08-15T05:00"))).toBe("d60"); // 31 days
+  });
+
+  it("counts a payment at 03:00 IST on the 1st in that month", () => {
+    const c = collections(
+      [
+        inv({ status: "paid", amount: 300, paidAt: ist("2026-11-01T03:00") }), // 21:30 UTC on 31 Oct
+        inv({ status: "paid", amount: 20, paidAt: ist("2026-10-31T23:59") }),
+        inv({ status: "paid", amount: 1, paidAt: ist("2026-09-30T23:59") }),
+      ],
+      ist("2026-11-13T09:00"),
+    );
+    expect(c).toMatchObject({ thisMonth: 300, lastMonth: 20 });
+  });
+
+  it("starts the month at 00:00 IST on the 1st, even when it is still the 31st in UTC", () => {
+    const c = collections([inv({ status: "paid", amount: 50, paidAt: ist("2026-11-01T00:00") })], ist("2026-11-01T00:30"));
+    expect(c).toMatchObject({ thisMonth: 50, lastMonth: 0 });
   });
 });

@@ -1,13 +1,23 @@
-import Image from "next/image";
 import { type CSSProperties, type ReactNode } from "react";
 import { Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-export function Logo({ size = 32, withWordmark = false, className }: { size?: number; withWordmark?: boolean; className?: string }) {
+/**
+ * The Daybook mark (an accent ledger page; `src/app/icon.svg` is the favicon
+ * twin) beside the wordmark, set like the sidebar's.
+ */
+export function Logo() {
   return (
-    <span className={cn("inline-flex items-center gap-2.5", className)}>
-      <Image src="/logo.png" alt="MagickBook" width={size} height={size} priority className="select-none" />
-      {withWordmark && <span className="text-[17px] font-semibold tracking-[-0.01em] text-ink-1">MagickBook</span>}
+    <span className="inline-flex items-center gap-2.5 text-[17px] font-semibold tracking-[-0.01em] text-ink-1">
+      <svg viewBox="0 0 32 32" className="size-[30px] shrink-0 text-accent" aria-hidden>
+        <rect width="32" height="32" rx="9" fill="currentColor" />
+        <g className="fill-on-ink">
+          <rect x="8" y="9" width="16" height="2.5" rx="1.25" />
+          <rect x="8" y="14.75" width="16" height="2.5" rx="1.25" />
+          <rect x="8" y="20.5" width="9" height="2.5" rx="1.25" />
+        </g>
+      </svg>
+      MagickBook
     </span>
   );
 }
@@ -93,8 +103,6 @@ export function ErrorState({ message, onRetry }: { message: string; onRetry?: ()
 }
 
 /** Keyboard hint chip, e.g. `<KbdHint>⌘K</KbdHint>`. */
-export function KbdHint({ children, className }: { children: ReactNode; className?: string }) {
-  return (
-    <kbd className={cn("rounded-bar border border-line-strong px-1.5 font-mono text-[12px] text-ink-3", className)}>{children}</kbd>
-  );
+export function KbdHint({ children }: { children: ReactNode }) {
+  return <kbd className="rounded-bar border border-line-strong px-1.5 font-mono text-[12px] text-ink-3">{children}</kbd>;
 }

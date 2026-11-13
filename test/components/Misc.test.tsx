@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { DatedList, EmptyState, ErrorState, KbdHint, RowsSkeleton, Skeleton } from "@/components/ui/Misc";
+import { DatedList, EmptyState, ErrorState, KbdHint, Logo, RowsSkeleton, Skeleton } from "@/components/ui/Misc";
 
-describe("EmptyState / ErrorState / Skeleton / KbdHint", () => {
+describe("EmptyState / ErrorState / Skeleton / Logo / KbdHint", () => {
   it("EmptyState shows its title, description and action", () => {
     render(<EmptyState title="No leads yet" description="Add your first lead." action={<button>Add lead</button>} />);
     expect(screen.getByRole("heading", { name: "No leads yet" })).toBeInTheDocument();
@@ -23,6 +23,15 @@ describe("EmptyState / ErrorState / Skeleton / KbdHint", () => {
     const { container } = render(<Skeleton className="h-4 w-10" />);
     expect(container.firstChild).toHaveClass("skeleton", "h-4");
     expect(container.firstChild).toHaveAttribute("aria-hidden", "true");
+  });
+
+  it("Logo is a decorative token-coloured mark beside the wordmark, with no bitmap", () => {
+    const { container } = render(<Logo />);
+    expect(container).toHaveTextContent("MagickBook");
+    expect(container.querySelector("img")).toBeNull();
+    const mark = container.querySelector("svg");
+    expect(mark).toHaveAttribute("aria-hidden", "true");
+    expect(mark).toHaveClass("text-accent");
   });
 
   it("KbdHint renders a kbd element", () => {

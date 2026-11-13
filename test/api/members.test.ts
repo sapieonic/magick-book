@@ -54,10 +54,10 @@ beforeEach(async () => {
 });
 
 describe("GET /api/members", () => {
-  it("returns the team and isAdmin flag", async () => {
+  it("returns the team, and nothing else", async () => {
     const res = await membersRoute.GET();
     const body = await res.json();
-    expect(body.isAdmin).toBe(true);
+    expect(Object.keys(body)).toEqual(["members"]);
     expect(body.members.map((m: { email: string }) => m.email).sort()).toEqual(["owner@x.com", "stan@x.com"]);
     const me = body.members.find((m: { email: string }) => m.email === "owner@x.com");
     expect(me.isYou).toBe(true);
@@ -74,10 +74,10 @@ describe("GET /api/members", () => {
     expect(body.members.find((m: { email: string }) => m.email === "a2@x.com").isYou).toBe(true);
   });
 
-  it("isAdmin is false for a standard user", async () => {
+  it("lists the team for a standard user too", async () => {
     session.user = standard;
     const body = await (await membersRoute.GET()).json();
-    expect(body.isAdmin).toBe(false);
+    expect(body.members.find((m: { email: string }) => m.email === "stan@x.com").isYou).toBe(true);
   });
 });
 

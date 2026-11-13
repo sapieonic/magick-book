@@ -1,20 +1,26 @@
 "use client";
-import { useEffect, useId, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type Ref, type RefObject } from "react";
 import {
   DndContext,
   DragOverlay,
-  PointerSensor,
+  MouseSensor,
+  TouchSensor,
   useSensor,
   useSensors,
-  closestCorners,
+  closestCenter,
+  getFirstCollision,
+  pointerWithin,
+  rectIntersection,
   useDroppable,
+  type CollisionDetection,
   type DragStartEvent,
   type DragEndEvent,
   type DragOverEvent,
+  type UniqueIdentifier,
 } from "@dnd-kit/core";
-import { SortableContext, rectSortingStrategy } from "@dnd-kit/sortable";
+import { SortableContext, arrayMove, rectSortingStrategy } from "@dnd-kit/sortable";
 import { ChevronDown } from "lucide-react";
-import { CollapsedLane, SortableItem, StageLane, type CardKeyHandler } from "./BoardLane";
+import { CollapsedLane, SortableItem, StageLane, WeightRule, type CardKeyHandler } from "./BoardLane";
 import { LeadCard, LeadRow } from "./LeadCard";
 import { LostLeadModal } from "./LostLeadModal";
 import { PHONE_QUERY, useMediaQuery } from "@/lib/useMediaQuery";
@@ -32,7 +38,8 @@ import {
   type LeadStage,
   type PipelineStage,
 } from "@/lib/constants";
-import { stageTotals } from "@/lib/leadFilters";
+import { stageTotals, type StageTotal } from "@/lib/leadFilters";
+import { stageStep } from "@/components/ui/stage";
 import { cn } from "@/lib/utils";
 import type { LeadDTO } from "@/lib/types";
 
@@ -131,8 +138,26 @@ export function LeadBoard({
   // board mid-drag, so by `onDragEnd` the source can't be recovered from state.
   const homeStageRef = useRef<BoardStage | null>(null);
   const boardRef = useRef<HTMLDivElement>(null);
+  const shelfRef = useRef<HTMLDivElement>(null);
+  // Multi-container drag state (dnd-kit's pattern): the last target the pointer
+  // resolved to, and whether the card has just jumped lanes. Right after a jump
+  // the lanes re-measure, and resolving afresh would bounce the card back.
+  const lastOverId = useRef<UniqueIdentifier | null>(null);
+  const recentlyMovedToNewContainer = useRef(false);
 
-  useEffect(() => setBoard(buildBoard(leads)), [leads]);
+  // Server data replaces the board, except mid-drag: every mutation anywhere
+  // reloads the leads, and rebuilding then would yank the card from the pointer.
+  // The drop (or cancel) rebuilds from the latest leads.
+  useEffect(() => {
+    if (!homeStageRef.current) setBoard(buildBoard(leads));
+  }, [leads]);
+
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => {
+      recentlyMovedToNewContainer.current = false;
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [board]);
 
   // Bring a `?stage=` lane into view once it has rendered (tablet scroller, parked lane below the fold).
   const scrolledTo = useRef<string | null>(null);
@@ -144,26 +169,75 @@ export function LeadBoard({
     lane.scrollIntoView?.({ behavior: "smooth", block: "nearest", inline: "start" });
   });
 
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
+  // Mouse drags after a small nudge; touch needs a press and hold, so a swipe still scrolls the lanes.
+  const sensors = useSensors(
+    useSensor(MouseSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 5 } }),
+  );
   const activeLead = useMemo(() => leads.find((l) => l.id === activeId) ?? null, [activeId, leads]);
   const totals = useMemo(() => stageTotals(Object.values(board).flat()), [board]);
 
-  function findStage(id: string): BoardStage | "lost" | null {
+  /**
+   * The Parked/Lost shelf under the pointer, else the pointer's lane, else
+   * whatever the card overlaps, else the last target. Over a lane with cards,
+   * the nearest card wins so the drop lands between cards rather than at the end.
+   */
+  const collisionDetection: CollisionDetection = useCallback(
+    (args) => {
+      // The shelf sticks to the viewport while dragging, so hit-test its live
+      // position: dnd-kit's cached rects assume targets scroll with the page.
+      const at = args.pointerCoordinates;
+      const shelf =
+        at &&
+        [...(shelfRef.current?.querySelectorAll<HTMLElement>("[data-shelf]") ?? [])].find((el) => {
+          const r = el.getBoundingClientRect();
+          return at.x >= r.left && at.x <= r.right && at.y >= r.top && at.y <= r.bottom;
+        });
+      if (shelf) return [{ id: shelf.dataset.shelf! }];
+
+      const pointer = pointerWithin(args);
+      let overId = getFirstCollision(pointer.length > 0 ? pointer : rectIntersection(args), "id");
+      if (overId != null) {
+        const lane = String(overId).startsWith("col:") ? board[String(overId).slice(4) as BoardStage] : null;
+        if (lane?.length) {
+          const cards = new Set<UniqueIdentifier>(lane.map((l) => l.id));
+          overId = closestCenter({ ...args, droppableContainers: args.droppableContainers.filter((c) => cards.has(c.id)) })[0]?.id ?? overId;
+        }
+        lastOverId.current = overId;
+        return [{ id: overId }];
+      }
+      if (recentlyMovedToNewContainer.current) lastOverId.current = activeId;
+      return lastOverId.current != null ? [{ id: lastOverId.current }] : [];
+    },
+    [activeId, board],
+  );
+
+  function stageIn(b: Board, id: string): BoardStage | "lost" | null {
     if (id === DROP_PARKED) return "parked";
     if (id === DROP_LOST) return "lost";
     if (id.startsWith("col:")) return id.slice(4) as BoardStage;
-    return BOARD_STAGES.find((s) => board[s].some((l) => l.id === id)) ?? null;
+    return BOARD_STAGES.find((s) => b[s].some((l) => l.id === id)) ?? null;
   }
+  const findStage = (id: string) => stageIn(board, id);
 
   /** Move a lead to the top of another lane (keyboard, shelf and "Move here"). */
   async function move(lead: LeadDTO, to: BoardStage) {
     if (lead.stage === to && board[to].some((l) => l.id === lead.id)) return;
+    // Where focus goes if the card lands out of sight (a collapsed lane): the
+    // card that took its place, else the one above it, else the Parked shelf.
+    const from = board[lead.stage as BoardStage] ?? [];
+    const at = from.findIndex((l) => l.id === lead.id);
+    const neighbour = from[at + 1] ?? from[at - 1];
     setBoard((prev) => {
       const next = Object.fromEntries(BOARD_STAGES.map((s) => [s, prev[s].filter((l) => l.id !== lead.id)])) as Board;
       next[to] = [{ ...lead, stage: to, order: 0 }, ...next[to]];
       return next;
     });
-    requestAnimationFrame(() => document.querySelector<HTMLElement>(`[data-lead-id="${lead.id}"] a`)?.focus());
+    requestAnimationFrame(() => {
+      const card = (id: string) => document.querySelector<HTMLElement>(`[data-lead-id="${id}"] a`);
+      const target = card(lead.id) ?? (neighbour && card(neighbour.id)) ?? shelfRef.current?.querySelector<HTMLElement>(`[data-shelf="${DROP_PARKED}"]`);
+      target?.focus();
+    });
     try {
       await api.patch(`/api/leads/${lead.id}/stage`, { stage: to, order: 0 });
       toast(`${lead.name} moved to ${STAGE_META[to].label}.`, "success");
@@ -194,6 +268,15 @@ export function LeadBoard({
     homeStageRef.current = findStage(id) as BoardStage | null;
   }
 
+  /** Drag ended without a drop (Escape, or the pointer left the window): put everything back. */
+  function onDragCancel() {
+    setActiveId(null);
+    homeStageRef.current = null;
+    lastOverId.current = null;
+    setBoard(buildBoard(leads));
+  }
+
+  /** Mid-drag, carry the card into the lane under it so the lane opens a gap. Same lane: nothing to do. */
   function onDragOver(e: DragOverEvent) {
     const { active, over } = e;
     if (!over) return;
@@ -205,21 +288,25 @@ export function LeadBoard({
     const toStage = findStage(overId);
     if (!fromStage || !toStage || fromStage === toStage || fromStage === "lost" || toStage === "lost") return;
 
+    // Below the hovered card's midline goes after it.
+    const translated = active.rect.current.translated;
+    const below = !!translated && translated.top > over.rect.top + over.rect.height / 2;
+    recentlyMovedToNewContainer.current = true;
     setBoard((prev) => {
-      const lead = prev[fromStage].find((l) => l.id === activeKey);
-      if (!lead) return prev;
-      const targetList = prev[toStage].filter((l) => l.id !== activeKey);
-      const oi = targetList.findIndex((l) => l.id === overId);
-      const index = oi >= 0 ? oi : targetList.length;
-      const dest = [...targetList];
-      dest.splice(index, 0, { ...lead, stage: toStage });
-      return { ...prev, [fromStage]: prev[fromStage].filter((l) => l.id !== activeKey), [toStage]: dest };
+      const from = stageIn(prev, activeKey);
+      const lead = from && from !== "lost" ? prev[from].find((l) => l.id === activeKey) : undefined;
+      if (!from || from === "lost" || from === toStage || !lead) return prev;
+      const dest = [...prev[toStage]];
+      const oi = dest.findIndex((l) => l.id === overId);
+      dest.splice(oi >= 0 ? oi + (below ? 1 : 0) : dest.length, 0, { ...lead, stage: toStage });
+      return { ...prev, [from]: prev[from].filter((l) => l.id !== activeKey), [toStage]: dest };
     });
   }
 
   async function onDragEnd(e: DragEndEvent) {
     const { active, over } = e;
     setActiveId(null);
+    lastOverId.current = null;
     const fromStage = homeStageRef.current;
     homeStageRef.current = null;
     const lead = leads.find((l) => l.id === active.id);
@@ -242,21 +329,23 @@ export function LeadBoard({
       return;
     }
 
-    // The card's current column: `onDragOver` may already have moved it cross-lane.
+    // The card's current lane and slot: `onDragOver` may already have carried it
+    // cross-lane. Dropped on another card in that lane takes that card's slot;
+    // dropped on itself or the lane keeps the slot it has.
     const toStage = findStage(String(active.id)) as BoardStage | null;
     if (!toStage) return;
-    const targetList = board[toStage].filter((l) => l.id !== active.id);
-    const oi = overId.startsWith("col:") ? -1 : targetList.findIndex((l) => l.id === overId);
-    const index = oi >= 0 ? oi : targetList.length;
+    const list = board[toStage];
+    const from = list.findIndex((l) => l.id === active.id);
+    const overIndex = list.findIndex((l) => l.id === overId);
+    const index = overIndex >= 0 ? overIndex : from;
 
-    // No-op: dropped back in its home column at the same position.
-    if (fromStage === toStage && board[toStage].findIndex((l) => l.id === active.id) === index) {
+    // No-op: dropped back in its home lane at the same position.
+    if (fromStage === toStage && index === from) {
       setBoard(buildBoard(leads));
       return;
     }
 
-    const dest = [...targetList];
-    dest.splice(index, 0, { ...lead, stage: toStage });
+    const dest = arrayMove(list, from, index);
     setBoard({ ...board, [toStage]: dest.map((l, i) => ({ ...l, order: i })) });
 
     try {
@@ -290,7 +379,14 @@ export function LeadBoard({
 
   return (
     <>
-      <DndContext sensors={sensors} collisionDetection={closestCorners} onDragStart={onDragStart} onDragOver={onDragOver} onDragEnd={onDragEnd}>
+      <DndContext
+        sensors={sensors}
+        collisionDetection={collisionDetection}
+        onDragStart={onDragStart}
+        onDragOver={onDragOver}
+        onDragEnd={onDragEnd}
+        onDragCancel={onDragCancel}
+      >
         <p id={hintId} className="sr-only">
           Press 1 to 5 to move this lead to that stage, P to park it, or L to mark it lost.
         </p>
@@ -310,28 +406,32 @@ export function LeadBoard({
             <StageLane key={phoneStage} {...laneProps(phoneStage, PIPELINE_STAGES.indexOf(phoneStage))} dnd={false} />
           </div>
         ) : (
-          <div
-            ref={boardRef}
-            style={{ "--board-cols": columns } as CSSProperties}
-            className="flex min-h-[420px] snap-x snap-mandatory gap-3 overflow-x-auto max-xl:h-[calc(100dvh-236px)] max-xl:min-h-[520px] xl:grid xl:snap-none xl:overflow-visible xl:[grid-template-columns:var(--board-cols)]"
-          >
-            {PIPELINE_STAGES.map((stage, i) =>
-              collapsed.has(stage) ? (
-                <CollapsedLane key={stage} stage={stage} count={board[stage].length} onExpand={() => toggle(stage)} className="w-14 shrink-0 xl:w-auto" />
-              ) : (
-                <StageLane
-                  key={stage}
-                  {...laneProps(stage, i)}
-                  dnd
-                  onCollapse={isCollapsibleStage(stage) ? () => toggle(stage) : undefined}
-                  className="w-[280px] shrink-0 snap-start max-xl:overflow-y-auto xl:w-auto"
-                />
-              ),
-            )}
-          </div>
+          <>
+            <StageJump boardRef={boardRef} totals={totals} watch={columns} />
+            <div
+              ref={boardRef}
+              style={{ "--board-cols": columns } as CSSProperties}
+              className="flex min-h-[420px] snap-x snap-mandatory gap-3 overflow-x-auto max-xl:h-[calc(100dvh-320px)] max-xl:min-h-[520px] xl:grid xl:snap-none xl:overflow-visible xl:[grid-template-columns:var(--board-cols)]"
+            >
+              {PIPELINE_STAGES.map((stage, i) =>
+                collapsed.has(stage) ? (
+                  <CollapsedLane key={stage} stage={stage} count={board[stage].length} onExpand={() => toggle(stage)} className="w-14 shrink-0 xl:w-auto" />
+                ) : (
+                  <StageLane
+                    key={stage}
+                    {...laneProps(stage, i)}
+                    dnd
+                    onCollapse={isCollapsibleStage(stage) ? () => toggle(stage) : undefined}
+                    className="w-[280px] shrink-0 snap-start max-xl:overflow-y-auto xl:w-auto"
+                  />
+                ),
+              )}
+            </div>
+          </>
         )}
 
         <DropShelf
+          ref={shelfRef}
           dragging={activeId != null}
           parkedCount={board.parked.length}
           parkedOpen={parkedOpen}
@@ -362,6 +462,73 @@ export function LeadBoard({
   );
 }
 
+const listFormat = new Intl.ListFormat("en", { type: "conjunction" });
+
+/**
+ * Tablet only (720 to 1279px): the five stages as jump tabs above the lane
+ * strip, marking the lanes in view. Tapping one scrolls its lane into view.
+ * `watch` changes when lanes collapse or expand, so the observer re-attaches.
+ */
+function StageJump({ boardRef, totals, watch }: { boardRef: RefObject<HTMLDivElement | null>; totals: Record<PipelineStage, StageTotal>; watch: string }) {
+  const [inView, setInView] = useState<PipelineStage[]>([]);
+  const lane = (stage: PipelineStage) => boardRef.current?.querySelector<HTMLElement>(`[data-testid="col-${stage}"]`);
+
+  useEffect(() => {
+    const root = boardRef.current;
+    if (!root || typeof IntersectionObserver === "undefined") return;
+    const shown = new Set<PipelineStage>();
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const e of entries) {
+          const stage = (e.target as HTMLElement).dataset.testid!.slice(4) as PipelineStage;
+          if (e.isIntersecting) shown.add(stage);
+          else shown.delete(stage);
+        }
+        setInView(PIPELINE_STAGES.filter((s) => shown.has(s)));
+      },
+      { root, threshold: 0.6 },
+    );
+    for (const s of PIPELINE_STAGES) {
+      const el = root.querySelector(`[data-testid="col-${s}"]`);
+      if (el) observer.observe(el);
+    }
+    return () => observer.disconnect();
+  }, [boardRef, watch]);
+
+  return (
+    <nav aria-label="Stages" className="-mb-1 xl:hidden">
+      <div className="grid grid-cols-5 gap-1">
+        {PIPELINE_STAGES.map((stage) => {
+          const current = inView.includes(stage);
+          return (
+            <button
+              key={stage}
+              type="button"
+              aria-current={current || undefined}
+              onClick={() => lane(stage)?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "start" })}
+              className={cn("rounded-card px-2.5 pb-2.5 pt-2 text-left transition-colors hover:bg-hover", current ? "bg-sunk text-ink-1" : "text-ink-2")}
+            >
+              <span className="flex justify-between gap-1 text-[14px]">
+                <span className={cn("truncate", current ? "font-semibold" : "font-medium")}>
+                  <span className="font-normal text-ink-3">{stageStep(stage)}</span>&nbsp; {STAGE_META[stage].label}
+                </span>
+                <span className="tnum text-ink-3">{totals[stage].count}</span>
+              </span>
+              <Money value={totals[stage].value} compact className={cn("figure block text-[18px]", stage === "won" && "text-paid")} />
+              <WeightRule stage={stage} share={totals[stage].share} />
+            </button>
+          );
+        })}
+      </div>
+      {inView.length > 0 && (
+        <p className="px-2.5 pt-2 text-[12px] text-ink-3">
+          Showing {listFormat.format(inView.map((s) => STAGE_META[s].label))}. Swipe sideways, or tap a stage to jump to it.
+        </p>
+      )}
+    </nav>
+  );
+}
+
 /** A dashed shelf target that is also a button (Parked toggles its lane; Lost opens the Lost view). */
 function ShelfTarget({
   id,
@@ -381,6 +548,7 @@ function ShelfTarget({
     <button
       ref={setNodeRef}
       type="button"
+      data-shelf={id}
       onClick={onClick}
       aria-expanded={expanded}
       className={cn(
@@ -396,6 +564,7 @@ function ShelfTarget({
 
 /** Parked and Lost, below the board. While a card is dragged it sticks to the bottom of the view. */
 function DropShelf({
+  ref,
   dragging,
   parkedCount,
   parkedOpen,
@@ -403,6 +572,7 @@ function DropShelf({
   onToggleParked,
   onShowLost,
 }: {
+  ref: Ref<HTMLDivElement>;
   dragging: boolean;
   parkedCount: number;
   parkedOpen: boolean;
@@ -412,6 +582,7 @@ function DropShelf({
 }) {
   return (
     <div
+      ref={ref}
       role="group"
       aria-label="Parked and lost"
       className={cn(

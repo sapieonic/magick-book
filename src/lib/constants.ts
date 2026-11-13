@@ -7,6 +7,10 @@ export type LeadStage = (typeof LEAD_STAGES)[number];
 /** Sequential pipeline columns (lost is a separate view; parked is a holding lane). */
 export const PIPELINE_STAGES = ["new", "contacted", "qualified", "proposal", "won"] as const;
 export type PipelineStage = (typeof PIPELINE_STAGES)[number];
+/** Stages still being worked: the pipeline minus won. "Open leads" means these everywhere. */
+export const OPEN_LEAD_STAGES = PIPELINE_STAGES.filter((s): s is Exclude<PipelineStage, "won"> => s !== "won");
+export const isOpenLeadStage = (s: string | null | undefined): s is (typeof OPEN_LEAD_STAGES)[number] =>
+  (OPEN_LEAD_STAGES as readonly string[]).includes(s ?? "");
 
 /** Kanban columns, including the Parked holding lane after the sequential funnel. */
 export const BOARD_STAGES = ["new", "contacted", "qualified", "proposal", "won", "parked"] as const;
@@ -155,6 +159,8 @@ export const MEETING_TITLE = "Meeting logged";
 
 export const REMINDER_STATUSES = ["scheduled", "sent", "failed", "done", "canceled"] as const;
 export type ReminderStatus = (typeof REMINDER_STATUSES)[number];
+/** Reminders still waiting on the user (delivered or not, but not done or canceled): Today's rule for "open". */
+export const OPEN_REMINDER_STATUSES: readonly ReminderStatus[] = ["scheduled", "sent", "failed"];
 
 export const REMINDER_STATUS_META: Record<ReminderStatus, { label: string }> = {
   scheduled: { label: "Scheduled" },

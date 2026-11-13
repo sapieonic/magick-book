@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { DATA_CHANGED } from "./dataChanged";
 
 class ApiError extends Error {
   status: number;
@@ -18,6 +19,7 @@ async function request<T>(method: string, url: string, body?: unknown): Promise<
   const text = await res.text();
   const data = text ? JSON.parse(text) : {};
   if (!res.ok) throw new ApiError(data?.error || `Request failed (${res.status})`, res.status);
+  if (method !== "GET") window.dispatchEvent(new Event(DATA_CHANGED));
   return data as T;
 }
 

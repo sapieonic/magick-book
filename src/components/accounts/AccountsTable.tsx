@@ -8,8 +8,15 @@ import { Money, formatMoney } from "@/components/ui/Money";
 import { StatusPill, STATUS_META } from "@/components/ui/Badge";
 import { SortHeader, Table, Td, Th, TwoLine, type SortState } from "@/components/ui/Table";
 import { Time } from "@/components/ui/Time";
-import { cn } from "@/lib/utils";
+import { cn, plural } from "@/lib/utils";
 import type { AccountListItem } from "@/lib/types";
+
+/**
+ * Owner, Plan or value and Paid have their own columns only from xl (1280).
+ * Below that, owner and plan fold into a second line under the name, so Last
+ * activity and Status always fit without scrolling sideways.
+ */
+const WIDE_COL = "max-xl:hidden";
 
 export const ACCOUNT_SORT: Record<string, (a: AccountListItem) => string | number | null> = {
   name: (a) => a.name.toLowerCase(),
@@ -61,7 +68,7 @@ interface Selection {
 /**
  * The accounts ledger. `rows` is the current page; `all` feeds the total row
  * so it always sums the whole filtered set. Archived rows trade the checkbox and
- * status for a Restore button.
+ * status for a Restore button, which stays on phones.
  */
 export function AccountsTable({
   rows,
@@ -112,13 +119,19 @@ export function AccountsTable({
             </Th>
           )}
           <Th>{head("Account", "name")}</Th>
-          <Th hideOnPhone>{head("Owner", "owner")}</Th>
-          <Th hideOnPhone>{head("Plan or value", "value")}</Th>
+          <Th className={WIDE_COL}>{head("Owner", "owner")}</Th>
+          <Th className={WIDE_COL}>{head("Plan or value", "value")}</Th>
           <Th numeric hideOnPhone>{head("Billed", "billed", true)}</Th>
-          <Th numeric hideOnPhone>{head("Paid", "paid", true)}</Th>
+          <Th numeric className={WIDE_COL}>{head("Paid", "paid", true)}</Th>
           <Th numeric>{head("Outstanding", "outstanding", true)}</Th>
           <Th hideOnPhone>{head("Last activity", "lastActivity")}</Th>
-          <Th hideOnPhone>{archived ? <span className="sr-only">Actions</span> : head("Status", "status")}</Th>
+          {archived ? (
+            <Th>
+              <span className="sr-only">Actions</span>
+            </Th>
+          ) : (
+            <Th hideOnPhone>{head("Status", "status")}</Th>
+          )}
         </tr>
       </thead>
       <tbody>
@@ -144,25 +157,28 @@ export function AccountsTable({
               )}
               <Td className="max-w-[280px]">
                 <TwoLine
-                  phoneOnly
                   primary={
                     <Link href={href} onClick={(e) => e.stopPropagation()} className="block truncate hover:underline">
                       {a.name}
                     </Link>
                   }
-                  secondary={`${STATUS_META[a.status].label} · ${a.ownerName || "No owner"}`}
+                  secondary={
+                    <span className="block truncate xl:hidden">
+                      {!archived && <span className="md:hidden">{STATUS_META[a.status].label} · </span>}
+                      {a.ownerName || "No owner"}
+                      {a.plan && ` · ${a.plan}`}
+                    </span>
+                  }
                 />
               </Td>
-              <Td hideOnPhone className="text-ink-2">
-                {a.ownerName || "–"}
-              </Td>
-              <Td hideOnPhone>
+              <Td className={cn(WIDE_COL, "whitespace-nowrap text-ink-2")}>{a.ownerName || "–"}</Td>
+              <Td className={WIDE_COL}>
                 <PlanValue plan={a.plan} value={a.value} />
               </Td>
               <Td numeric hideOnPhone>
                 <Money value={a.finance.billed} />
               </Td>
-              <Td numeric hideOnPhone>
+              <Td numeric className={WIDE_COL}>
                 <Money value={a.finance.paid} />
               </Td>
               <Td numeric>
@@ -171,7 +187,7 @@ export function AccountsTable({
               <Td hideOnPhone className="whitespace-nowrap text-ink-2">
                 <Time value={a.lastActivityAt} />
               </Td>
-              <Td hideOnPhone className={archived ? "text-right" : undefined}>
+              <Td hideOnPhone={!archived} className={archived ? "text-right" : undefined}>
                 {archived ? (
                   <Button
                     size="sm"
@@ -192,22 +208,26 @@ export function AccountsTable({
         })}
       </tbody>
       <tfoot>
+        {/* One cell per column, with the column's own visibility, so the totals stay aligned at every width. */}
         <tr className="total">
-          <Td hideOnPhone colSpan={archived ? 1 : 2}>
-            Total · <span className="tnum">{all.length}</span> {all.length === 1 ? "account" : "accounts"}
+          {!archived && <Td hideOnPhone />}
+          <Td className="whitespace-nowrap">
+            <span className="max-md:hidden">Total · {plural(all.length, "account")}</span>
+            <span className="md:hidden">Total</span>
           </Td>
-          <Td className="md:hidden">Total</Td>
-          <Td hideOnPhone colSpan={2} />
+          <Td className={WIDE_COL} />
+          <Td className={WIDE_COL} />
           <Td numeric hideOnPhone>
             <Money value={sum((a) => a.finance.billed)} />
           </Td>
-          <Td numeric hideOnPhone>
+          <Td numeric className={WIDE_COL}>
             <Money value={sum((a) => a.finance.paid)} />
           </Td>
           <Td numeric>
             <Money value={sum((a) => a.finance.outstanding)} />
           </Td>
-          <Td hideOnPhone colSpan={2} />
+          <Td hideOnPhone />
+          <Td hideOnPhone={!archived} />
         </tr>
       </tfoot>
     </Table>

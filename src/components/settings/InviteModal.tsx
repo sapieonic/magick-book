@@ -13,7 +13,8 @@ export const ROLE_COPY: Record<Role, { title: string; desc: string }> = {
   standard: { title: "Standard user", desc: "Only sees the leads and accounts they add." },
 };
 
-export function InviteModal({ open, onClose, onInvited }: { open: boolean; onClose: () => void; onInvited: (m: MemberDTO) => void }) {
+/** Mount only while open (`{inviting && <InviteModal … />}`), so every invite starts from a blank form. */
+export function InviteModal({ onClose, onInvited }: { onClose: () => void; onInvited: (m: MemberDTO) => void }) {
   const { toast } = useToast();
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<Role>("standard");
@@ -28,7 +29,6 @@ export function InviteModal({ open, onClose, onInvited }: { open: boolean; onClo
       toast(`Invited ${member.email}.`, "success");
       onInvited(member);
       onClose();
-      setEmail("");
     } catch (err) {
       toast(err instanceof Error ? err.message : "Could not invite", "error");
     } finally {
@@ -37,7 +37,7 @@ export function InviteModal({ open, onClose, onInvited }: { open: boolean; onClo
   }
 
   return (
-    <Modal open={open} onClose={onClose} title="Invite a teammate" subtitle="They join your workspace when they sign in with this email.">
+    <Modal open onClose={onClose} title="Invite a teammate" subtitle="They join your workspace when they sign in with this email.">
       <form onSubmit={submit} className="space-y-5">
         <Field label="Work email" required>
           <Input autoFocus type="email" autoComplete="off" placeholder="name@company.com" value={email} onChange={(e) => setEmail(e.target.value)} />

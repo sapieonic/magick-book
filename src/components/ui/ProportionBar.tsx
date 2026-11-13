@@ -20,7 +20,7 @@ export interface Segment {
   valueClassName?: string;
 }
 
-export type SharedSegment<T extends Segment = Segment> = T & { share: number; pct: number };
+type SharedSegment<T extends Segment = Segment> = T & { share: number; pct: number };
 
 /**
  * Each segment's share of the positive total: `share` in 0..1 and `pct` as a
@@ -48,8 +48,6 @@ interface ProportionBarProps {
   size?: "sm" | "md";
   /** Bar variant: list every segment with its swatch and amount underneath. */
   legend?: boolean;
-  /** Abbreviate amounts (₹1.1L). Defaults to true for ribbons, false for legends. */
-  compact?: boolean;
   /** Caption under an empty ribbon slot. */
   emptyLabel?: string;
   className?: string;
@@ -65,7 +63,7 @@ const RIBBON = {
   md: { slot: "min-w-28", empty: "basis-28", bar: "h-7", value: "figure pt-2 text-[22px]" },
 };
 
-function Ribbon({ segments, size = "md", compact = true, emptyLabel = "Empty", className, ...aria }: Omit<ProportionBarProps, "variant">) {
+function Ribbon({ segments, size = "md", emptyLabel = "Empty", className, ...aria }: Omit<ProportionBarProps, "variant">) {
   const sz = RIBBON[size];
   return (
     <div role="group" aria-label={aria["aria-label"]} className={cn("flex items-stretch gap-0.5 overflow-x-auto", className)}>
@@ -79,7 +77,7 @@ function Ribbon({ segments, size = "md", compact = true, emptyLabel = "Empty", c
             </div>
             <div className={cn("rounded-bar", sz.bar, empty && "hatch")} style={empty ? undefined : { background: s.color }} />
             <div className={cn(sz.value, s.valueClassName)}>
-              <Money value={s.value} compact={compact} />
+              <Money value={s.value} compact />
             </div>
             <div className={cn("text-[12px]", empty ? "font-medium text-due" : "tnum text-ink-3")}>
               {empty ? emptyLabel : <>{s.pct}%{s.note && <> · {s.note}</>}</>}
@@ -102,7 +100,7 @@ function Ribbon({ segments, size = "md", compact = true, emptyLabel = "Empty", c
   );
 }
 
-function Bar({ segments, size = "sm", legend, compact = false, className, ...aria }: Omit<ProportionBarProps, "variant">) {
+function Bar({ segments, size = "sm", legend, className, ...aria }: Omit<ProportionBarProps, "variant">) {
   const shared = segmentShares(segments);
   const filled = shared.filter((s) => s.value > 0);
   const summary = shared.map((s) => `${s.label} ${formatMoney(s.value)}`).join(", ");
@@ -130,7 +128,7 @@ function Bar({ segments, size = "sm", legend, compact = false, className, ...ari
                 {s.label}
               </dt>
               <dd className="text-right">
-                <Money value={s.value} compact={compact} className={s.valueClassName} />
+                <Money value={s.value} className={s.valueClassName} />
               </dd>
             </div>
           ))}

@@ -1,6 +1,7 @@
 import { Panel } from "@/components/ui/Panel";
 import { cn } from "@/lib/utils";
-import { longDate, summaryPhrases } from "./format";
+import { longDate } from "@/lib/dates";
+import { summaryPhrases } from "./format";
 import type { DashboardData } from "@/lib/types";
 
 /** Date, the one-sentence brief, and four headline counts. */
@@ -14,7 +15,7 @@ export function TodayHeader({ data }: { data: DashboardData }) {
   return (
     <Panel aria-label="Summary" className="grid items-end gap-x-10 gap-y-4 xl:grid-cols-[minmax(0,1fr)_352px]">
       <div>
-        <p className="mb-2 text-[13px] text-ink-3 md:mb-2.5">{longDate(new Date(data.asOf))}</p>
+        <p className="mb-2 text-[13px] text-ink-3 md:mb-2.5">{longDate(data.asOf)}</p>
         <p className="max-w-[34em] text-[22px] leading-[1.32] tracking-[-0.01em] text-ink-2 md:text-[26px]">
           {summaryPhrases(data).map((p, i) =>
             p.strong ? (

@@ -1,7 +1,7 @@
 // Pure helpers behind the Leads page: owner filter, `?stage=` param and the
 // pipeline roll-ups. Kept free of React/Next so the derivation, filtering and
 // URL round-trip can be unit-tested in isolation.
-import { LEAD_STAGES, PIPELINE_STAGES, type LeadStage, type PipelineStage } from "./constants";
+import { LEAD_STAGES, PIPELINE_STAGES, isOpenLeadStage, type LeadStage, type PipelineStage } from "./constants";
 import type { LeadDTO } from "./types";
 
 export interface OwnerOption {
@@ -66,10 +66,10 @@ export function parseStageParam(raw: string | null | undefined): LeadStage | nul
 }
 
 export interface LeadSummary {
-  /** Value of every lead still on the funnel, New through Won. */
-  pipeline: number;
-  /** Leads on the funnel, New through Won (parked and lost excluded). */
-  active: number;
+  /** Open leads: New through Proposal (`OPEN_LEAD_STAGES`), the sidebar's and Today's count. */
+  open: number;
+  /** Estimated value of the open leads. */
+  openValue: number;
   won: number;
   parked: number;
   lost: number;
@@ -77,15 +77,12 @@ export interface LeadSummary {
 
 /** One-pass roll-up for the page's summary line and the Lost view count. */
 export function summarizeLeads(leads: LeadDTO[]): LeadSummary {
-  const sum: LeadSummary = { pipeline: 0, active: 0, won: 0, parked: 0, lost: 0 };
+  const sum: LeadSummary = { open: 0, openValue: 0, won: 0, parked: 0, lost: 0 };
   for (const l of leads) {
-    if (l.stage === "lost") sum.lost += 1;
-    else if (l.stage === "parked") sum.parked += 1;
-    else {
-      sum.active += 1;
-      sum.pipeline += l.estValue > 0 ? l.estValue : 0;
-      if (l.stage === "won") sum.won += 1;
-    }
+    if (isOpenLeadStage(l.stage)) {
+      sum.open += 1;
+      sum.openValue += l.estValue > 0 ? l.estValue : 0;
+    } else sum[l.stage] += 1;
   }
   return sum;
 }

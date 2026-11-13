@@ -11,6 +11,8 @@ const H = vi.hoisted(() => ({
   archived: [] as unknown[],
   params: new URLSearchParams(),
   replace: vi.fn(),
+  refreshLeads: vi.fn(),
+  refreshArchived: vi.fn(),
 }));
 
 vi.mock("next/navigation", () => ({
@@ -41,7 +43,7 @@ vi.mock("@/lib/client", () => ({
       setData: vi.fn(),
       error: null,
       loading: false,
-      refresh: vi.fn(),
+      refresh: archived ? H.refreshArchived : H.refreshLeads,
     };
   },
   api: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), put: vi.fn(), delete: vi.fn() },
@@ -272,6 +274,16 @@ describe("Leads page — filter applies across views", () => {
     expect(screen.queryByText("Archived-B")).not.toBeInTheDocument();
   });
 
+  it("reloads both the archive and the board after a restore", async () => {
+    const user = userEvent.setup();
+    setup({ leads: [lead({ id: "1" })], archived: [lead({ id: "AR1", name: "Archived-A" })] });
+    renderPage();
+    await user.click(screen.getByRole("radio", { name: "Archived" }));
+    await user.click(screen.getByRole("button", { name: "Restore Archived-A" }));
+    expect(H.refreshArchived).toHaveBeenCalled();
+    expect(H.refreshLeads).toHaveBeenCalled();
+  });
+
   it("shows a Clear filters action in the archived empty state when a filter hides everything", async () => {
     const user = userEvent.setup();
     setup({
@@ -287,7 +299,7 @@ describe("Leads page — filter applies across views", () => {
 });
 
 describe("Leads page — summary line", () => {
-  it("keeps parked leads on the board but out of the active pipeline", () => {
+  it("counts open leads like the sidebar: won, parked and lost apart", () => {
     setup({
       leads: [
         lead({ id: "1", ownerId: "a", stage: "new", estValue: 50_000 }),
@@ -299,7 +311,7 @@ describe("Leads page — summary line", () => {
     renderPage();
     expect(boardIds()).toEqual(["1", "2", "3"]);
     expect(screen.getByRole("region", { name: "Pipeline summary" })).toHaveTextContent(
-      "₹1.5L pipeline across 2 active leads. 1 won, 1 parked.",
+      "1 open lead worth ₹50k. 1 won, 1 parked.",
     );
     expect(screen.getByRole("radio", { name: /Lost/ })).toHaveTextContent("Lost 1");
     expect(screen.getByTestId("board")).toHaveAttribute("data-lost", "1");
@@ -333,11 +345,23 @@ describe("Leads page — ?stage= param", () => {
     expect(H.replace).toHaveBeenLastCalledWith("/leads", { scroll: false });
   });
 
-  it("opens the Lost view for stage=lost", () => {
+  it("opens the Lost view for stage=lost and keeps it in the URL", () => {
     setup({ search: "stage=lost", leads: leads() });
     renderPage();
     expect(screen.getByRole("radio", { name: /Lost/ })).toHaveAttribute("aria-checked", "true");
     expect(screen.queryAllByTestId("table-lead").map((n) => n.textContent)).toEqual(["3"]);
+    expect(H.replace).not.toHaveBeenCalled();
+  });
+
+  it("writes stage=lost when the Lost view is picked, and drops it on leaving", async () => {
+    const user = userEvent.setup();
+    setup({ leads: leads() });
+    renderPage();
+    await user.click(screen.getByRole("radio", { name: /Lost/ }));
+    expect(H.replace).toHaveBeenLastCalledWith("/leads?stage=lost", { scroll: false });
+    H.params = new URLSearchParams("stage=lost");
+    await user.click(screen.getByRole("radio", { name: "Board" }));
+    expect(H.replace).toHaveBeenLastCalledWith("/leads", { scroll: false });
   });
 
   it("ignores an unknown stage", () => {

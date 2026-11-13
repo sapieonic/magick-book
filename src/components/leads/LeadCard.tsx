@@ -59,7 +59,7 @@ export function LeadCard({ lead, dragging, describedBy }: { lead: LeadDTO; dragg
           {lead.ownerName && (
             <>
               <span className="sr-only">, owner {lead.ownerName}</span>
-              <Avatar name={lead.ownerName} size={20} />
+              <Avatar name={lead.ownerName} size={24} />
             </>
           )}
         </span>

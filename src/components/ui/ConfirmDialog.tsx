@@ -3,7 +3,7 @@ import { createContext, useCallback, useContext, useRef, useState, type ReactNod
 import { Modal } from "./Overlay";
 import { Button } from "./Button";
 
-export interface ConfirmOptions {
+interface ConfirmOptions {
   title: string;
   /** Body copy explaining the consequences of the action. */
   description?: ReactNode;

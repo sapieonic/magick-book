@@ -6,7 +6,6 @@ import {
   matchesInvoiceQuery,
   matchesLedgerFilter,
   monthLabel,
-  utcMonthKey,
 } from "@/lib/money-charts";
 import type { InvoiceDTO } from "@/lib/types";
 
@@ -26,14 +25,8 @@ function inv(over: Partial<InvoiceDTO> & Pick<InvoiceDTO, "id" | "amount" | "sta
 
 const now = new Date("2026-08-15T12:00:00.000Z");
 
-describe("UTC helpers", () => {
-  it("utcMonthKey uses the UTC calendar month near day boundaries", () => {
-    // 2026-07-31 22:00 UTC is still July UTC; local IST would already be Aug 1.
-    expect(utcMonthKey(new Date("2026-07-31T22:00:00.000Z"))).toBe("2026-07");
-    expect(utcMonthKey(new Date("2026-08-01T00:30:00.000Z"))).toBe("2026-08");
-  });
-
-  it("monthLabel gives short and long names", () => {
+describe("monthLabel", () => {
+  it("gives short and long names", () => {
     expect(monthLabel("2026-06")).toBe("Jun");
     expect(monthLabel("2026-11", true)).toBe("November");
   });
@@ -66,7 +59,7 @@ describe("buildCollectedByMonth", () => {
   const paid = (id: string, amount: number, accountId: string, paidAt: string) =>
     inv({ id, amount, status: "paid", accountId, accountName: accountId.toUpperCase(), paidAt });
 
-  it("returns the last N UTC months, oldest first, zero-filled", () => {
+  it("returns the last N months, oldest first, zero-filled", () => {
     const c = buildCollectedByMonth([], now, { months: 6 });
     expect(c.months.map((m) => m.key)).toEqual(["2026-03", "2026-04", "2026-05", "2026-06", "2026-07", "2026-08"]);
     expect(c.months.every((m) => m.total === 0 && m.amounts.length === 0)).toBe(true);
@@ -105,9 +98,19 @@ describe("buildCollectedByMonth", () => {
     expect(c.series.map((s) => s.key)).toEqual(["acme"]);
   });
 
-  it("keeps late-UTC-day payments in the UTC month", () => {
-    const c = buildCollectedByMonth([paid("1", 1000, "acme", "2026-07-31T22:00:00.000Z")], now, { months: 2 });
-    expect(c.months.map((m) => m.total)).toEqual([1000, 0]);
+  it("files a payment by its IST month: 03:30 IST on 1 Aug is August, 23:30 IST on 31 Jul is July", () => {
+    const c = buildCollectedByMonth(
+      [paid("1", 1000, "acme", "2026-07-31T22:00:00.000Z"), paid("2", 7, "acme", "2026-07-31T18:00:00.000Z")],
+      now,
+      { months: 2 },
+    );
+    expect(c.months.map((m) => m.total)).toEqual([7, 1000]);
+  });
+
+  it("starts the window on an IST month even when it is still last month in UTC", () => {
+    // 00:30 IST on 1 Aug is 19:00 UTC on 31 Jul.
+    const c = buildCollectedByMonth([], new Date("2026-07-31T19:00:00.000Z"), { months: 2 });
+    expect(c.months.map((m) => m.key)).toEqual(["2026-07", "2026-08"]);
   });
 });
 

@@ -4,8 +4,6 @@ export interface NavItem {
   href: string;
   label: string;
   icon: LucideIcon;
-  /** Path prefix that marks the item active, when it differs from `href`. */
-  match?: string;
 }
 
 export const NAV: NavItem[] = [
@@ -15,10 +13,9 @@ export const NAV: NavItem[] = [
   { href: "/money", label: "Money", icon: IndianRupee },
 ];
 
-/** Admin-only. */
-export const SETTINGS_NAV: NavItem = { href: "/settings/team", label: "Settings", icon: SlidersHorizontal, match: "/settings" };
+/** In the sidebar and palette for admins; the user menu offers it to everyone. `/settings` opens the first tab the user can use. */
+export const SETTINGS_NAV: NavItem = { href: "/settings", label: "Settings", icon: SlidersHorizontal };
 
 export function isActivePath(pathname: string, item: NavItem): boolean {
-  const base = item.match ?? item.href;
-  return pathname === base || pathname.startsWith(base + "/");
+  return pathname === item.href || pathname.startsWith(item.href + "/");
 }

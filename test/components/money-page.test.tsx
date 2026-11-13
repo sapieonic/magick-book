@@ -10,6 +10,7 @@ const H = vi.hoisted(() => ({
   data: null as unknown,
   refresh: vi.fn(),
   patch: vi.fn(async () => ({})),
+  download: vi.fn(),
 }));
 
 vi.mock("@/lib/client", () => ({
@@ -17,8 +18,13 @@ vi.mock("@/lib/client", () => ({
   api: { get: vi.fn(), post: vi.fn(), patch: H.patch, put: vi.fn(), delete: vi.fn() },
 }));
 
+vi.mock("@/components/money/csv", async (importOriginal) => ({ ...(await importOriginal<object>()), downloadCsv: H.download }));
+
 import MoneyPage from "@/app/(app)/money/page";
+import { ledgerCsvRows } from "@/components/money/InvoiceTable";
+import { toCsv } from "@/components/money/csv";
 import { ToastProvider } from "@/components/ui/Toast";
+import { ConfirmProvider } from "@/components/ui/ConfirmDialog";
 
 const NOW = new Date("2026-11-13T09:00:00.000Z");
 const day = (n: number) => new Date(NOW.getTime() - n * 86_400_000).toISOString();
@@ -44,7 +50,14 @@ const INVOICES = [
   inv({ id: "paid", number: 1018, amount: 1840, status: "paid", paidAt: day(10), hasFile: true, fileName: "1018.pdf" }),
 ];
 
-const renderPage = () => render(<ToastProvider><MoneyPage /></ToastProvider>);
+const renderPage = () =>
+  render(
+    <ToastProvider>
+      <ConfirmProvider>
+        <MoneyPage />
+      </ConfirmProvider>
+    </ToastProvider>,
+  );
 const ledgerNumbers = () =>
   within(screen.getByRole("region", { name: "Ledger" }))
     .queryAllByText(/^#\d+$/)
@@ -54,6 +67,7 @@ beforeEach(() => {
   H.data = summary(INVOICES);
   H.refresh.mockClear();
   H.patch.mockClear();
+  H.download.mockClear();
 });
 
 describe("Money page", () => {
@@ -100,13 +114,61 @@ describe("Money page", () => {
     expect(ledgerNumbers()).toHaveLength(3);
   });
 
-  it("marks an invoice paid inline and refreshes", async () => {
+  it("marks an invoice paid inline after confirming, and refreshes", async () => {
     const user = userEvent.setup();
     renderPage();
     await user.click(screen.getByRole("button", { name: "Mark paid, invoice #1016" }));
+    const dialog = screen.getByRole("dialog", { name: "Mark invoice #1016 (₹18,880) as paid?" });
+    expect(H.patch).not.toHaveBeenCalled();
+    await user.click(within(dialog).getByRole("button", { name: "Mark paid" }));
     expect(H.patch).toHaveBeenCalledWith("/api/invoices/late", { status: "paid" });
     expect(H.refresh).toHaveBeenCalled();
     expect(screen.queryByRole("button", { name: "Mark paid, invoice #1018" })).toBeNull();
+  });
+
+  it("does nothing when Mark paid is cancelled", async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await user.click(screen.getByRole("button", { name: "Mark paid, invoice #1024" }));
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(H.patch).not.toHaveBeenCalled();
+  });
+
+  it("offers Remind on every outstanding invoice and says the reminder was logged, not sent", async () => {
+    const user = userEvent.setup();
+    renderPage();
+    expect(screen.getByRole("button", { name: "Remind, invoice #1024" })).toBeInTheDocument(); // not yet due
+    expect(screen.queryByRole("button", { name: "Remind, invoice #1018" })).toBeNull(); // paid
+    const remind = screen.getByRole("button", { name: "Remind, invoice #1016" });
+    expect(remind.className).not.toMatch(/hidden/);
+    await user.click(remind);
+    expect(H.patch).toHaveBeenCalledWith("/api/invoices/late", { action: "remind" });
+    expect(await screen.findByText("Reminder logged for #1016.")).toBeInTheDocument();
+  });
+
+  it("exports exactly the filtered ledger rows as CSV", async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await user.click(screen.getByRole("button", { name: /^Paid/ }));
+    await user.click(screen.getByRole("button", { name: "Export CSV" }));
+    expect(H.download).toHaveBeenCalledTimes(1);
+    const [filename, rows] = H.download.mock.calls[0] as unknown as [string, unknown[][]];
+    expect(filename).toBe("Invoices 2026-11-13.csv");
+    expect(rows).toEqual([
+      ["Invoice", "Account", "Issued", "Due", "Paid on", "Status", "Age", "Amount"],
+      [1018, "Acme", "2026-10-24", null, "2026-11-03", "Paid", "10 days to pay", 1840],
+    ]);
+  });
+
+  it("shows a real, negative margin in the overdue tone", () => {
+    H.data = summary(INVOICES, [
+      { id: "e1", accountId: "acme", accountName: "Acme", date: day(3), category: "Software", vendor: "Figma", amount: 30000, billable: false },
+    ]);
+    renderPage();
+    const equation = screen.getByRole("region", { name: "Receivables equation" });
+    const margin = within(equation).getByText(/after costs/).closest("dd")!;
+    expect(margin).toHaveClass("text-overdue");
+    expect(margin).toHaveTextContent("−38% · −₹8.3k after costs");
   });
 
   it("switches to the expenses ledger and shows margin once costs exist", async () => {
@@ -119,5 +181,19 @@ describe("Money page", () => {
     await user.click(screen.getByRole("radio", { name: /Expenses/ }));
     expect(screen.getByText("Figma")).toBeInTheDocument();
     expect(screen.getByText("Total · 1 expense")).toBeInTheDocument();
+  });
+});
+
+describe("Ledger CSV", () => {
+  it("escapes quotes, commas and formula starts and writes plain numbers", () => {
+    expect(toCsv([["Name", "Amount"], ['Pine "& Co", Pune', 120000], ["=HYPERLINK()", -500], [null, 1.5]])).toBe(
+      'Name,Amount\r\n"Pine ""& Co"", Pune",120000\r\n\'=HYPERLINK(),-500\r\n,1.5',
+    );
+  });
+
+  it("lists rows in ledger order with IST days", () => {
+    const rows = ledgerCsvRows(INVOICES, NOW);
+    expect(rows.slice(1).map((r) => r[0])).toEqual([1016, 1024, 1018]);
+    expect(rows[1]).toEqual([1016, "Artha", "2026-10-24", "2026-09-04", null, "Overdue", "70 days overdue", 18880]);
   });
 });

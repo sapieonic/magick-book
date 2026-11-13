@@ -4,10 +4,17 @@ import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-const FOCUSABLE = 'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
+export const FOCUSABLE = 'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
 
 /** Open dialogs, bottom → top. Only the topmost answers Escape and traps Tab. */
 const stack: symbol[] = [];
+
+/**
+ * The dialog that closed last and the element it handed focus back to. A
+ * dialog opened from inside it (palette → "New lead") was opened by an element
+ * that is now gone, so it inherits that opener instead.
+ */
+let lastClosed: { node: HTMLElement; opener: HTMLElement | null } | null = null;
 
 /**
  * Modal-dialog behaviour for a container: Escape to close, Tab focus trap,
@@ -18,17 +25,20 @@ export function useDialog<T extends HTMLElement>(onClose: () => void): RefObject
   const ref = useRef<T>(null);
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
+  // Read the opener while rendering: by the time effects run, an `autoFocus`
+  // child has already taken focus. Dialogs only render on the client (Portal).
+  const [opener] = useState(() => document.activeElement as HTMLElement | null);
 
   useEffect(() => {
     const id = Symbol("dialog");
     const node = ref.current;
-    const restore = document.activeElement as HTMLElement | null;
+    const restore = opener && lastClosed?.node.contains(opener) ? lastClosed.opener : opener;
     stack.push(id);
     document.body.style.overflow = "hidden";
     if (node && !node.contains(document.activeElement)) node.focus();
 
     const onKey = (e: KeyboardEvent) => {
-      if (stack[stack.length - 1] !== id || !node) return;
+      if (stack[stack.length - 1] !== id || !node || e.defaultPrevented) return;
       if (e.key === "Escape") {
         e.stopPropagation();
         closeRef.current();
@@ -55,9 +65,12 @@ export function useDialog<T extends HTMLElement>(onClose: () => void): RefObject
       document.removeEventListener("keydown", onKey);
       stack.splice(stack.indexOf(id), 1);
       if (stack.length === 0) document.body.style.overflow = "";
-      restore?.focus?.();
+      if (node) lastClosed = { node, opener: restore };
+      // Hand focus back unless a dialog opened in this one's place has already claimed it.
+      const lost = !document.activeElement || document.activeElement === document.body;
+      if (lost && restore?.isConnected) restore.focus();
     };
-  }, []);
+  }, [opener]);
 
   return ref;
 }
@@ -103,7 +116,7 @@ interface OverlayProps {
   subtitle?: ReactNode;
 }
 
-const MODAL_WIDTHS = { sm: "max-w-md", md: "max-w-xl", lg: "max-w-3xl" };
+const MODAL_WIDTHS = { sm: "max-w-md", md: "max-w-xl" };
 
 /** Centred glass dialog. */
 export function Modal({ open, size = "md", ...rest }: OverlayProps & { size?: keyof typeof MODAL_WIDTHS }) {

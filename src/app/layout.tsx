@@ -36,6 +36,7 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
+  // The ground colour (globals.css) until ThemeProvider repoints both tags at the theme the user chose.
   themeColor: [
     { media: "(prefers-color-scheme: light)", color: "#eef1f4" },
     { media: "(prefers-color-scheme: dark)", color: "#111315" },

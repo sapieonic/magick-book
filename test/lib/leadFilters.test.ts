@@ -248,7 +248,7 @@ describe("parseStageParam", () => {
 });
 
 describe("summarizeLeads", () => {
-  it("rolls up pipeline value and counts in one pass", () => {
+  it("rolls up open value and counts in one pass", () => {
     const sum = summarizeLeads([
       lead({ stage: "new", estValue: 10_000 }),
       lead({ stage: "proposal", estValue: 40_000 }),
@@ -257,16 +257,16 @@ describe("summarizeLeads", () => {
       lead({ stage: "lost", estValue: 90_000 }),
       lead({ stage: "lost", estValue: 0 }),
     ]);
-    // Won is still on the funnel; parked and lost are not.
-    expect(sum).toEqual({ pipeline: 150_000, active: 3, won: 1, parked: 1, lost: 2 });
+    // Open means New through Proposal: won, parked and lost are counted apart.
+    expect(sum).toEqual({ open: 2, openValue: 50_000, won: 1, parked: 1, lost: 2 });
   });
 
-  it("ignores negative values in the pipeline total", () => {
-    expect(summarizeLeads([lead({ estValue: -500 }), lead({ estValue: 500 })]).pipeline).toBe(500);
+  it("ignores negative values in the open total", () => {
+    expect(summarizeLeads([lead({ estValue: -500 }), lead({ estValue: 500 })]).openValue).toBe(500);
   });
 
   it("is all zeros for no leads", () => {
-    expect(summarizeLeads([])).toEqual({ pipeline: 0, active: 0, won: 0, parked: 0, lost: 0 });
+    expect(summarizeLeads([])).toEqual({ open: 0, openValue: 0, won: 0, parked: 0, lost: 0 });
   });
 });
 

@@ -1,12 +1,12 @@
 import Link from "next/link";
-import { subMonths } from "date-fns";
 import { Panel } from "@/components/ui/Panel";
 import { Money, formatMoney } from "@/components/ui/Money";
 import { ProportionBar } from "@/components/ui/ProportionBar";
 import { DatedList } from "@/components/ui/Misc";
 import { AGING_COLORS, AGING_LABELS } from "@/lib/receivables";
 import { plural } from "@/lib/utils";
-import { collectedComparison, monthName, shortDay } from "./format";
+import { monthName, startOfBusinessMonth, weekdayDay } from "@/lib/dates";
+import { collectedComparison } from "./format";
 import type { DashboardReceivables, UpcomingReminder } from "@/lib/types";
 
 const ROW = "border-b border-line py-[9px]";
@@ -82,7 +82,7 @@ function Collected({ r, now }: { r: DashboardReceivables; now: Date }) {
     <Panel title={`Collected in ${monthName(now)}`}>
       <div className="flex flex-wrap items-baseline gap-x-2.5">
         <Money value={thisMonth} compact className="figure text-[28px]" />
-        <span className="text-[13px] text-ink-3">{collectedComparison(thisMonth, lastMonth, monthName(subMonths(now, 1)))}</span>
+        <span className="text-[13px] text-ink-3">{collectedComparison(thisMonth, lastMonth, monthName(startOfBusinessMonth(now, 1)))}</span>
       </div>
       <p className="mt-1.5 text-[13px] text-ink-2">
         {!latest ? (
@@ -108,7 +108,7 @@ function Reminders({ upcoming }: { upcoming: UpcomingReminder[] }) {
         empty="Nothing scheduled for the next 7 days."
         items={upcoming.map((u) => ({
           key: u.id,
-          date: <time dateTime={u.dueAt}>{shortDay(new Date(u.dueAt))}</time>,
+          date: <time dateTime={u.dueAt}>{weekdayDay(u.dueAt)}</time>,
           text: (
             <>
               {u.href ? (

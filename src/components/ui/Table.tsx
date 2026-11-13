@@ -4,7 +4,7 @@ import { ArrowDown, ArrowUp, ChevronsUpDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "./Button";
 
-export type SortDir = "asc" | "desc";
+type SortDir = "asc" | "desc";
 export interface SortState {
   key: string | null;
   dir: SortDir;
@@ -121,20 +121,12 @@ export function Pagination({
   );
 }
 
-/**
- * Ledger table: 40px rows, hairline rules, right-aligned numeric cells. Scrolls
- * sideways when cramped; pass `maxHeight` to scroll vertically under a sticky head.
- */
-export function Table({
-  children,
-  maxHeight,
-  className,
-  ...props
-}: HTMLAttributes<HTMLTableElement> & { maxHeight?: number | string }) {
+/** Ledger table: 40px rows, hairline rules, right-aligned numeric cells. Scrolls sideways when cramped. */
+export function Table({ children, className, ...props }: HTMLAttributes<HTMLTableElement>) {
   return (
     // `relative` keeps absolutely positioned descendants (sr-only labels) inside the scroller instead of widening the page.
-    <div className="relative overflow-auto" style={maxHeight ? { maxHeight } : undefined}>
-      <table className={cn("ledger", maxHeight && "ledger-sticky", className)} {...props}>
+    <div className="relative overflow-auto">
+      <table className={cn("ledger", className)} {...props}>
         {children}
       </table>
     </div>

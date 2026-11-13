@@ -160,7 +160,7 @@ export interface AccountFinance {
   /** The outstanding part that is overdue (`isOverdue` in receivables.ts). */
   overdue: number;
   expenses: number;
-  /** (billed − expenses) / billed, floored at 0; 0 when nothing is billed. */
+  /** (billed − expenses) / billed: negative when expenses outrun billing; 0 when nothing is billed. */
   margin: number;
 }
 

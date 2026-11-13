@@ -16,6 +16,7 @@ import {
   INVOICE_STATUSES,
   INVOICE_STATUS_META,
 } from "@/lib/constants";
+import { isoDay } from "@/lib/dates";
 import { cn, formatBytes, parseAmount } from "@/lib/utils";
 import type { AccountDTO, ContactDTO, DocumentDTO, ExpenseDTO, InvoiceDTO } from "@/lib/types";
 
@@ -24,8 +25,6 @@ import type { AccountDTO, ContactDTO, DocumentDTO, ExpenseDTO, InvoiceDTO } from
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const errorMessage = (e: unknown, fallback: string) => (e instanceof Error ? e.message : fallback);
-
-const today = () => new Date().toISOString().slice(0, 10);
 
 /* ------------------------------------------------------------ form parts */
 
@@ -568,7 +567,7 @@ export function ExpenseModal({
   const [f, setF] = useState({
     category: expense?.category ?? "Software",
     vendor: expense?.vendor ?? "",
-    date: expense ? expense.date.slice(0, 10) : today(),
+    date: isoDay(expense?.date),
     billable: expense?.billable ?? false,
   });
   const [busy, setBusy] = useState<"save" | "remove" | null>(null);
@@ -643,7 +642,7 @@ export function ExpenseModal({
           </Field>
         </div>
         <Field label="Vendor or note">
-          <Input placeholder="Twilio call minutes" value={f.vendor} onChange={(e) => set({ vendor: e.target.value })} />
+          <Input placeholder="Twilio call minutes" maxLength={200} value={f.vendor} onChange={(e) => set({ vendor: e.target.value })} />
         </Field>
         <CheckRow checked={f.billable} onChange={(billable) => set({ billable })}>
           Billable to the client

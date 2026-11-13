@@ -63,7 +63,8 @@ export const GET = route(async (_req: NextRequest, ctx: Ctx) => {
   const user = await requireUser();
   await connectDB();
   const { id } = await ctx.params;
-  const { invoice } = await loadScoped(accountScope(user), id, user.workspaceId);
+  // A read: an archived account's invoice files stay downloadable.
+  const { invoice } = await loadScoped(accountScope(user, { archived: "any" }), id, user.workspaceId);
 
   if (!invoice.fileKey) return fail("No document has been uploaded for this invoice yet.", 404);
   if (!isS3Configured()) return fail("File storage isn't configured.", 501);

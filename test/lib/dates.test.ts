@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   absoluteTime, businessDay, calendarDaysBetween, daysSince, dueWords, endOfBusinessDay,
-  isoDay, longDate, monthKey, shortDate, startOfBusinessMonth,
+  isoDay, longDate, monthKey, monthName, shortDate, startOfBusinessMonth,
 } from "@/lib/dates";
 
 // Instants written in IST (+05:30) so the expectations read as an Indian user sees them.
@@ -44,6 +44,7 @@ describe("dates (business time zone: IST)", () => {
     expect(shortDate(d, "auto", ist("2026-01-01T00:00:00"))).toBe("14 Nov");
     expect(shortDate(d, "auto", ist("2027-01-01T00:00:00"))).toBe("14 Nov 2026");
     expect(longDate(d)).toBe("Saturday, 14 November 2026");
+    expect(monthName(ist("2026-12-01T01:00:00"))).toBe("December");
     expect(absoluteTime(d)).toMatch(/14 Nov 2026, 2:00\s?am/i);
     expect(shortDate("bad")).toBe("");
   });

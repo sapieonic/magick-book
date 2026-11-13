@@ -5,7 +5,7 @@ import { Archive, Ban, Kanban, Plus, Rows3, X } from "lucide-react";
 import { Page } from "@/components/layout/Page";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { useSession } from "@/components/layout/SessionContext";
-import { useLeadsChanged } from "@/components/layout/ShellContext";
+import { useDataChanged } from "@/components/layout/ShellContext";
 import { AddLeadDrawer } from "@/components/leads/AddLeadDrawer";
 import { ArchivedLeads } from "@/components/leads/ArchivedLeads";
 import { LeadBoard } from "@/components/leads/LeadBoard";
@@ -31,7 +31,6 @@ import { plural } from "@/lib/utils";
 import type { LeadDTO } from "@/lib/types";
 
 type View = "board" | "table" | "lost" | "archived";
-
 
 /** Placeholder lanes while the board loads. */
 function BoardSkeleton() {
@@ -76,7 +75,7 @@ function LeadsInner() {
   if (category.trim()) apiQs.set("category", category.trim());
   const url = `/api/leads${apiQs.size ? `?${apiQs.toString()}` : ""}`;
   const { data, loading, error, refresh } = useApi<{ leads: LeadDTO[] }>(url);
-  useLeadsChanged(refresh);
+  useDataChanged(refresh);
   const leads = useMemo(() => data?.leads ?? [], [data]);
 
   // Archived leads come from a separate query, fetched only while that view is open.
@@ -91,10 +90,12 @@ function LeadsInner() {
     if (q.trim()) next.set("q", q.trim());
     if (ownerIds.length) next.set("owner", serializeOwnerParam(ownerIds));
     if (category.trim()) next.set("category", category.trim());
-    if (stage) next.set("stage", stage);
+    // The Lost view is itself a stage link (`?stage=lost`), so it stays shareable.
+    if (view === "lost") next.set("stage", "lost");
+    else if (stage) next.set("stage", stage);
     const qs = next.toString();
     if (qs !== params.toString()) router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
-  }, [q, ownerIds, category, stage, params, pathname, router]);
+  }, [q, ownerIds, category, stage, view, params, pathname, router]);
 
   const visibleLeads = useMemo(() => filterByOwners(leads, ownerIds), [leads, ownerIds]);
   const visibleArchived = useMemo(() => filterByOwners(archivedApi.data?.leads ?? [], ownerIds), [archivedApi.data, ownerIds]);
@@ -140,7 +141,13 @@ function LeadsInner() {
       return (
         <Panel title="Archived" meta={visibleArchived.length || undefined}>
           {visibleArchived.length > 0 ? (
-            <ArchivedLeads leads={visibleArchived} onChanged={archivedApi.refresh} />
+            <ArchivedLeads
+              leads={visibleArchived}
+              onChanged={() => {
+                archivedApi.refresh();
+                refresh();
+              }}
+            />
           ) : (
             <EmptyState
               icon={<Archive className="size-6" strokeWidth={1.5} aria-hidden />}
@@ -227,8 +234,20 @@ function LeadsInner() {
             <Skeleton className="h-6 w-80 max-w-full" />
           ) : (
             <>
-              <span className="font-medium text-ink-1">{summary.pipeline > 0 ? `${formatMoney(summary.pipeline, true)} pipeline` : "No pipeline value yet"}</span>{" "}
-              across {plural(summary.active, "active lead")}. <span className="font-medium text-paid">{summary.won} won</span>, {summary.parked} parked.
+              {summary.open > 0 ? (
+                <>
+                  <span className="font-medium text-ink-1">{plural(summary.open, "open lead")}</span>
+                  {summary.openValue > 0 && (
+                    <>
+                      {" "}worth <span className="font-medium text-ink-1">{formatMoney(summary.openValue, true)}</span>
+                    </>
+                  )}
+                  .
+                </>
+              ) : (
+                <span className="font-medium text-ink-1">No open leads.</span>
+              )}{" "}
+              <span className="font-medium text-paid">{summary.won} won</span>, {summary.parked} parked.
             </>
           )}
         </p>

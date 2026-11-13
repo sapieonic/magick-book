@@ -68,7 +68,7 @@ describe("Sidebar", () => {
     expect(within(primary).getByRole("link", { name: "Accounts, 11" })).not.toHaveAttribute("aria-current");
     expect(within(primary).getByRole("link", { name: "Money, ₹10.4L due" })).toHaveAttribute("href", "/money");
     expect(within(primary).getByRole("link", { name: "Today" })).toHaveAttribute("href", "/dashboard");
-    expect(within(primary).getByRole("link", { name: "Settings" })).toHaveAttribute("href", "/settings/team");
+    expect(within(primary).getByRole("link", { name: "Settings" })).toHaveAttribute("href", "/settings");
     expect(within(primary).getByRole("link", { name: "Samarthya Enterprise" })).toHaveAttribute("href", "/accounts/a1");
   });
 

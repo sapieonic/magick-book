@@ -1,14 +1,17 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { AddLeadDrawer } from "@/components/leads/AddLeadDrawer";
 import { useApi } from "@/lib/client";
+import { isOpenLeadStage } from "@/lib/constants";
 import type { NavSummary } from "@/lib/types";
 import { CommandPalette } from "./CommandPalette";
 import { MobileTabBar } from "./MobileTabBar";
-import { ShellContext, announceLeadsChanged, type Shell } from "./ShellContext";
+import { ShellContext, useDataChanged, type Shell } from "./ShellContext";
 import { Sidebar } from "./Sidebar";
 import { TopBar } from "./TopBar";
+
+/** Funnel stages a new lead can start in from the board's `?stage=` focus (not won). */
 
 /**
  * The authenticated app frame: glass sidebar (icon rail on tablets, tab bar on
@@ -17,18 +20,20 @@ import { TopBar } from "./TopBar";
  */
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
+  const stageParam = useSearchParams().get("stage");
   const [titleSlot, setTitleSlot] = useState<HTMLElement | null>(null);
   const [actionsSlot, setActionsSlot] = useState<HTMLElement | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [addingLead, setAddingLead] = useState(false);
   const { data: summary, refresh: refreshSummary } = useApi<NavSummary>("/api/nav");
 
-  // Keep the sidebar counts live as the user moves around (the first load is useApi's own).
+  // Keep the sidebar counts live as the user moves around and after any change (the first load is useApi's own).
   const mounted = useRef(false);
   useEffect(() => {
     if (mounted.current) refreshSummary();
     mounted.current = true;
   }, [pathname, refreshSummary]);
+  useDataChanged(refreshSummary);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -61,10 +66,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <AddLeadDrawer
           open
           onClose={() => setAddingLead(false)}
-          onCreated={() => {
-            refreshSummary();
-            announceLeadsChanged();
-          }}
+          defaultStage={pathname === "/leads" && isOpenLeadStage(stageParam) ? stageParam : undefined}
         />
       )}
     </ShellContext.Provider>

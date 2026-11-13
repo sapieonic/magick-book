@@ -7,6 +7,9 @@ import { api } from "@/lib/client";
 import type { InvoiceDTO } from "@/lib/types";
 import { INVOICE_FILE_TYPES, uploadInvoiceFile } from "@/components/accounts/AccountModals";
 
+/** All Mark paid and Remind need: enough to call the API and name the invoice. */
+export type InvoiceRef = Pick<InvoiceDTO, "id" | "number" | "amount">;
+
 function removeCopy(inv: InvoiceDTO): string {
   const amount = formatMoney(inv.amount);
   const tail = "The invoice number is kept and won't be reused.";
@@ -16,9 +19,20 @@ function removeCopy(inv: InvoiceDTO): string {
 }
 
 /**
- * Invoice row actions shared by the statement and the Invoices tab: mark paid,
- * remind, remove (soft), open the stored file and attach or replace it. Render
- * `<input {...fileInputProps} />` once wherever `attachFile` is used.
+ * The one set of invoice actions, so the account statement, its Invoices tab,
+ * the Money ledger and Today's work queue behave alike.
+ *
+ * - `markPaid(inv)` asks for confirmation (a financial change with no undo),
+ *   then PATCHes `status: "paid"`, toasts and calls `onChanged`.
+ * - `remind(inv)` logs a payment reminder on the account (nothing is
+ *   delivered) and toasts "Reminder logged for #N". No refresh.
+ * - `remove(inv)` confirms, then soft-deletes the invoice.
+ * - `openFile` / `attachFile` open or upload the stored file; render
+ *   `<input {...fileInputProps} />` once wherever `attachFile` is used.
+ * - `busyId` is the id of the invoice whose request is in flight.
+ *
+ * `markPaid` and `remind` take only `{ id, number, amount }`, so a caller
+ * holding a work-queue item rather than a full invoice can use them.
  */
 export function useInvoiceActions(onChanged: () => void | Promise<void>) {
   const { toast } = useToast();
@@ -52,17 +66,24 @@ export function useInvoiceActions(onChanged: () => void | Promise<void>) {
 
   return {
     busyId,
-    markPaid: (inv: InvoiceDTO) =>
-      run(inv.id, async () => {
+    async markPaid(inv: InvoiceRef) {
+      const ok = await confirm({
+        title: `Mark invoice #${inv.number} (${formatMoney(inv.amount)}) as paid?`,
+        description: "It moves from outstanding to paid, dated today.",
+        confirmLabel: "Mark paid",
+      });
+      if (!ok) return;
+      await run(inv.id, async () => {
         await api.patch(`/api/invoices/${inv.id}`, { status: "paid" });
         return `#${inv.number} marked paid.`;
-      }),
-    remind: (inv: InvoiceDTO) =>
+      });
+    },
+    remind: (inv: InvoiceRef) =>
       run(
         inv.id,
         async () => {
           await api.patch(`/api/invoices/${inv.id}`, { action: "remind" });
-          return `Reminder sent for #${inv.number}.`;
+          return `Reminder logged for #${inv.number}.`;
         },
         false,
       ),
@@ -74,8 +95,8 @@ export function useInvoiceActions(onChanged: () => void | Promise<void>) {
         return `Invoice #${inv.number} removed.`;
       });
     },
-    openFile: (inv: InvoiceDTO) => window.open(`/api/invoices/${inv.id}/document`, "_blank", "noopener"),
-    attachFile(inv: InvoiceDTO) {
+    openFile: (inv: Pick<InvoiceDTO, "id">) => window.open(`/api/invoices/${inv.id}/document`, "_blank", "noopener"),
+    attachFile(inv: Pick<InvoiceDTO, "id">) {
       fileTarget.current = inv.id;
       fileInput.current?.click();
     },

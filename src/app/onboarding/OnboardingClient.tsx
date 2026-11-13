@@ -42,7 +42,7 @@ export function OnboardingClient({ firstName }: { firstName: string }) {
 
   return (
     <div className="flex min-h-dvh flex-col items-center justify-center gap-6 px-3 py-10">
-      <Logo size={30} withWordmark />
+      <Logo />
 
       <Panel as="main" className="w-full max-w-[560px] animate-rise md:px-10 md:py-9">
         <form onSubmit={create}>

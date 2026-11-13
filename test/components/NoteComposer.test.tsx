@@ -20,6 +20,11 @@ describe("NoteComposer", () => {
     expect(post).toHaveBeenCalledWith("/api/accounts/a1/activity", { kind: "note", detail: "Renewal call went well" });
   });
 
+  it("hints the post shortcut for the platform", () => {
+    render(<NoteComposer postUrl="/x" onAdded={vi.fn()} />);
+    expect(screen.getByText("Ctrl Enter").tagName).toBe("KBD");
+  });
+
   it("offers kinds as tabs and posts the selected one", async () => {
     render(<NoteComposer postUrl="/api/leads/l1/activities" kinds={["call", "note", "meeting"]} onAdded={vi.fn()} onRemind={vi.fn()} />);
     expect(screen.getByRole("tab", { name: "Call" })).toHaveAttribute("aria-selected", "true");

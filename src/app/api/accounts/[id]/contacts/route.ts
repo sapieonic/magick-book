@@ -1,33 +1,29 @@
 import { type NextRequest } from "next/server";
-import { ok, fail, route, serializeContact, HttpError } from "@/lib/api";
+import { ok, fail, route, serializeContact } from "@/lib/api";
 import { connectDB } from "@/lib/db";
-import { Account, Contact, type IAccount, type IContact } from "@/lib/models";
+import { Account, Contact, type IContact } from "@/lib/models";
 import { requireUser } from "@/lib/auth/server";
-import { accountScope, canEditOwned } from "@/lib/rbac";
-import { audit } from "@/lib/services";
+import { canEditOwned } from "@/lib/rbac";
+import { audit, loadAccount } from "@/lib/services";
 
 type Ctx = { params: Promise<{ id: string }> };
 
-async function requireAccount(scope: Record<string, unknown>, id: string): Promise<IAccount> {
-  const acc = await Account.findOne({ _id: id, ...scope }).lean<IAccount>();
-  if (!acc) throw new HttpError("Account not found", 404);
-  return acc;
-}
-
+// GET /api/accounts/:id/contacts — primary first (archived accounts too).
 export const GET = route(async (_req: NextRequest, ctx: Ctx) => {
   const user = await requireUser();
   await connectDB();
   const { id } = await ctx.params;
-  await requireAccount(accountScope(user), id);
-  const contacts = await Contact.find({ accountId: id, deletedAt: null }).sort({ isPrimary: -1, createdAt: 1 }).lean<IContact[]>();
+  const acc = await loadAccount(user, id, "read");
+  const contacts = await Contact.find({ accountId: acc._id, deletedAt: null }).sort({ isPrimary: -1, createdAt: 1 }).lean<IContact[]>();
   return ok({ contacts: contacts.map(serializeContact) });
 });
 
+// POST /api/accounts/:id/contacts — add a contact to a live account.
 export const POST = route(async (req: NextRequest, ctx: Ctx) => {
   const user = await requireUser();
   await connectDB();
   const { id } = await ctx.params;
-  const acc = await requireAccount(accountScope(user), id);
+  const acc = await loadAccount(user, id, "write");
   if (!canEditOwned(user, acc.ownerId)) return fail("You can only edit your own accounts.", 403);
 
   const b = await req.json().catch(() => ({}));

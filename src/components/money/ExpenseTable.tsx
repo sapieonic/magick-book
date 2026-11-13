@@ -1,8 +1,9 @@
 import Link from "next/link";
-import { format } from "date-fns";
 import { Table, Th, Td, TwoLine } from "@/components/ui/Table";
 import { Tag } from "@/components/ui/Badge";
 import { Money } from "@/components/ui/Money";
+import { shortDate } from "@/lib/dates";
+import { plural } from "@/lib/utils";
 import type { ExpenseDTO } from "@/lib/types";
 
 /** Every expense across visible accounts, newest first, with a total footer. */
@@ -22,7 +23,7 @@ export function ExpenseTable({ expenses }: { expenses: ExpenseDTO[] }) {
       </thead>
       <tbody>
         {expenses.map((e) => {
-          const date = format(new Date(e.date), "dd MMM yyyy");
+          const date = shortDate(e.date);
           const account = (
             <Link href={`/accounts/${e.accountId}`} className="link">
               {e.accountName ?? "Account"}
@@ -62,7 +63,7 @@ export function ExpenseTable({ expenses }: { expenses: ExpenseDTO[] }) {
       <tfoot>
         <tr className="total">
           <td colSpan={5} className="max-md:hidden">
-            Total · {expenses.length} expense{expenses.length === 1 ? "" : "s"}
+            Total · {plural(expenses.length, "expense")}
           </td>
           <td className="pl-0 md:hidden">Total</td>
           <Td numeric>

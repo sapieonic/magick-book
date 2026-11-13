@@ -3,7 +3,7 @@ import { cn } from "@/lib/utils";
 import { STAGE_META, type AccountStatus, type InvoiceStatus, type LeadStage } from "@/lib/constants";
 import { stageColor } from "./stage";
 
-export type Tone = "neutral" | "accent" | "paid" | "due" | "overdue" | "lost";
+type Tone = "neutral" | "accent" | "paid" | "due" | "overdue" | "lost";
 
 const TONES: Record<Tone, string> = {
   neutral: "bg-sunk text-ink-2",

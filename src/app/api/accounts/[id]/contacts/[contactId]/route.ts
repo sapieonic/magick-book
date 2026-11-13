@@ -1,18 +1,12 @@
 import { type NextRequest } from "next/server";
 import { ok, fail, route, serializeContact, HttpError } from "@/lib/api";
 import { connectDB } from "@/lib/db";
-import { Account, Contact, type IAccount, type IContact } from "@/lib/models";
+import { Account, Contact, type IContact } from "@/lib/models";
 import { requireUser } from "@/lib/auth/server";
-import { accountScope, canEditOwned } from "@/lib/rbac";
-import { audit, diffChanges } from "@/lib/services";
+import { canEditOwned } from "@/lib/rbac";
+import { audit, diffChanges, loadAccount } from "@/lib/services";
 
 type Ctx = { params: Promise<{ id: string; contactId: string }> };
-
-async function loadOwnedAccount(scope: Record<string, unknown>, id: string): Promise<IAccount> {
-  const acc = await Account.findOne({ _id: id, ...scope }).lean<IAccount>();
-  if (!acc) throw new HttpError("Account not found", 404);
-  return acc;
-}
 
 async function loadContact(accountId: string, contactId: string): Promise<IContact> {
   const c = await Contact.findOne({ _id: contactId, accountId, deletedAt: null }).lean<IContact>();
@@ -25,7 +19,7 @@ export const PATCH = route(async (req: NextRequest, ctx: Ctx) => {
   const user = await requireUser();
   await connectDB();
   const { id, contactId } = await ctx.params;
-  const acc = await loadOwnedAccount(accountScope(user), id);
+  const acc = await loadAccount(user, id, "write");
   if (!canEditOwned(user, acc.ownerId)) return fail("You can only edit your own accounts.", 403);
   const before = await loadContact(id, contactId);
 
@@ -65,7 +59,7 @@ export const DELETE = route(async (_req: NextRequest, ctx: Ctx) => {
   const user = await requireUser();
   await connectDB();
   const { id, contactId } = await ctx.params;
-  const acc = await loadOwnedAccount(accountScope(user), id);
+  const acc = await loadAccount(user, id, "write");
   if (!canEditOwned(user, acc.ownerId)) return fail("You can only edit your own accounts.", 403);
   const contact = await loadContact(id, contactId);
 

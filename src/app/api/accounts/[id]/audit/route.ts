@@ -1,9 +1,9 @@
 import { type NextRequest } from "next/server";
-import { ok, route, serializeAuditLog, HttpError } from "@/lib/api";
+import { ok, route, serializeAuditLog } from "@/lib/api";
 import { connectDB } from "@/lib/db";
-import { Account, AuditLog, type IAccount, type IAuditLog } from "@/lib/models";
+import { AuditLog, type IAuditLog } from "@/lib/models";
 import { requireUser } from "@/lib/auth/server";
-import { accountScope } from "@/lib/rbac";
+import { loadAccount } from "@/lib/services";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -14,10 +14,7 @@ export const GET = route(async (_req: NextRequest, ctx: Ctx) => {
   await connectDB();
   const { id } = await ctx.params;
 
-  const account =
-    (await Account.findOne({ _id: id, ...accountScope(user) }).lean<IAccount>()) ??
-    (await Account.findOne({ _id: id, ...accountScope(user, { archived: true }) }).lean<IAccount>());
-  if (!account) throw new HttpError("Account not found", 404);
+  const account = await loadAccount(user, id, "read");
 
   const entries = await AuditLog.find({ workspaceId: user.workspaceId, accountId: account._id })
     .sort({ createdAt: -1 })

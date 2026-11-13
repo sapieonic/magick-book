@@ -10,18 +10,25 @@ import { Panel } from "@/components/ui/Panel";
 import { Table, Td, Th, TwoLine } from "@/components/ui/Table";
 import { useToast } from "@/components/ui/Toast";
 import { api } from "@/lib/client";
+import { useInvoiceActions } from "@/components/invoices/useInvoiceActions";
+import { marginFigures } from "@/components/money/margin";
 import { DOCUMENT_KIND_META } from "@/lib/constants";
-import { isOutstanding, isOverdue } from "@/lib/receivables";
+import { monthKey, shortDate } from "@/lib/dates";
+import { isOutstanding } from "@/lib/receivables";
 import type { AccountFinance, ContactDTO, DocumentDTO, ExpenseDTO, InvoiceDTO } from "@/lib/types";
+import { cn, plural } from "@/lib/utils";
 import { documentMeta, openDocument } from "./AccountRail";
 import { InvoiceNumber, InvoiceStatus } from "./StatementTable";
-import { longDate } from "./statement";
-import { useInvoiceActions } from "@/components/invoices/useInvoiceActions";
 
 const icon = (Icon: typeof Mail) => <Icon className="size-6" strokeWidth={1.5} />;
+/** Issued and Status columns of the Invoices tab show only from xl (1280); below that the status sits under the number. */
+const WIDE_COL = "max-xl:hidden";
 const plus = <Plus className="size-4" strokeWidth={1.5} aria-hidden />;
 
-/** A tab's panel: header with an add action, then a skeleton, empty state or the table. */
+/**
+ * A tab's panel: header with an add action, then a skeleton, empty state or
+ * the table. Without `onAdd` (an archived account) there is no add action.
+ */
 function Section({
   title,
   meta,
@@ -34,16 +41,17 @@ function Section({
   title: string;
   meta?: ReactNode;
   addLabel: string;
-  onAdd: () => void;
+  onAdd?: () => void;
   loading: boolean;
   empty: { icon: ReactNode; title: string; description: string } | null;
   children: ReactNode;
 }) {
-  const add = (variant: "primary" | "secondary") => (
-    <Button variant={variant} size={variant === "secondary" ? "sm" : "md"} onClick={onAdd}>
-      {plus} {addLabel}
-    </Button>
-  );
+  const add = (variant: "primary" | "secondary") =>
+    onAdd && (
+      <Button variant={variant} size={variant === "secondary" ? "sm" : "md"} onClick={onAdd}>
+        {plus} {addLabel}
+      </Button>
+    );
   return (
     <Panel title={title} meta={meta} actions={!loading && !empty && add("secondary")}>
       {loading ? <RowsSkeleton /> : empty ? <EmptyState {...empty} action={add("primary")} /> : children}
@@ -53,7 +61,8 @@ function Section({
 
 /* --------------------------------------------------------------- contacts */
 
-export function ContactsSection({ contacts, loading, onAdd, onEdit }: { contacts: ContactDTO[]; loading: boolean; onAdd: () => void; onEdit: (c: ContactDTO) => void }) {
+/** Without `onAdd` / `onEdit` the list is read-only. */
+export function ContactsSection({ contacts, loading, onAdd, onEdit }: { contacts: ContactDTO[]; loading: boolean; onAdd?: () => void; onEdit?: (c: ContactDTO) => void }) {
   return (
     <Section
       title="Contacts"
@@ -93,9 +102,11 @@ export function ContactsSection({ contacts, loading, onAdd, onEdit }: { contacts
                 {c.phone ? <a className="link" href={`tel:${c.phone.replace(/\s+/g, "")}`}>{c.phone}</a> : <span className="text-ink-3">–</span>}
               </Td>
               <Td className="text-right">
-                <Button size="sm" variant="ghost" onClick={() => onEdit(c)} aria-label={`Edit ${c.name}`}>
-                  Edit
-                </Button>
+                {onEdit && (
+                  <Button size="sm" variant="ghost" onClick={() => onEdit(c)} aria-label={`Edit ${c.name}`}>
+                    Edit
+                  </Button>
+                )}
               </Td>
             </tr>
           ))}
@@ -107,16 +118,19 @@ export function ContactsSection({ contacts, loading, onAdd, onEdit }: { contacts
 
 /* -------------------------------------------------------------- documents */
 
+/** `readOnly` keeps Open and drops Upload and Archive. */
 export function DocumentsSection({
   accountId,
   documents,
   loading,
+  readOnly,
   onUpload,
   onChanged,
 }: {
   accountId: string;
   documents: DocumentDTO[];
   loading: boolean;
+  readOnly?: boolean;
   onUpload: () => void;
   onChanged: () => void;
 }) {
@@ -149,7 +163,7 @@ export function DocumentsSection({
       title="Documents"
       meta="proposals and signed agreements"
       addLabel="Upload"
-      onAdd={onUpload}
+      onAdd={readOnly ? undefined : onUpload}
       loading={loading}
       empty={documents.length ? null : { icon: icon(FileText), title: "No documents", description: "Upload a proposal or signed agreement to keep it on file." }}
     >
@@ -178,7 +192,7 @@ export function DocumentsSection({
                 {d.fileName}
               </Td>
               <Td hideOnPhone className="tnum whitespace-nowrap text-ink-2">
-                {longDate(d.createdAt)}
+                {shortDate(d.createdAt)}
                 {d.uploadedByName && <span className="text-ink-3"> · {d.uploadedByName}</span>}
               </Td>
               <Td className="whitespace-nowrap text-right">
@@ -186,9 +200,11 @@ export function DocumentsSection({
                   <Button size="sm" variant="ghost" onClick={() => openDocument(accountId, d.id)} aria-label={`Open ${d.title}`}>
                     Open
                   </Button>
-                  <Button size="sm" variant="ghost" loading={busyId === d.id} onClick={() => archive(d)} aria-label={`Archive ${d.title}`}>
-                    Archive
-                  </Button>
+                  {!readOnly && (
+                    <Button size="sm" variant="ghost" loading={busyId === d.id} onClick={() => archive(d)} aria-label={`Archive ${d.title}`}>
+                      Archive
+                    </Button>
+                  )}
                 </span>
               </Td>
             </tr>
@@ -201,27 +217,32 @@ export function DocumentsSection({
 
 /* --------------------------------------------------------------- invoices */
 
+/**
+ * Every invoice with Remind and Mark paid on the outstanding ones, file upload
+ * and Remove. `readOnly` keeps viewing the file and drops everything else.
+ */
 export function InvoicesSection({
   invoices,
   finance,
   loading,
+  readOnly,
   onNew,
   onChanged,
 }: {
   invoices: InvoiceDTO[];
   finance: AccountFinance;
   loading: boolean;
+  readOnly?: boolean;
   onNew: () => void;
   onChanged: () => void | Promise<void>;
 }) {
   const actions = useInvoiceActions(onChanged);
-  const now = new Date();
   return (
     <Section
       title="Invoices"
       meta={`${formatMoney(finance.billed)} billed · ${formatMoney(finance.outstanding)} outstanding`}
       addLabel="New invoice"
-      onAdd={onNew}
+      onAdd={readOnly ? undefined : onNew}
       loading={loading}
       empty={invoices.length ? null : { icon: icon(Receipt), title: "No invoices", description: "Bill this account to start tracking revenue." }}
     >
@@ -230,10 +251,10 @@ export function InvoicesSection({
         <thead>
           <tr>
             <Th>Invoice</Th>
-            <Th hideOnPhone>Issued</Th>
+            <Th className={WIDE_COL}>Issued</Th>
             <Th hideOnPhone>Due</Th>
             <Th numeric>Amount</Th>
-            <Th hideOnPhone>Status</Th>
+            <Th className={WIDE_COL}>Status</Th>
             <Th hideOnPhone>File</Th>
             <Th>
               <span className="sr-only">Actions</span>
@@ -246,18 +267,23 @@ export function InvoicesSection({
             return (
               <tr key={inv.id}>
                 <Td>
-                  <TwoLine primary={<InvoiceNumber n={inv.number} />} secondary={<InvoiceStatus invoice={inv} />} phoneOnly />
+                  <TwoLine
+                    primary={<InvoiceNumber n={inv.number} />}
+                    secondary={
+                      <span className="block xl:hidden">
+                        <InvoiceStatus invoice={inv} />
+                      </span>
+                    }
+                  />
                 </Td>
+                <Td className={cn(WIDE_COL, "tnum whitespace-nowrap text-ink-2")}>{shortDate(inv.issuedAt)}</Td>
                 <Td hideOnPhone className="tnum whitespace-nowrap text-ink-2">
-                  {longDate(inv.issuedAt)}
-                </Td>
-                <Td hideOnPhone className="tnum whitespace-nowrap text-ink-2">
-                  {inv.dueAt ? longDate(inv.dueAt) : "–"}
+                  {inv.dueAt ? shortDate(inv.dueAt) : "–"}
                 </Td>
                 <Td numeric>
                   <Money value={inv.amount} />
                 </Td>
-                <Td hideOnPhone>
+                <Td className={WIDE_COL}>
                   <InvoiceStatus invoice={inv} />
                 </Td>
                 <Td hideOnPhone className="whitespace-nowrap">
@@ -266,10 +292,14 @@ export function InvoicesSection({
                       <LinkButton onClick={() => actions.openFile(inv)} aria-label={`View invoice #${inv.number} file`}>
                         View
                       </LinkButton>
-                      <button type="button" className="text-ink-3 hover:text-ink-1 disabled:opacity-50" disabled={busy} onClick={() => actions.attachFile(inv)} aria-label={`Replace invoice #${inv.number} file`}>
+                      {!readOnly && (
+                        <button type="button" className="text-ink-3 hover:text-ink-1 disabled:opacity-50" disabled={busy} onClick={() => actions.attachFile(inv)} aria-label={`Replace invoice #${inv.number} file`}>
                         Replace
-                      </button>
+                        </button>
+                      )}
                     </span>
+                  ) : readOnly ? (
+                    <span className="text-ink-3">–</span>
                   ) : (
                     <LinkButton className="inline-flex items-center gap-1.5 text-[13px] disabled:opacity-50" disabled={busy} onClick={() => actions.attachFile(inv)} aria-label={`Upload invoice #${inv.number} file`}>
                       <Upload className="size-3.5" strokeWidth={1.5} aria-hidden /> Upload
@@ -277,21 +307,23 @@ export function InvoicesSection({
                   )}
                 </Td>
                 <Td className="whitespace-nowrap text-right">
-                  <span className="inline-flex items-center gap-1">
-                    {isOverdue(inv, now) && (
-                      <Button size="sm" loading={busy} onClick={() => actions.remind(inv)}>
-                        Remind
+                  {!readOnly && (
+                    <span className="inline-flex items-center gap-1 max-md:flex-col max-md:items-end max-md:py-1.5">
+                      {isOutstanding(inv) && (
+                        <>
+                          <Button size="sm" variant="ghost" disabled={busy} onClick={() => actions.remind(inv)} aria-label={`Remind, invoice #${inv.number}`}>
+                            Remind
+                          </Button>
+                          <Button size="sm" loading={busy} onClick={() => actions.markPaid(inv)} aria-label={`Mark invoice #${inv.number} paid`}>
+                            Mark paid
+                          </Button>
+                        </>
+                      )}
+                      <Button size="sm" variant="ghost" disabled={busy} onClick={() => actions.remove(inv)} aria-label={`Remove invoice #${inv.number}`}>
+                        Remove
                       </Button>
-                    )}
-                    {isOutstanding(inv) && (
-                      <Button size="sm" loading={busy} onClick={() => actions.markPaid(inv)} aria-label={`Mark invoice #${inv.number} paid`}>
-                        Mark paid
-                      </Button>
-                    )}
-                    <Button size="sm" variant="ghost" disabled={busy} onClick={() => actions.remove(inv)} aria-label={`Remove invoice #${inv.number}`}>
-                      Remove
-                    </Button>
-                  </span>
+                    </span>
+                  )}
                 </Td>
               </tr>
             );
@@ -304,6 +336,7 @@ export function InvoicesSection({
 
 /* --------------------------------------------------------------- expenses */
 
+/** Without `onNew` / `onEdit` the list is read-only. */
 export function ExpensesSection({
   expenses,
   finance,
@@ -314,21 +347,17 @@ export function ExpensesSection({
   expenses: ExpenseDTO[];
   finance: AccountFinance;
   loading: boolean;
-  onNew: () => void;
-  onEdit: (e: ExpenseDTO) => void;
+  onNew?: () => void;
+  onEdit?: (e: ExpenseDTO) => void;
 }) {
-  const now = new Date();
-  const thisMonth = expenses
-    .filter((e) => {
-      const d = new Date(e.date);
-      return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
-    })
-    .reduce((s, e) => s + e.amount, 0);
+  const month = monthKey(new Date());
+  const thisMonth = expenses.filter((e) => monthKey(e.date) === month).reduce((s, e) => s + e.amount, 0);
+  const margin = marginFigures(finance);
 
   return (
     <Section
       title="Expenses"
-      meta={`${formatMoney(thisMonth)} this month · ${Math.round(finance.margin * 100)}% margin`}
+      meta={`${formatMoney(thisMonth)} this month${margin.pct ? ` · ${margin.pct} margin` : ""}`}
       addLabel="Log expense"
       onAdd={onNew}
       loading={loading}
@@ -351,10 +380,10 @@ export function ExpensesSection({
           {expenses.map((e) => (
             <tr key={e.id}>
               <Td hideOnPhone className="tnum whitespace-nowrap text-ink-2">
-                {longDate(e.date)}
+                {shortDate(e.date)}
               </Td>
               <Td>
-                <TwoLine primary={e.vendor || e.category} secondary={`${longDate(e.date)} · ${e.category}${e.billable ? " · billable" : ""}`} phoneOnly />
+                <TwoLine primary={e.vendor || e.category} secondary={`${shortDate(e.date)} · ${e.category}${e.billable ? " · billable" : ""}`} phoneOnly />
               </Td>
               <Td hideOnPhone>
                 <Tag>{e.category}</Tag>
@@ -366,9 +395,11 @@ export function ExpensesSection({
                 <Money value={e.amount} />
               </Td>
               <Td className="text-right">
-                <Button size="sm" variant="ghost" onClick={() => onEdit(e)} aria-label={`Edit expense ${e.vendor || e.category}`}>
-                  Edit
-                </Button>
+                {onEdit && (
+                  <Button size="sm" variant="ghost" onClick={() => onEdit(e)} aria-label={`Edit expense ${e.vendor || e.category}`}>
+                    Edit
+                  </Button>
+                )}
               </Td>
             </tr>
           ))}
@@ -376,7 +407,7 @@ export function ExpensesSection({
         <tfoot>
           <tr className="total">
             <Td hideOnPhone colSpan={4}>
-              Total · {expenses.length} {expenses.length === 1 ? "expense" : "expenses"}
+              Total · {plural(expenses.length, "expense")}
             </Td>
             <Td className="md:hidden">Total</Td>
             <Td numeric>

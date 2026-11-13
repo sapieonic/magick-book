@@ -6,10 +6,21 @@ import { requireUser } from "@/lib/auth/server";
 import { leadScope, canEditOwned } from "@/lib/rbac";
 import { logActivity, audit, ownerNameMap } from "@/lib/services";
 import { notifyLeadLost, notifyLeadStageChanged } from "@/lib/slack";
-import { LEAD_STAGES, STAGE_META } from "@/lib/constants";
+import { LEAD_STAGES, STAGE_META, type LeadStage } from "@/lib/constants";
 import { Types } from "mongoose";
 
 type Ctx = { params: Promise<{ id: string }> };
+
+/** Put `leadId` at `slot` among the lane's leads the user can see (order, then newest), renumbering 0..n. */
+async function placeInLane(user: Parameters<typeof leadScope>[0], leadId: Types.ObjectId, stage: LeadStage, slot: number) {
+  const lane = await Lead.find({ ...leadScope(user), stage, _id: { $ne: leadId } })
+    .sort({ order: 1, createdAt: -1 })
+    .select("_id")
+    .lean<{ _id: Types.ObjectId }[]>();
+  const ids = lane.map((l) => l._id);
+  ids.splice(Math.min(slot, ids.length), 0, leadId);
+  await Lead.bulkWrite(ids.map((_id, order) => ({ updateOne: { filter: { _id }, update: { $set: { order } } } })));
+}
 
 // PATCH /api/leads/:id/stage — move a lead between pipeline columns.
 export const PATCH = route(async (req: NextRequest, ctx: Ctx) => {
@@ -25,10 +36,11 @@ export const PATCH = route(async (req: NextRequest, ctx: Ctx) => {
   if (!canEditOwned(user, lead.ownerId)) return fail("You can only move your own leads.", 403);
 
   const patch: Record<string, unknown> = { stage, lastActivityAt: new Date() };
-  if (Number.isInteger(b.order) && b.order >= 0) patch.order = b.order;
   if (stage === "lost" && b.lostReason) patch.lostReason = String(b.lostReason).trim();
 
   await Lead.updateOne({ _id: lead._id }, patch);
+  // `order` is the slot the card was dropped into: renumber the lane so it lands exactly there.
+  if (Number.isInteger(b.order) && b.order >= 0) await placeInLane(user, lead._id, stage, b.order);
 
   if (stage !== lead.stage) {
     await logActivity({

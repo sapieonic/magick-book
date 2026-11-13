@@ -1,7 +1,7 @@
 "use client";
 import { Page, PageSplit } from "@/components/layout/Page";
 import { PageHeader } from "@/components/layout/PageHeader";
-import { useLeadsChanged } from "@/components/layout/ShellContext";
+import { useDataChanged } from "@/components/layout/ShellContext";
 import { Panel } from "@/components/ui/Panel";
 import { ErrorState, Skeleton } from "@/components/ui/Misc";
 import { TodayHeader } from "@/components/dashboard/TodayHeader";
@@ -14,7 +14,7 @@ import type { DashboardData } from "@/lib/types";
 
 export default function DashboardPage() {
   const { data, loading, error, refresh } = useApi<DashboardData>("/api/dashboard");
-  useLeadsChanged(refresh);
+  useDataChanged(refresh);
 
   return (
     <Page>

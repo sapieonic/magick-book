@@ -1,21 +1,19 @@
 import type { AgingKey, CollectedDTO, CollectedSeriesDTO, InvoiceDTO } from "./types";
-import { agingKey, daysPastDue, differenceInUtcCalendarDays, isOutstanding, paymentDate, subUtcMonths } from "./receivables";
+import { calendarDaysBetween, monthKey, startOfBusinessMonth } from "./dates";
+import { agingKey, daysPastDue, isOutstanding, paymentDate } from "./receivables";
 import { plural } from "./utils";
 
 /**
- * Money page builders over invoice DTOs: totals, the collected-by-month series
- * and ledger grouping/filtering. Aging, overdue and payment-date rules live in
- * `receivables.ts`. All dates are UTC.
+ * Money page builders over invoice DTOs: the collected-by-month series, the
+ * ledger's age cell and ledger grouping/filtering. Totals, aging, overdue and
+ * payment-date rules live in `receivables.ts`. Months and days are IST
+ * calendar months and days (`lib/dates`).
  */
 
 export const OTHER_SERIES_KEY = "other";
 const OTHER_SERIES_NAME = "Other accounts";
 const MONTH_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"] as const;
 const MONTH_LONG = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"] as const;
-
-export function utcMonthKey(d: Date): string {
-  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
-}
 
 /** "2026-06" → "Jun" (or "June" with `long`). */
 export function monthLabel(key: string, long = false): string {
@@ -28,7 +26,7 @@ export function invoiceAge(inv: InvoiceDTO, now: Date): { text: string; late: bo
   if (inv.status === "draft") return { text: "Not issued", late: false };
   if (inv.status === "paid") {
     const paid = paymentDate(inv)!;
-    const days = Math.max(0, differenceInUtcCalendarDays(paid, new Date(inv.issuedAt)));
+    const days = Math.max(0, calendarDaysBetween(paid, inv.issuedAt));
     return { text: days === 0 ? "Paid same day" : `${plural(days, "day")} to pay`, late: false };
   }
   const days = daysPastDue(inv, now);
@@ -39,7 +37,7 @@ export function invoiceAge(inv: InvoiceDTO, now: Date): { text: string; late: bo
 }
 
 /**
- * Paid amounts per UTC month for the last `months` months, stacked by the
+ * Paid amounts per IST calendar month for the last `months` months, stacked by the
  * `topN` accounts that paid most in the window plus an "Other accounts" series.
  */
 export function buildCollectedByMonth(
@@ -49,13 +47,13 @@ export function buildCollectedByMonth(
 ): CollectedDTO {
   const monthsN = opts.months ?? 6;
   const topN = opts.topN ?? 2;
-  const monthKeys = Array.from({ length: monthsN }, (_, i) => utcMonthKey(subUtcMonths(now, monthsN - 1 - i)));
+  const monthKeys = Array.from({ length: monthsN }, (_, i) => monthKey(startOfBusinessMonth(now, monthsN - 1 - i)));
   const monthIndex = new Map(monthKeys.map((k, i) => [k, i]));
 
   const accounts = new Map<string, { name: string; total: number; perMonth: number[] }>();
   for (const inv of invoices) {
     const when = paymentDate(inv);
-    const m = when ? monthIndex.get(utcMonthKey(when)) : undefined;
+    const m = when ? monthIndex.get(monthKey(when)) : undefined;
     if (m === undefined) continue;
     let acc = accounts.get(inv.accountId);
     if (!acc) {

@@ -4,7 +4,7 @@ import { createPortal } from "react-dom";
 import Link from "next/link";
 import { ShellContext } from "./ShellContext";
 
-export interface Crumb {
+interface Crumb {
   label: ReactNode;
   href: string;
 }

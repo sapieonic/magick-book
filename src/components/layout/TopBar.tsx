@@ -1,19 +1,10 @@
 "use client";
-import { useEffect, useState } from "react";
 import { Plus, Search } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { KbdHint } from "@/components/ui/Misc";
+import { useShortcutLabel } from "@/lib/useShortcutLabel";
 import { useShell } from "./ShellContext";
 import { UserMenu } from "./UserMenu";
-
-/** "⌘K" on Apple devices, "Ctrl K" elsewhere (resolved after mount to keep SSR stable). */
-function useShortcutLabel() {
-  const [label, setLabel] = useState("⌘K");
-  useEffect(() => {
-    if (!/Mac|iPhone|iPad/.test(navigator.platform)) setLabel("Ctrl K");
-  }, []);
-  return label;
-}
 
 /**
  * Glass top bar. Pages fill the title and action slots through `PageHeader`;
@@ -28,7 +19,7 @@ export function TopBar({
   actionsRef: (el: HTMLElement | null) => void;
 }) {
   const { openPalette, newLead } = useShell();
-  const shortcut = useShortcutLabel();
+  const shortcut = useShortcutLabel("K");
 
   return (
     <header className="glass sticky top-2 z-20 flex min-h-14 flex-wrap items-center gap-x-4 gap-y-2 rounded-panel py-2 pl-4 pr-1 md:top-3 md:py-2.5 md:pl-[22px] md:pr-3.5">

@@ -3,6 +3,7 @@ import { Types } from "mongoose";
 import { startTestDB, stopTestDB, clearDB } from "../helpers/db";
 import { jsonRequest, ctx } from "../helpers/api";
 import type { IUser } from "@/lib/models";
+import type { ReminderStatus } from "@/lib/constants";
 
 // Mutable holder so each test can set the "logged in" user.
 const session: { user: IUser | null } = { user: null };
@@ -83,7 +84,8 @@ describe("reminders CRUD", () => {
     expect(json.reminder.entityLabel).toBe("Acme");
 
     const activity = await models.Activity.findOne({ leadId: lead._id, kind: "reminder" }).lean();
-    expect(activity).toBeTruthy();
+    // The due time reads in IST, whatever the server's locale and zone.
+    expect(activity!.detail).toBe("Send quote · due 1 Jul 2026, 2:30 pm");
   });
 
   it("rejects linking to a lead the caller cannot see", async () => {
@@ -101,6 +103,42 @@ describe("reminders CRUD", () => {
     const { reminders } = await res.json();
     expect(reminders).toHaveLength(1);
     expect(reminders[0].title).toBe("Theirs");
+  });
+
+  it("filters to one account's open reminders, still only the caller's", async () => {
+    const acc = await models.Account.create({ workspaceId, ownerId: standard._id, name: "Lumen", status: "active" });
+    const other = await models.Account.create({ workspaceId, ownerId: standard._id, name: "Pine", status: "active" });
+    const due = new Date("2026-11-20T04:00:00.000Z");
+    const mk = (title: string, status: ReminderStatus, over: Record<string, unknown> = {}) =>
+      models.Reminder.create({ workspaceId, userId: standard._id, title, dueAt: due, status, accountId: acc._id, ...over });
+    await Promise.all([
+      mk("scheduled", "scheduled"),
+      mk("sent", "sent"),
+      mk("failed", "failed"),
+      mk("done", "done"),
+      mk("canceled", "canceled"),
+      mk("archived", "scheduled", { deletedAt: new Date() }),
+      mk("other account", "scheduled", { accountId: other._id }),
+      mk("admin's", "scheduled", { userId: admin._id }),
+    ]);
+    const list = async (query: string) => {
+      const res = await remindersRoute.GET(jsonRequest(`http://localhost/api/reminders?${query}`, "GET"));
+      expect(res.status).toBe(200);
+      return ((await res.json()).reminders as { title: string }[]).map((r) => r.title).sort();
+    };
+
+    session.user = standard;
+    expect(await list(`accountId=${acc._id}&open=1`)).toEqual(["failed", "scheduled", "sent"]);
+    expect(await list(`accountId=${acc._id}`)).toEqual(["canceled", "done", "failed", "scheduled", "sent"]);
+    expect(await list("open=1")).toEqual(["failed", "other account", "scheduled", "sent"]);
+    // Reminders stay private to their creator, admins included.
+    session.user = admin;
+    expect(await list(`accountId=${acc._id}&open=1`)).toEqual(["admin's"]);
+  });
+
+  it("rejects a malformed accountId filter", async () => {
+    const res = await remindersRoute.GET(jsonRequest("http://localhost/api/reminders?accountId=nope", "GET"));
+    expect(res.status).toBe(400);
   });
 
   it("completes, snoozes, and archives a reminder", async () => {

@@ -1,12 +1,8 @@
-import { format } from "date-fns";
+import type { CsvCell } from "@/components/money/csv";
+import { isoDay } from "@/lib/dates";
 import { daysPastDue } from "@/lib/receivables";
 import { plural } from "@/lib/utils";
 import type { ExpenseDTO, InvoiceDTO } from "@/lib/types";
-
-/** "31 Oct 2026". */
-export const longDate = (d: string | Date) => format(new Date(d), "dd MMM yyyy");
-/** "31 Oct". */
-export const shortDate = (d: string | Date) => format(new Date(d), "d MMM");
 
 /** "Overdue 6 days" / "Overdue" for the status pill of an overdue invoice. */
 export function overdueLabel(inv: Pick<InvoiceDTO, "issuedAt" | "dueAt">, now = new Date()): string {
@@ -69,4 +65,35 @@ export function buildStatement(invoices: InvoiceDTO[], expenses: ExpenseDTO[]): 
     }
   }
   return { entries: rows.map((r) => r.entry).reverse(), totals };
+}
+
+/** "Travel · Indigo", or "Travel expense" without a vendor. */
+export const expenseLabel = (e: Pick<ExpenseDTO, "category" | "vendor">) => (e.vendor ? `${e.category} · ${e.vendor}` : `${e.category} expense`);
+
+function entryText(e: StatementEntry): string {
+  if (e.kind === "invoice") return `Invoice #${e.invoice.number}${e.counted ? "" : " (draft, not billed)"}`;
+  if (e.kind === "payment") return `Payment for #${e.invoice.number}`;
+  return expenseLabel(e.expense);
+}
+
+/**
+ * The statement as CSV rows, oldest first, between an opening balance (the
+ * statement covers the account's whole history, so it opens at zero) and a
+ * closing row carrying the totals. Dates are IST calendar days, amounts plain numbers.
+ */
+export function statementCsvRows({ entries, totals }: Statement, now = new Date()): CsvCell[][] {
+  const oldestFirst = [...entries].reverse();
+  return [
+    ["Date", "Entry", "Billed", "Received", "Cost", "Balance"],
+    [isoDay(oldestFirst[0]?.date ?? now), "Opening balance", null, null, null, 0],
+    ...oldestFirst.map((e): CsvCell[] => [
+      isoDay(e.date),
+      entryText(e),
+      e.kind === "invoice" && e.counted ? e.invoice.amount : null,
+      e.kind === "payment" ? e.invoice.amount : null,
+      e.kind === "expense" ? e.expense.amount : null,
+      e.balance,
+    ]),
+    [isoDay(now), "Closing balance", totals.billed, totals.received, totals.cost, totals.balance],
+  ];
 }

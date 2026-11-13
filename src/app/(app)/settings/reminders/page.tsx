@@ -14,6 +14,7 @@ import { Panel } from "@/components/ui/Panel";
 import { Time } from "@/components/ui/Time";
 import { useToast } from "@/components/ui/Toast";
 import { api, useApi } from "@/lib/client";
+import { DAY_MS } from "@/lib/dates";
 import { REMINDER_STATUS_META, type ReminderStatus } from "@/lib/constants";
 import type { ReminderDTO, ReminderSettingDTO } from "@/lib/types";
 
@@ -24,8 +25,6 @@ const STATUS_TONE: Record<ReminderStatus, StatusTone> = {
   done: "lost",
   canceled: "lost",
 };
-
-const DAY_MS = 24 * 60 * 60 * 1000;
 
 export default function RemindersSettingsPage() {
   const { toast } = useToast();

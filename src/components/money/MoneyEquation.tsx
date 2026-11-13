@@ -2,11 +2,10 @@ import { LinkButton } from "@/components/ui/Button";
 import { type ReactNode } from "react";
 import { Panel } from "@/components/ui/Panel";
 import { Money, formatMoney } from "@/components/ui/Money";
-import { cn } from "@/lib/utils";
+import { cn, plural } from "@/lib/utils";
 import type { LedgerFilter } from "@/lib/money-charts";
 import type { MoneyTotals } from "@/lib/types";
-
-const count = (n: number, word = "invoice") => `${n} ${word}${n === 1 ? "" : "s"}`;
+import { marginFigures } from "./margin";
 
 /**
  * Billed − Paid = Outstanding as large figures, with expenses and margin
@@ -25,6 +24,7 @@ export function MoneyEquation({
 }) {
   const pick = (f: LedgerFilter) => onFilter(filter === f ? "all" : f);
   const overdue = totals.overdueCount > 0 ? `, ${totals.overdueCount} overdue` : "";
+  const margin = marginFigures(totals);
 
   return (
     <Panel aria-label="Receivables equation">
@@ -32,7 +32,7 @@ export function MoneyEquation({
         <Term
           label="Billed"
           value={totals.billed}
-          caption={count(totals.billedCount)}
+          caption={plural(totals.billedCount, "invoice")}
           active={filter === "all"}
           onClick={() => onFilter("all")}
         />
@@ -41,7 +41,7 @@ export function MoneyEquation({
           label="Paid"
           labelClassName="text-paid"
           value={totals.paid}
-          caption={count(totals.paidCount)}
+          caption={plural(totals.paidCount, "invoice")}
           active={filter === "paid"}
           onClick={() => pick("paid")}
         />
@@ -50,7 +50,7 @@ export function MoneyEquation({
           label="Outstanding"
           labelClassName="text-overdue"
           value={totals.outstanding}
-          caption={`${count(totals.outstandingCount)}${overdue}`}
+          caption={`${plural(totals.outstandingCount, "invoice")}${overdue}`}
           active={filter === "outstanding"}
           onClick={() => pick("outstanding")}
         />
@@ -67,10 +67,11 @@ export function MoneyEquation({
             )}
           </dd>
           <dt className="text-ink-3">Margin</dt>
-          <dd className="text-ink-2">
+          <dd className={margin.negative ? "text-overdue" : "text-ink-2"}>
             {totals.expenses > 0 ? (
               <span className="tnum">
-                {Math.round(totals.margin * 100)}% · <Money value={totals.billed - totals.expenses} compact /> after costs
+                {margin.pct && `${margin.pct} · `}
+                <Money value={margin.amount} compact /> after costs
               </span>
             ) : (
               "No expenses recorded"

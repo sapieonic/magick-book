@@ -5,7 +5,7 @@ import { Button, LinkButton } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/Misc";
 import { MEETING_TITLE, type ActivityKind } from "@/lib/constants";
 import { cn } from "@/lib/utils";
-import { absoluteTime, shortDate } from "@/lib/dates";
+import { absoluteTime, monthYear, shortDate } from "@/lib/dates";
 import type { ActivityDTO } from "@/lib/types";
 
 const KIND_LABEL: Record<ActivityKind, string> = {
@@ -27,10 +27,6 @@ const LOGGED = new Set<ActivityKind>(["note", "call", "whatsapp", "email", "sms"
 
 function activityLabel(a: Pick<ActivityDTO, "kind" | "title">): string {
   return a.kind === "note" && a.title === MEETING_TITLE ? "Meeting" : KIND_LABEL[a.kind] ?? "Note";
-}
-
-function monthOf(iso: string): string {
-  return new Date(iso).toLocaleDateString("en-IN", { month: "long", year: "numeric" });
 }
 
 /**
@@ -60,7 +56,7 @@ export function ActivityTimeline({
   const hidden = activities.length - visible.length;
   const months: { label: string; items: ActivityDTO[] }[] = [];
   for (const a of visible) {
-    const label = monthOf(a.createdAt);
+    const label = monthYear(a.createdAt);
     if (months.at(-1)?.label !== label) months.push({ label, items: [] });
     months.at(-1)!.items.push(a);
   }

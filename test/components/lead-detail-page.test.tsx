@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ConfirmProvider } from "@/components/ui/ConfirmDialog";
@@ -31,6 +31,8 @@ vi.mock("@/lib/client", () => ({
 }));
 
 import LeadDetailPage from "@/app/(app)/leads/[id]/page";
+import { toLocalInput } from "@/components/reminders/ReminderModal";
+import type { ReminderDTO } from "@/lib/types";
 
 const DAY = 86_400_000;
 const ago = (days: number) => new Date(Date.now() - days * DAY).toISOString();
@@ -80,6 +82,14 @@ beforeEach(() => {
   Object.values(H.api).forEach((f) => f.mockReset().mockResolvedValue({}));
 });
 
+afterEach(() => {
+  vi.useRealTimers();
+});
+
+function step(dueAt: string): ReminderDTO {
+  return { id: "r1", title: "Send the proposal", notes: "", dueAt, status: "scheduled", leadId: "l1", accountId: null, entityLabel: "Naresh", attempts: 0, sentAt: null, lastError: "", createdAt: ago(1) };
+}
+
 describe("Lead detail page", () => {
   it("lays out the hero, stage track, composer, timeline and rail", async () => {
     await renderPage();
@@ -124,15 +134,48 @@ describe("Lead detail page", () => {
   });
 
   it("shows an existing next step with done and reschedule", async () => {
-    H.detail = detail({}, {
-      nextStep: { id: "r1", title: "Send the proposal", notes: "", dueAt: new Date(Date.now() + 3 * DAY + 3_600_000).toISOString(), status: "scheduled", leadId: "l1", accountId: null, entityLabel: "Naresh", attempts: 0, sentAt: null, lastError: "", createdAt: ago(1) },
-    });
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-11-13T11:00:00+05:30"));
+    H.detail = detail({}, { nextStep: step("2026-11-16T12:00:00+05:30") });
     const user = userEvent.setup();
     await renderPage();
     expect(screen.getByText("Send the proposal")).toBeInTheDocument();
-    expect(screen.getByText("Due in 3 days")).toBeInTheDocument();
+    expect(screen.getByText("due in 3 days")).toHaveClass("first-letter:uppercase");
     await user.click(screen.getByRole("button", { name: "Mark done" }));
     expect(H.api.patch).toHaveBeenCalledWith("/api/reminders/r1", { action: "complete" });
+  });
+
+  it("calls a step due tomorrow morning 'due tomorrow' in the evening, not 'due today'", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-11-13T20:00:00+05:30"));
+    H.detail = detail({}, { nextStep: step("2026-11-14T09:00:00+05:30") });
+    await renderPage();
+    expect(screen.getByText("due tomorrow")).toBeInTheDocument();
+  });
+
+  it("marks a step whose time has passed as overdue", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-11-13T20:00:00+05:30"));
+    H.detail = detail({}, { nextStep: step("2026-11-11T09:00:00+05:30") });
+    await renderPage();
+    expect(screen.getByText("2 days overdue")).toHaveClass("text-overdue");
+  });
+
+  it("defaults a new next step to tomorrow at 9am", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-11-13T20:00:00+05:30"));
+    await renderPage();
+    expect(screen.getByLabelText("When")).toHaveValue(toLocalInput(new Date("2026-11-14T09:00:00+05:30")));
+  });
+
+  it("cancels a reschedule without saving", async () => {
+    H.detail = detail({}, { nextStep: step(new Date(Date.now() + 3 * DAY).toISOString()) });
+    const user = userEvent.setup();
+    await renderPage();
+    await user.click(screen.getByRole("button", { name: "Reschedule" }));
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(H.api.patch).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Mark done" })).toBeInTheDocument();
   });
 
   it("edits the facts in place", async () => {
@@ -144,6 +187,15 @@ describe("Lead detail page", () => {
     await user.type(company, "Shivasakthi Group Ltd");
     await user.click(screen.getByRole("button", { name: "Save details" }));
     expect(H.api.patch).toHaveBeenCalledWith("/api/leads/l1", expect.objectContaining({ company: "Shivasakthi Group Ltd", tags: ["pilot"], estValue: 50000 }));
+  });
+
+  it("cancels editing the facts without saving", async () => {
+    const user = userEvent.setup();
+    await renderPage();
+    await user.click(screen.getByRole("button", { name: "Edit details" }));
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(H.api.patch).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Edit details" })).toBeInTheDocument();
   });
 
   it("hides edit actions from someone who does not own the lead", async () => {

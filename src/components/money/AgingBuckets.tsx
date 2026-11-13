@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/Button";
 import { Money, formatMoney } from "@/components/ui/Money";
 import { segmentShares } from "@/components/ui/ProportionBar";
 import { AGING_COLORS, AGING_LABELS } from "@/lib/receivables";
-import { cn } from "@/lib/utils";
+import { cn, plural } from "@/lib/utils";
 import type { AgingBucketDTO, AgingKey } from "@/lib/types";
 
 /** Smallest share of the row a band keeps, so its figures stay legible. */
@@ -16,7 +16,8 @@ function accountsLine(accounts: string[]): string {
 
 /**
  * Outstanding money by days past due. Each band's width follows its amount;
- * selecting one narrows the ledger to it.
+ * selecting one narrows the ledger to it. From xl it grows to fill the main
+ * column beside the rail, with the bands centred in the extra height.
  */
 export function AgingBuckets({
   aging,
@@ -32,6 +33,7 @@ export function AgingBuckets({
 
   return (
     <Panel
+      className="xl:flex xl:flex-1 xl:flex-col"
       title="Outstanding by age"
       meta={owed ? "select a band to filter the ledger" : undefined}
       actions={
@@ -45,9 +47,9 @@ export function AgingBuckets({
       }
     >
       {!owed ? (
-        <p className="py-2 text-[13px] text-ink-2">Nothing outstanding. Every issued invoice is paid.</p>
+        <p className="py-2 text-[13px] text-ink-2 xl:my-auto">Nothing outstanding. Every issued invoice is paid.</p>
       ) : (
-        <div className="flex flex-wrap items-start gap-0.5">
+        <div className="flex flex-wrap items-start gap-0.5 xl:my-auto">
           {shares.map((b) => {
             const empty = b.count === 0;
             const active = selected === b.key;
@@ -84,7 +86,7 @@ export function AgingBuckets({
                     "Nothing here"
                   ) : (
                     <>
-                      {b.count} invoice{b.count === 1 ? "" : "s"} · {b.pct}% of what is owed
+                      {plural(b.count, "invoice")} · {b.pct}% of what is owed
                       {b.accounts.length > 0 && <> · {accountsLine(b.accounts)}</>}
                     </>
                   )}

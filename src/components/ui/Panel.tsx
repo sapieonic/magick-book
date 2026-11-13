@@ -11,7 +11,6 @@ export function Panel({
   meta,
   actions,
   ruled,
-  flush,
   as: Tag = "section",
   className,
   children,
@@ -22,21 +21,18 @@ export function Panel({
   meta?: ReactNode;
   actions?: ReactNode;
   ruled?: boolean;
-  /** Remove body padding (full-bleed tables, boards). */
-  flush?: boolean;
   as?: ElementType;
   className?: string;
   children?: ReactNode;
   "aria-label"?: string;
 }) {
   return (
-    <Tag className={cn("glass min-w-0 rounded-panel", !flush && "p-4 md:px-6 md:py-[22px]", className)} {...props}>
+    <Tag className={cn("glass min-w-0 rounded-panel p-4 md:px-6 md:py-[22px]", className)} {...props}>
       {(title || actions) && (
         <div
           className={cn(
             "flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1",
             ruled ? "border-b border-line-strong pb-1.5" : "mb-2.5",
-            flush && "px-4 pt-4 md:px-6 md:pt-[22px]",
           )}
         >
           <h2 className="text-[14px] font-semibold text-ink-1">

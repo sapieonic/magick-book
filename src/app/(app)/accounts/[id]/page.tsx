@@ -12,14 +12,14 @@ import { ContactModal, ExpenseModal, NewInvoiceModal, UploadDocumentModal } from
 import { DocumentsRailPanel, PrimaryContactPanel, RecentActivityPanel, RemindersPanel } from "@/components/accounts/AccountRail";
 import { ContactsSection, DocumentsSection, ExpensesSection, InvoicesSection } from "@/components/accounts/AccountSections";
 import { StatementTable } from "@/components/accounts/StatementTable";
-import { longDate } from "@/components/accounts/statement";
 import { Button } from "@/components/ui/Button";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
-import { EmptyState, ErrorState, RowsSkeleton, Skeleton } from "@/components/ui/Misc";
+import { ErrorState, RowsSkeleton, Skeleton } from "@/components/ui/Misc";
 import { Panel } from "@/components/ui/Panel";
 import { Tabs } from "@/components/ui/Tabs";
 import { useToast } from "@/components/ui/Toast";
 import { api, useApi } from "@/lib/client";
+import { shortDate } from "@/lib/dates";
 import type { AccountDTO, AccountFinance, ActivityDTO, AuditLogDTO, ContactDTO, DocumentDTO, ExpenseDTO, InvoiceDTO, ReminderDTO } from "@/lib/types";
 
 type Tab = "overview" | "contacts" | "documents" | "invoices" | "expenses" | "activity" | "history";
@@ -48,7 +48,7 @@ export default function AccountDetailPage({ params }: { params: Promise<{ id: st
   const expenses = useApi<{ expenses: ExpenseDTO[] }>(`${base}/expenses`);
   const activity = useApi<{ activities: ActivityDTO[] }>(`${base}/activity`);
   const history = useApi<{ entries: AuditLogDTO[] }>(`${base}/audit`);
-  const reminders = useApi<{ reminders: ReminderDTO[] }>("/api/reminders?status=scheduled");
+  const reminders = useApi<{ reminders: ReminderDTO[] }>(`/api/reminders?accountId=${id}&open=1`);
 
   const reload = (...sources: { refresh: () => Promise<void> }[]) => Promise.all(sources.map((s) => s.refresh())).then(() => undefined);
   const onContactsChanged = () => reload(contacts, acc, history);
@@ -74,7 +74,6 @@ export default function AccountDetailPage({ params }: { params: Promise<{ id: st
   const invoiceList = invoices.data?.invoices ?? [];
   const expenseList = expenses.data?.expenses ?? [];
   const activityList = activity.data?.activities ?? [];
-  const accountReminders = (reminders.data?.reminders ?? []).filter((r) => r.accountId === id);
   const primary = contactList.find((c) => c.isPrimary) ?? account.primaryContact;
 
   async function setArchived(next: boolean) {
@@ -91,14 +90,18 @@ export default function AccountDetailPage({ params }: { params: Promise<{ id: st
       if (next) await api.delete(base);
       else await api.patch(base, { action: "restore" });
       toast(next ? `${account.name} archived.` : `${account.name} restored.`, next ? "info" : "success");
-      await (next ? acc.refresh() : reload(acc, contacts, documents, invoices, expenses, activity, history));
+      await reload(acc, contacts, documents, invoices, expenses, activity, history, reminders);
     } catch (e) {
       toast(e instanceof Error ? e.message : "Something went wrong", "error");
     }
   }
 
-  const open = (d: Dialog) => () => setDialog(d);
+  // An archived account is read-only: every add, edit and invoice action is
+  // left out (a missing handler hides its control) until it is restored.
+  const show = (d: Dialog) => () => setDialog(d);
+  const add = (d: Dialog) => (archived ? undefined : show(d));
   const remind = (title = "") => setReminder({ title });
+  const edit = <T,>(make: (record: T) => Dialog) => (archived ? undefined : (record: T) => setDialog(make(record)));
 
   return (
     <Page>
@@ -114,8 +117,8 @@ export default function AccountDetailPage({ params }: { params: Promise<{ id: st
           ) : (
             <>
               <Button onClick={() => remind()}>Remind</Button>
-              <Button onClick={open({ kind: "contact" })}>Add contact</Button>
-              <Button variant="primary" onClick={open({ kind: "invoice" })}>
+              <Button onClick={show({ kind: "contact" })}>Add contact</Button>
+              <Button variant="primary" onClick={show({ kind: "invoice" })}>
                 New invoice
               </Button>
             </>
@@ -125,99 +128,113 @@ export default function AccountDetailPage({ params }: { params: Promise<{ id: st
           archived
             ? []
             : [
-                { label: "Log expense", onSelect: open({ kind: "expense" }) },
-                { label: "Upload document", onSelect: open({ kind: "document" }) },
+                { label: "Log expense", onSelect: show({ kind: "expense" }) },
+                { label: "Upload document", onSelect: show({ kind: "document" }) },
                 { label: "Archive account", onSelect: () => setArchived(true), danger: true },
               ]
         }
       />
 
-      <StatementBar finance={finance} invoices={invoiceList} expenses={expenseList} onAddExpense={archived ? undefined : open({ kind: "expense" })} />
-
-      {archived ? (
-        <Panel>
-          <EmptyState
-            icon={<Archive className="size-6" strokeWidth={1.5} />}
-            title={`Archived on ${longDate(account.deletedAt!)}`}
-            description="Restore the account to see and work with its contacts, invoices, expenses, documents and activity again."
-            action={
-              <Button variant="primary" onClick={() => setArchived(false)}>
-                Restore account
-              </Button>
-            }
-          />
+      {archived && (
+        <Panel aria-label="Archived" className="flex items-start gap-3 text-ink-2">
+          <Archive className="mt-0.5 size-4 shrink-0 text-ink-3" strokeWidth={1.5} aria-hidden />
+          <p>
+            <span className="font-medium text-ink-1">Archived on {shortDate(account.deletedAt!)}.</span> Everything here is read-only. Restore the account to
+            add, edit or mark anything paid again.
+          </p>
         </Panel>
-      ) : (
-        <>
-          <div className="glass rounded-panel px-4 pt-3.5 md:px-6">
-            <Tabs<Tab>
-              aria-label="Account sections"
-              value={tab}
-              onChange={setTab}
-              className="border-b-0"
-              tabs={[
-                { key: "overview", label: "Overview" },
-                { key: "contacts", label: "Contacts", count: contacts.data ? contactList.length : undefined },
-                { key: "documents", label: "Documents", count: documents.data ? documentList.length : undefined },
-                { key: "invoices", label: "Invoices", count: invoices.data ? invoiceList.length : undefined },
-                { key: "expenses", label: "Expenses", count: expenses.data ? expenseList.length : undefined },
-                { key: "activity", label: "Activity" },
-                { key: "history", label: "History" },
-              ]}
-            />
-          </div>
+      )}
 
-          {tab === "overview" && (
-            <PageSplit
-              railLabel="Account context"
-              rail={
-                <>
-                  <PrimaryContactPanel contact={primary} onAll={() => setTab("contacts")} onAdd={open({ kind: "contact" })} />
-                  <DocumentsRailPanel accountId={id} documents={documentList} onUpload={open({ kind: "document" })} />
-                  <RemindersPanel reminders={accountReminders} onAdd={() => remind()} />
-                  <RecentActivityPanel activities={activityList} onAll={() => setTab("activity")} />
-                </>
-              }
-            >
-              <StatementTable
-                invoices={invoiceList}
-                expenses={expenseList}
-                loading={invoices.loading || expenses.loading}
-                onChanged={onMoneyChanged}
-                onNewInvoice={open({ kind: "invoice" })}
-              />
-            </PageSplit>
-          )}
-          {tab === "contacts" && (
-            <ContactsSection contacts={contactList} loading={contacts.loading} onAdd={open({ kind: "contact" })} onEdit={(contact) => setDialog({ kind: "contact", contact })} />
-          )}
-          {tab === "documents" && (
-            <DocumentsSection accountId={id} documents={documentList} loading={documents.loading} onUpload={open({ kind: "document" })} onChanged={onDocumentsChanged} />
-          )}
-          {tab === "invoices" && (
-            <InvoicesSection invoices={invoiceList} finance={finance} loading={invoices.loading} onNew={open({ kind: "invoice" })} onChanged={onMoneyChanged} />
-          )}
-          {tab === "expenses" && (
-            <ExpensesSection
-              expenses={expenseList}
-              finance={finance}
-              loading={expenses.loading}
-              onNew={open({ kind: "expense" })}
-              onEdit={(expense) => setDialog({ kind: "expense", expense })}
-            />
-          )}
-          {tab === "activity" && (
-            <Panel title="Activity">
-              <NoteComposer postUrl={`${base}/activity`} onAdded={() => reload(activity, acc)} onRemind={remind} />
-              {activity.data ? <ActivityTimeline activities={activityList} /> : <RowsSkeleton />}
-            </Panel>
-          )}
-          {tab === "history" && (
-            <Panel title="History" meta="every change to this account and its records">
-              {history.data ? <AuditTimeline entries={history.data.entries} showEntity /> : <RowsSkeleton />}
-            </Panel>
-          )}
-        </>
+      <StatementBar finance={finance} invoices={invoiceList} expenses={expenseList} onAddExpense={add({ kind: "expense" })} />
+
+      <div className="glass rounded-panel px-4 pt-3.5 md:px-6">
+        <Tabs<Tab>
+          aria-label="Account sections"
+          value={tab}
+          onChange={setTab}
+          className="border-b-0"
+          tabs={[
+            { key: "overview", label: "Overview" },
+            { key: "contacts", label: "Contacts", count: contacts.data ? contactList.length : undefined },
+            { key: "documents", label: "Documents", count: documents.data ? documentList.length : undefined },
+            { key: "invoices", label: "Invoices", count: invoices.data ? invoiceList.length : undefined },
+            { key: "expenses", label: "Expenses", count: expenses.data ? expenseList.length : undefined },
+            { key: "activity", label: "Activity" },
+            { key: "history", label: "History" },
+          ]}
+        />
+      </div>
+
+      {tab === "overview" && (
+        <PageSplit
+          railLabel="Account context"
+          rail={
+            <>
+              <PrimaryContactPanel contact={primary} onAll={() => setTab("contacts")} onAdd={add({ kind: "contact" })} />
+              <DocumentsRailPanel accountId={id} documents={documentList} onUpload={add({ kind: "document" })} />
+              <RemindersPanel reminders={reminders.data?.reminders ?? []} onAdd={archived ? undefined : () => remind()} />
+              <RecentActivityPanel activities={activityList} onAll={() => setTab("activity")} />
+            </>
+          }
+        >
+          <StatementTable
+            accountName={account.name}
+            invoices={invoiceList}
+            expenses={expenseList}
+            loading={invoices.loading || expenses.loading}
+            readOnly={archived}
+            onChanged={onMoneyChanged}
+            onNewInvoice={add({ kind: "invoice" })}
+          />
+        </PageSplit>
+      )}
+      {tab === "contacts" && (
+        <ContactsSection
+          contacts={contactList}
+          loading={contacts.loading}
+          onAdd={add({ kind: "contact" })}
+          onEdit={edit((contact: ContactDTO) => ({ kind: "contact", contact }))}
+        />
+      )}
+      {tab === "documents" && (
+        <DocumentsSection
+          accountId={id}
+          documents={documentList}
+          loading={documents.loading}
+          readOnly={archived}
+          onUpload={show({ kind: "document" })}
+          onChanged={onDocumentsChanged}
+        />
+      )}
+      {tab === "invoices" && (
+        <InvoicesSection
+          invoices={invoiceList}
+          finance={finance}
+          loading={invoices.loading}
+          readOnly={archived}
+          onNew={show({ kind: "invoice" })}
+          onChanged={onMoneyChanged}
+        />
+      )}
+      {tab === "expenses" && (
+        <ExpensesSection
+          expenses={expenseList}
+          finance={finance}
+          loading={expenses.loading}
+          onNew={add({ kind: "expense" })}
+          onEdit={edit((expense: ExpenseDTO) => ({ kind: "expense", expense }))}
+        />
+      )}
+      {tab === "activity" && (
+        <Panel title="Activity">
+          {!archived && <NoteComposer postUrl={`${base}/activity`} onAdded={() => reload(activity, acc)} onRemind={remind} />}
+          {activity.data ? <ActivityTimeline activities={activityList} /> : <RowsSkeleton />}
+        </Panel>
+      )}
+      {tab === "history" && (
+        <Panel title="History" meta="every change to this account and its records">
+          {history.data ? <AuditTimeline entries={history.data.entries} showEntity /> : <RowsSkeleton />}
+        </Panel>
       )}
 
       {dialog?.kind === "contact" && <ContactModal accountId={id} contact={dialog.contact} onClose={() => setDialog(null)} onChanged={onContactsChanged} />}

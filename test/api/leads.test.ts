@@ -227,6 +227,20 @@ describe("PATCH /api/leads/:id/stage", () => {
     expect((await models.Lead.findById(lead._id).lean())?.order).toBe(0);
   });
 
+  it("drops a lead into the exact slot by renumbering the target lane", async () => {
+    await makeLead(admin, { name: "A", stage: "qualified", order: 0 });
+    await makeLead(admin, { name: "B", stage: "qualified", order: 1 });
+    const c = await makeLead(admin, { name: "C", stage: "new" });
+    const d = await makeLead(admin, { name: "D", stage: "new" });
+    const move = (id: unknown, order: number) =>
+      stageRoute.PATCH(jsonRequest(`/api/leads/${id}/stage`, "PATCH", { stage: "qualified", order }), ctx({ id: String(id) }));
+    await move(c._id, 0);
+    await move(d._id, 1);
+    const lane = await models.Lead.find({ stage: "qualified" }).sort({ order: 1 }).lean();
+    expect(lane.map((l) => l.name)).toEqual(["C", "D", "A", "B"]);
+    expect(lane.map((l) => l.order)).toEqual([0, 1, 2, 3]);
+  });
+
   it("404 when a standard user moves a lead outside their scope", async () => {
     const lead = await makeLead(admin, { stage: "new" });
     session.user = standard;

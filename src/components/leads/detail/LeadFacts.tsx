@@ -9,6 +9,7 @@ import { useToast } from "@/components/ui/Toast";
 import { api, useApi } from "@/lib/client";
 import { DEFAULT_LEAD_CATEGORIES, DEFAULT_LEAD_CATEGORY, LEAD_SOURCES, formatCategoryLabel } from "@/lib/constants";
 import { shortDate } from "@/lib/dates";
+import { parseAmount } from "@/lib/utils";
 import type { LeadDTO } from "@/lib/types";
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -108,20 +109,16 @@ function FactsForm({ lead, onDone }: { lead: LeadDTO; onDone: (saved: boolean) =
   // Keep a removed-but-still-assigned category selectable.
   const categoryOptions = categories.includes(lead.category) ? categories : [...categories, lead.category];
   const [form, setForm] = useState(() => draftOf(lead));
-  const [errors, setErrors] = useState<{ email?: string; estValue?: string }>({});
+  const [emailError, setEmailError] = useState<string>();
   const [busy, setBusy] = useState(false);
 
   const set = (k: keyof typeof form) => (e: { target: { value: string } }) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
   async function save(e: FormEvent) {
     e.preventDefault();
-    const value = form.estValue.trim() ? Number(form.estValue.replace(/,/g, "")) : 0;
-    const next = {
-      email: form.email.trim() && !EMAIL.test(form.email.trim()) ? "Enter a valid email." : undefined,
-      estValue: !Number.isFinite(value) || value < 0 ? "Enter an amount in rupees." : undefined,
-    };
-    setErrors(next);
-    if (next.email || next.estValue) return;
+    const invalidEmail = form.email.trim() && !EMAIL.test(form.email.trim()) ? "Enter a valid email." : undefined;
+    setEmailError(invalidEmail);
+    if (invalidEmail) return;
 
     setBusy(true);
     try {
@@ -130,7 +127,7 @@ function FactsForm({ lead, onDone }: { lead: LeadDTO; onDone: (saved: boolean) =
         title: form.title,
         phone: form.phone,
         email: form.email,
-        estValue: value,
+        estValue: parseAmount(form.estValue),
         category: form.category,
         source: form.source,
         tags: form.tags.split(",").map((t) => t.trim()).filter(Boolean),
@@ -150,7 +147,7 @@ function FactsForm({ lead, onDone }: { lead: LeadDTO; onDone: (saved: boolean) =
         <Field label="Phone">
           <Input type="tel" autoFocus value={form.phone} onChange={set("phone")} />
         </Field>
-        <Field label="Email" error={errors.email}>
+        <Field label="Email" error={emailError}>
           <Input type="email" value={form.email} onChange={set("email")} />
         </Field>
         <Field label="Company">
@@ -159,7 +156,7 @@ function FactsForm({ lead, onDone }: { lead: LeadDTO; onDone: (saved: boolean) =
         <Field label="Title">
           <Input value={form.title} onChange={set("title")} />
         </Field>
-        <Field label="Estimated value" error={errors.estValue}>
+        <Field label="Estimated value">
           <AmountInput value={form.estValue} onChange={set("estValue")} />
         </Field>
         <Field label="Source">
@@ -189,7 +186,7 @@ function FactsForm({ lead, onDone }: { lead: LeadDTO; onDone: (saved: boolean) =
         <Button type="submit" variant="primary" loading={busy}>
           Save details
         </Button>
-        <Button variant="ghost" onClick={() => onDone(false)}>
+        <Button type="button" variant="ghost" onClick={() => onDone(false)}>
           Cancel
         </Button>
       </div>

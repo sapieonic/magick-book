@@ -1,26 +1,48 @@
 "use client";
 import { useState } from "react";
 import Link from "next/link";
-import { format } from "date-fns";
 import { Download } from "lucide-react";
 import { Table, Th, Td, TwoLine } from "@/components/ui/Table";
 import { Button, LinkButton } from "@/components/ui/Button";
-import { StatusPill } from "@/components/ui/Badge";
+import { StatusPill, STATUS_META } from "@/components/ui/Badge";
 import { Money } from "@/components/ui/Money";
 import { useInvoiceActions } from "@/components/invoices/useInvoiceActions";
+import { isoDay, shortDate } from "@/lib/dates";
 import { groupLedger, invoiceAge } from "@/lib/money-charts";
 import { displayStatus, isOutstanding, paymentDate } from "@/lib/receivables";
 import { cn, plural } from "@/lib/utils";
 import type { InvoiceDTO } from "@/lib/types";
+import type { CsvCell } from "./csv";
 
 /** Paid invoices shown before "Show earlier paid invoices". */
 const PAID_PREVIEW = 8;
 
+/**
+ * Issued, Status and File have their own columns only from xl (1280). Below
+ * that the age says the status, and the download sits with the row actions,
+ * so Mark paid and Remind always fit without scrolling sideways.
+ */
+const WIDE_COL = "max-xl:hidden";
+
 const sum = (rows: InvoiceDTO[]) => rows.reduce((s, i) => s + i.amount, 0);
 
-/** "07 Nov" this year, "07 Nov 2025" otherwise. */
-function shortDate(d: Date, now: Date): string {
-  return format(d, d.getFullYear() === now.getFullYear() ? "dd MMM" : "dd MMM yyyy");
+/** The ledger rows as CSV, in ledger order: dates as IST days, amounts as plain numbers. */
+export function ledgerCsvRows(invoices: InvoiceDTO[], now: Date): CsvCell[][] {
+  const { outstanding, paid, draft } = groupLedger(invoices, now);
+  const day = (d: string | Date | null) => (d ? isoDay(d) : null);
+  return [
+    ["Invoice", "Account", "Issued", "Due", "Paid on", "Status", "Age", "Amount"],
+    ...[...outstanding, ...paid, ...draft].map((inv) => [
+      inv.number,
+      inv.accountName ?? "",
+      day(inv.issuedAt),
+      day(inv.dueAt),
+      day(paymentDate(inv)),
+      STATUS_META[displayStatus(inv, now)].label,
+      invoiceAge(inv, now).text,
+      inv.amount,
+    ]),
+  ];
 }
 
 /**
@@ -58,12 +80,12 @@ export function InvoiceTable({
           <tr>
             <Th>Invoice</Th>
             <Th hideOnPhone>Account</Th>
-            <Th hideOnPhone>Issued</Th>
+            <Th className={WIDE_COL}>Issued</Th>
             <Th hideOnPhone>Due</Th>
             <Th hideOnPhone>Age</Th>
             <Th numeric>Amount</Th>
-            <Th hideOnPhone>Status</Th>
-            <Th hideOnPhone>File</Th>
+            <Th className={WIDE_COL}>Status</Th>
+            <Th className={WIDE_COL}>File</Th>
             <Th>
               <span className="sr-only">Actions</span>
             </Th>
@@ -125,7 +147,7 @@ function InvoiceRow({
       aria-label={`Download, invoice #${inv.number} file`}
     >
       <Download className="size-4" strokeWidth={1.5} aria-hidden />
-      <span className="max-md:hidden">Download</span>
+      <span className="max-xl:hidden">Download</span>
     </a>
   );
 
@@ -144,11 +166,9 @@ function InvoiceRow({
         />
       </Td>
       <Td hideOnPhone>{account}</Td>
+      <Td className={cn(WIDE_COL, "tnum whitespace-nowrap text-ink-2")}>{shortDate(inv.issuedAt)}</Td>
       <Td hideOnPhone className="tnum whitespace-nowrap text-ink-2">
-        {format(new Date(inv.issuedAt), "dd MMM yyyy")}
-      </Td>
-      <Td hideOnPhone className="tnum whitespace-nowrap text-ink-2">
-        {paidOn ? `Paid ${shortDate(paidOn, now)}` : inv.dueAt ? shortDate(new Date(inv.dueAt), now) : "–"}
+        {paidOn ? `Paid ${shortDate(paidOn, "auto", now)}` : inv.dueAt ? shortDate(inv.dueAt, "auto", now) : "–"}
       </Td>
       <Td hideOnPhone className={cn("whitespace-nowrap", age.late ? "font-medium text-overdue" : "text-ink-3")}>
         {age.text}
@@ -156,30 +176,24 @@ function InvoiceRow({
       <Td numeric>
         <Money value={inv.amount} />
       </Td>
-      <Td hideOnPhone className="whitespace-nowrap">
+      <Td className={cn(WIDE_COL, "whitespace-nowrap")}>
         <StatusPill status={displayStatus(inv, now)} />
       </Td>
-      <Td hideOnPhone>{download || <span className="text-ink-3">–</span>}</Td>
-      <Td className="text-right">
-        <span className="inline-flex items-center justify-end gap-1">
+      <Td className={WIDE_COL}>{download || <span className="text-ink-3">–</span>}</Td>
+      <Td className="whitespace-nowrap text-right">
+        {/* Phones stack the actions so Remind stays beside every outstanding invoice. */}
+        <span className="inline-flex items-center justify-end gap-1 max-md:flex-col max-md:items-end max-md:py-1.5">
           {open && (
             <>
               <Button size="sm" onClick={() => onAct("paid")} loading={busy} aria-label={`Mark paid, invoice #${inv.number}`}>
                 Mark paid
               </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                className="max-md:hidden"
-                onClick={() => onAct("remind")}
-                disabled={busy}
-                aria-label={`Remind, invoice #${inv.number}`}
-              >
+              <Button size="sm" variant="ghost" onClick={() => onAct("remind")} disabled={busy} aria-label={`Remind, invoice #${inv.number}`}>
                 Remind
               </Button>
             </>
           )}
-          {download && <span className="md:hidden">{download}</span>}
+          {download && <span className="xl:hidden">{download}</span>}
         </span>
       </Td>
     </tr>
@@ -187,20 +201,25 @@ function InvoiceRow({
 }
 
 /**
- * Subtotal or total row. The label spans Invoice to Age on wider screens; on
- * phones those columns are hidden, so a second label cell takes their place.
+ * Subtotal or total row. The label spans the columns before Amount, and how
+ * many of those show depends on the width, so there is one label cell per
+ * layout: Invoice to Age from xl, without Issued below xl, Invoice alone on phones.
  */
 function SpanRow({ kind, label, amount }: { kind: "group" | "total"; label: string; amount: number }) {
   return (
     <tr className={kind}>
-      <td colSpan={5} className="max-md:hidden">
+      <td colSpan={5} className="max-xl:hidden">
+        {label}
+      </td>
+      <td colSpan={4} className="max-md:hidden xl:hidden">
         {label}
       </td>
       <td className={cn("md:hidden", kind === "group" ? "pl-[10px]" : "pl-0")}>{label}</td>
       <Td numeric>
         <Money value={amount} />
       </Td>
-      <Td hideOnPhone colSpan={2} />
+      <Td className={WIDE_COL} />
+      <Td className={WIDE_COL} />
       <Td />
     </tr>
   );

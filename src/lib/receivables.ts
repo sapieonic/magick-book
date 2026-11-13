@@ -1,11 +1,14 @@
 import type { InvoiceStatus } from "./constants";
+import { calendarDaysBetween, startOfBusinessMonth } from "./dates";
 import type { AgingBucketDTO, AgingKey, MoneyTotals } from "./types";
 
 /**
  * Pure receivables maths shared by `/api/dashboard`, `/api/money`, the
  * accounts finance rollup and the client screens. Works on lean Mongo docs
- * (Date fields) and DTOs (ISO strings) alike. All calendar maths is UTC, so
- * the server and every browser agree on which day an invoice fell due.
+ * (Date fields) and DTOs (ISO strings) alike. Days and months are IST
+ * calendar days and months (via `lib/dates`), the same ones every screen
+ * shows, so the server and every browser agree on which day an invoice fell
+ * due and which month a payment landed in.
  *
  * One rule everywhere: an invoice is **outstanding** while sent or overdue,
  * ages from its due date (else its issue date), and is **overdue** once it is
@@ -39,23 +42,11 @@ export const AGING_COLORS: Record<AgingKey, string> = {
   d60plus: "var(--color-overdue-fill)",
 };
 
-const MS_PER_DAY = 86_400_000;
-
-/** Whole UTC calendar days from `b` to `a` (a − b). */
-export function differenceInUtcCalendarDays(a: Date, b: Date): number {
-  const a0 = Date.UTC(a.getUTCFullYear(), a.getUTCMonth(), a.getUTCDate());
-  const b0 = Date.UTC(b.getUTCFullYear(), b.getUTCMonth(), b.getUTCDate());
-  return Math.round((a0 - b0) / MS_PER_DAY);
-}
-
-/** UTC start of the calendar month `n` months before `d`'s month. */
-export function subUtcMonths(d: Date, n: number): Date {
-  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() - n, 1));
-}
-
 /** Sent or overdue: billed and not yet paid. Drafts were never billed. */
+export const OUTSTANDING_STATUSES: readonly InvoiceStatus[] = ["sent", "overdue"];
+
 export function isOutstanding(inv: Pick<InvoiceLike, "status">): boolean {
-  return inv.status === "sent" || inv.status === "overdue";
+  return OUTSTANDING_STATUSES.includes(inv.status);
 }
 
 /** The date an invoice ages from: its due date, or its issue date when it has none. */
@@ -63,9 +54,9 @@ export function agingDate(inv: Pick<InvoiceLike, "issuedAt" | "dueAt">): Date {
   return new Date(inv.dueAt ?? inv.issuedAt);
 }
 
-/** Whole UTC calendar days past the aging date; zero or negative means not yet due. */
+/** Whole IST calendar days past the aging date; zero or negative means not yet due. */
 export function daysPastDue(inv: Pick<InvoiceLike, "issuedAt" | "dueAt">, now: Date): number {
-  return differenceInUtcCalendarDays(now, agingDate(inv));
+  return calendarDaysBetween(now, agingDate(inv));
 }
 
 /**
@@ -124,7 +115,8 @@ export function rollupMoney(invoices: InvoiceLike[], expenses: { amount: number 
     }
   }
   for (const e of expenses) t.expenses += e.amount;
-  t.margin = t.billed > 0 ? Math.max(0, (t.billed - t.expenses) / t.billed) : 0;
+  // Can go negative when expenses outrun billing; 0 until something is billed.
+  t.margin = t.billed > 0 ? (t.billed - t.expenses) / t.billed : 0;
   return t;
 }
 
@@ -163,14 +155,14 @@ export function rankDebtors(invoices: (InvoiceLike & { accountId: string })[]): 
 export interface Collections<T> {
   thisMonth: number;
   lastMonth: number;
-  /** Payments received this UTC calendar month, most recent first. */
+  /** Payments received this IST calendar month, most recent first. */
   payments: T[];
 }
 
-/** Money received this UTC calendar month and last, by payment date. */
+/** Money received this IST calendar month and last, by payment date. */
 export function collections<T extends InvoiceLike>(invoices: T[], now: Date): Collections<T> {
-  const monthStart = subUtcMonths(now, 0);
-  const prevStart = subUtcMonths(now, 1);
+  const monthStart = startOfBusinessMonth(now);
+  const prevStart = startOfBusinessMonth(now, 1);
   const result: Collections<T> = { thisMonth: 0, lastMonth: 0, payments: [] };
   for (const inv of invoices) {
     const when = paymentDate(inv);

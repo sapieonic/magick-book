@@ -1,23 +1,20 @@
-import { endOfDay } from "date-fns";
 import { ok, route } from "@/lib/api";
 import { connectDB } from "@/lib/db";
 import { Lead, Account, Invoice, Reminder, type ILead, type IInvoice, type IAccount, type IReminder } from "@/lib/models";
 import { requireUser } from "@/lib/auth/server";
 import { leadScope, accountScope, reminderScope } from "@/lib/rbac";
 import { ownerNameMap } from "@/lib/services";
+import { DAY_MS, endOfBusinessDay, startOfBusinessMonth } from "@/lib/dates";
 import { agingDate, buildOutstandingAging, collections, isOutstanding, isOverdue, rankDebtors } from "@/lib/receivables";
-import { PIPELINE_STAGES, type LeadStage } from "@/lib/constants";
+import { OPEN_REMINDER_STATUSES, PIPELINE_STAGES, type LeadStage } from "@/lib/constants";
 import type { DashboardData, PipelineStageSummary, StageLeadRef, WorkItem, UpcomingReminder } from "@/lib/types";
 
-const DAY = 86400000;
 /** The working funnel: everything before won (parked and lost are off it). */
 const OPEN_STAGES: LeadStage[] = PIPELINE_STAGES.filter((s) => s !== "won");
 /** A qualified or proposal lead untouched for longer than this needs a follow-up. */
-const FOLLOW_UP_AFTER = 2 * DAY;
+const FOLLOW_UP_AFTER = 2 * DAY_MS;
 const UPCOMING_DAYS = 7;
 const TOP_DEBTORS = 5;
-/** Reminders still waiting on the user (delivered or not, but not done or canceled). */
-const OPEN_REMINDER_STATUSES: IReminder["status"][] = ["scheduled", "sent", "failed"];
 
 type LeadRow = Pick<ILead, "_id" | "ownerId" | "name" | "company" | "stage" | "estValue" | "lastActivityAt" | "convertedAccountId">;
 type AccountRow = Pick<IAccount, "_id" | "ownerId" | "name" | "status" | "lastActivityAt">;
@@ -36,9 +33,10 @@ export const GET = route(async () => {
   await connectDB();
 
   const now = new Date();
-  const todayEnd = endOfDay(now);
-  const weekEnd = new Date(todayEnd.getTime() + UPCOMING_DAYS * DAY);
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  // "Today" and "this month" are IST calendar days and months.
+  const todayEnd = endOfBusinessDay(now);
+  const weekEnd = new Date(todayEnd.getTime() + UPCOMING_DAYS * DAY_MS);
+  const monthStart = startOfBusinessMonth(now);
 
   // Visible accounts (for money + RBAC join on invoices).
   const accounts = await Account.find(accountScope(user)).select("ownerId name status lastActivityAt").lean<AccountRow[]>();

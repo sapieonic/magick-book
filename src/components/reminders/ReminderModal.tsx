@@ -6,6 +6,7 @@ import { Input, Textarea, Field } from "@/components/ui/Field";
 import { useToast } from "@/components/ui/Toast";
 import { api } from "@/lib/client";
 import { cn } from "@/lib/utils";
+import { businessDay } from "@/lib/dates";
 import type { ReminderDTO } from "@/lib/types";
 
 /** Format a Date as the local value a <input type="datetime-local"> expects. */
@@ -16,8 +17,8 @@ export function toLocalInput(d: Date): string {
 
 const PRESETS: { label: string; at: () => Date }[] = [
   { label: "In 1 hour", at: () => new Date(Date.now() + 60 * 60 * 1000) },
-  { label: "Tomorrow 9am", at: () => { const d = new Date(); d.setDate(d.getDate() + 1); d.setHours(9, 0, 0, 0); return d; } },
-  { label: "Next week", at: () => { const d = new Date(); d.setDate(d.getDate() + 7); d.setHours(9, 0, 0, 0); return d; } },
+  { label: "Tomorrow 9am", at: () => businessDay(Date.now(), 1, 9) },
+  { label: "Next week", at: () => businessDay(Date.now(), 7, 9) },
 ];
 
 /** Quick-pick chips that set a datetime-local value ("In 1 hour", "Tomorrow 9am", "Next week"). */

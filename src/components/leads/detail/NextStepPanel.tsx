@@ -7,27 +7,11 @@ import { useToast } from "@/components/ui/Toast";
 import { DuePresets, toLocalInput } from "@/components/reminders/ReminderModal";
 import { api } from "@/lib/client";
 import { ageInWords, cn } from "@/lib/utils";
-import { absoluteTime, daysSince } from "@/lib/dates";
+import { absoluteTime, businessDay, daysSince, dueWords } from "@/lib/dates";
 import type { ReminderDTO } from "@/lib/types";
 
-const DAY = 86_400_000;
-
-function tomorrowAt9(): string {
-  const d = new Date(Date.now() + DAY);
-  d.setHours(9, 0, 0, 0);
-  return toLocalInput(d);
-}
-
-/** "Due today", "Due in 3 days", "2 days overdue". */
-function dueWords(dueAt: string): { text: string; late: boolean } {
-  const diff = new Date(dueAt).getTime() - Date.now();
-  if (diff < 0) {
-    const days = daysSince(dueAt);
-    return { text: days < 1 ? "Overdue" : `${ageInWords(days)} overdue`, late: true };
-  }
-  const days = Math.floor(diff / DAY);
-  return { text: days < 1 ? "Due today" : `Due in ${ageInWords(days).toLowerCase()}`, late: false };
-}
+/** The form's default: tomorrow at 9am. */
+const tomorrowMorning = () => toLocalInput(businessDay(Date.now(), 1, 9));
 
 /**
  * The lead's next step: the viewer's earliest open reminder on it, or a short
@@ -52,7 +36,7 @@ export function NextStepPanel({
 }) {
   const { toast } = useToast();
   const [what, setWhat] = useState("");
-  const [when, setWhen] = useState(tomorrowAt9);
+  const [when, setWhen] = useState(tomorrowMorning);
   const [rescheduling, setRescheduling] = useState(false);
   const [busy, setBusy] = useState(false);
 
@@ -76,7 +60,7 @@ export function NextStepPanel({
     run(async () => {
       await api.post("/api/reminders", { title: what.trim(), dueAt: new Date(when).toISOString(), leadId });
       setWhat("");
-      setWhen(tomorrowAt9());
+      setWhen(tomorrowMorning());
     }, "Next step set.");
   }
 
@@ -86,14 +70,19 @@ export function NextStepPanel({
     run(() => api.patch(`/api/reminders/${step.id}`, { action: "snooze", dueAt: new Date(when).toISOString() }), "Next step moved.");
   }
 
-  const due = step ? dueWords(step.dueAt) : null;
+  // Past its time: "Overdue" today, else "3 days overdue". Otherwise by calendar day: "Due today", "Due tomorrow".
+  const now = Date.now();
+  const late = !!step && new Date(step.dueAt).getTime() < now;
+  const overdueDays = step ? daysSince(step.dueAt, now) : 0;
 
   return (
     <Panel
       title="Next step"
       actions={
-        due ? (
-          <span className={cn("tnum text-[12px] font-medium", due.late ? "text-overdue" : "text-ink-3")}>{due.text}</span>
+        step ? (
+          <span className={cn("tnum inline-block text-[12px] font-medium first-letter:uppercase", late ? "text-overdue" : "text-ink-3")}>
+            {late ? (overdueDays < 1 ? "Overdue" : `${ageInWords(overdueDays)} overdue`) : dueWords(step.dueAt, now)}
+          </span>
         ) : (
           <span className="text-[12px] font-medium text-due">Not set</span>
         )
@@ -147,7 +136,7 @@ export function NextStepPanel({
               Save
             </Button>
             {step && (
-              <Button variant="ghost" onClick={() => setRescheduling(false)}>
+              <Button type="button" variant="ghost" onClick={() => setRescheduling(false)}>
                 Cancel
               </Button>
             )}

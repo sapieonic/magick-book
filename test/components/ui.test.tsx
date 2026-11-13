@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { useState } from "react";
 import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -70,6 +71,14 @@ describe("Avatar", () => {
     rerender(<Avatar name="Priya Sharma" tone="ink" size={40} />);
     expect(screen.getByText("PS")).toHaveClass("bg-ink-1", "text-on-ink");
     expect(screen.getByText("PS").style.width).toBe("40px");
+  });
+  it("keeps initials at 12px or more, condensed on the smallest discs", () => {
+    const { rerender } = render(<Avatar name="Mohan Waghmare" size={20} />);
+    expect(screen.getByText("MW").style.fontSize).toBe("12px");
+    expect(screen.getByText("MW")).toHaveClass("font-condensed");
+    rerender(<Avatar name="Mohan Waghmare" size={36} />);
+    expect(screen.getByText("MW").style.fontSize).toBe("14px");
+    expect(screen.getByText("MW")).not.toHaveClass("font-condensed");
   });
   it('falls back to "?" for an empty name', () => {
     render(<Avatar name="" />);
@@ -251,7 +260,7 @@ describe("Tabs", () => {
 describe("Table", () => {
   it("right-aligns numeric cells and can drop a column on phones", () => {
     render(
-      <Table maxHeight={200}>
+      <Table>
         <thead>
           <tr><Th>Invoice</Th><Th numeric>Amount</Th><Th hideOnPhone>Owner</Th></tr>
         </thead>
@@ -264,7 +273,7 @@ describe("Table", () => {
         </tbody>
       </Table>,
     );
-    expect(screen.getByRole("table")).toHaveClass("ledger", "ledger-sticky");
+    expect(screen.getByRole("table")).toHaveClass("ledger");
     expect(screen.getByRole("columnheader", { name: "Amount" })).toHaveClass("num");
     expect(screen.getByRole("cell", { name: "₹4,37,096" })).toHaveClass("num");
     expect(screen.getByRole("cell", { name: "Pooja" })).toHaveClass("max-md:hidden");
@@ -344,6 +353,71 @@ describe("Modal / Drawer", () => {
 
     rerender(<Harness open={false} />);
     expect(screen.getByRole("button", { name: "Outside" })).toHaveFocus();
+  });
+  it("returns focus to the opener even when a child takes focus with autoFocus", async () => {
+    const user = userEvent.setup();
+    function Harness() {
+      const [open, setOpen] = useState(false);
+      return (
+        <>
+          <button onClick={() => setOpen(true)}>Archive</button>
+          <Modal open={open} onClose={() => setOpen(false)} title="Archive this lead?">
+            <button autoFocus>Confirm</button>
+          </Modal>
+        </>
+      );
+    }
+    render(<Harness />);
+    await user.click(screen.getByRole("button", { name: "Archive" }));
+    expect(await screen.findByRole("button", { name: "Confirm" })).toHaveFocus();
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.getByRole("button", { name: "Archive" })).toHaveFocus();
+  });
+  it("hands focus back to the first opener when a dialog is replaced by one opened from inside it", async () => {
+    const user = userEvent.setup();
+    function Harness() {
+      const [which, setWhich] = useState<"none" | "first" | "second">("none");
+      return (
+        <>
+          <button onClick={() => setWhich("first")}>Search</button>
+          <Modal open={which === "first"} onClose={() => setWhich("none")} title="Palette">
+            <button autoFocus onClick={() => setWhich("second")}>New lead</button>
+          </Modal>
+          <Drawer open={which === "second"} onClose={() => setWhich("none")} title="Add lead">
+            <input autoFocus aria-label="Name" />
+          </Drawer>
+        </>
+      );
+    }
+    render(<Harness />);
+    await user.click(screen.getByRole("button", { name: "Search" }));
+    await user.click(await screen.findByRole("button", { name: "New lead" }));
+    expect(await screen.findByRole("textbox", { name: "Name" })).toHaveFocus();
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.getByRole("button", { name: "Search" })).toHaveFocus();
+  });
+  it("does not restore focus to an opener that has left the page", async () => {
+    const user = userEvent.setup();
+    function Harness({ showOpener }: { showOpener: boolean }) {
+      const [open, setOpen] = useState(false);
+      return (
+        <>
+          {showOpener && <button onClick={() => setOpen(true)}>Open</button>}
+          <Modal open={open} onClose={() => setOpen(false)} title="Gone">
+            <button autoFocus>Done</button>
+          </Modal>
+        </>
+      );
+    }
+    const { rerender } = render(<Harness showOpener />);
+    await user.click(screen.getByRole("button", { name: "Open" }));
+    await screen.findByRole("button", { name: "Done" });
+    rerender(<Harness showOpener={false} />);
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(document.activeElement).toBe(document.body);
   });
   it("only the topmost dialog answers Escape", async () => {
     const user = userEvent.setup();

@@ -1,5 +1,6 @@
 "use client";
 import { createContext, useContext, useEffect, useRef } from "react";
+import { DATA_CHANGED } from "@/lib/dataChanged";
 
 export interface Shell {
   /** Top-bar DOM slots that `PageHeader` portals into. */
@@ -19,20 +20,27 @@ export function useShell(): Shell {
   return shell;
 }
 
-const LEADS_CHANGED = "mb:leads-changed";
+/** Coalesces a burst of mutations (e.g. a bulk action) into one callback. */
+const DATA_CHANGED_DEBOUNCE_MS = 150;
 
-/** Tell every listening page that a lead was created outside of it (shell "New"). */
-export function announceLeadsChanged() {
-  window.dispatchEvent(new Event(LEADS_CHANGED));
-}
-
-/** Re-run `onChange` (typically a list `refresh`) when the shell creates a lead. */
-export function useLeadsChanged(onChange: () => void) {
+/**
+ * Re-run `onChange` (typically a `refresh`) shortly after any successful
+ * mutation made through `api`, wherever in the app it happened: the shell's
+ * New drawer, a dialog, another panel. Bursts collapse into one call.
+ */
+export function useDataChanged(onChange: () => void) {
   const ref = useRef(onChange);
   ref.current = onChange;
   useEffect(() => {
-    const handler = () => ref.current();
-    window.addEventListener(LEADS_CHANGED, handler);
-    return () => window.removeEventListener(LEADS_CHANGED, handler);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const handler = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => ref.current(), DATA_CHANGED_DEBOUNCE_MS);
+    };
+    window.addEventListener(DATA_CHANGED, handler);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener(DATA_CHANGED, handler);
+    };
   }, []);
 }

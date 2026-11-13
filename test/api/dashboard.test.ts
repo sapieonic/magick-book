@@ -175,6 +175,35 @@ describe("GET /api/dashboard — Today page", () => {
     expect(d.queue.filter((q) => q.kind === "reminder")).toHaveLength(0);
   });
 
+  it("reads today and this month as IST, even in the hours UTC is still on the previous day", async () => {
+    const ist = (wall: string) => new Date(`${wall}:00.000+05:30`);
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(ist("2026-11-01T02:00")); // 20:30 UTC on 31 Oct
+    try {
+      const acc = await models.Account.create({ workspaceId, ownerId: admin._id, name: "Lumen", status: "active" });
+      await models.Lead.create([
+        { workspaceId, ownerId: admin._id, name: "Won today", stage: "won", lastActivityAt: ist("2026-11-01T01:00") },
+        { workspaceId, ownerId: admin._id, name: "Won last month", stage: "won", lastActivityAt: ist("2026-10-31T23:00") },
+      ]);
+      await models.Reminder.create([
+        { workspaceId, userId: admin._id, title: "Tonight", dueAt: ist("2026-11-01T20:00") },
+        { workspaceId, userId: admin._id, title: "Tomorrow", dueAt: ist("2026-11-02T09:00") },
+      ]);
+      await models.Invoice.create([
+        { workspaceId, accountId: acc._id, number: 1, amount: 300, status: "paid", paidAt: ist("2026-11-01T01:00") },
+        { workspaceId, accountId: acc._id, number: 2, amount: 20, status: "paid", paidAt: ist("2026-10-31T23:00") },
+      ]);
+
+      const d = await getDashboard();
+      expect(d.wonThisMonth).toBe(1);
+      expect(d.queue.filter((q) => q.kind === "reminder").map((q) => q.title)).toEqual(["Tonight"]);
+      expect(d.upcoming.map((u) => u.title)).toEqual(["Tomorrow"]);
+      expect(d.receivables.collected).toMatchObject({ thisMonth: 300, lastMonth: 20 });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("scopes the queue and receivables to a standard user's own records", async () => {
     const mine = await models.Account.create({ workspaceId, ownerId: standard._id, name: "Mine", status: "active" });
     const theirs = await models.Account.create({ workspaceId, ownerId: admin._id, name: "Theirs", status: "active" });

@@ -1,12 +1,53 @@
 import "server-only";
 import { Types } from "mongoose";
-import { Activity, AuditLog, Invoice, Expense, User, type IInvoice, type IUser } from "./models";
-import type { ActivityKind, AuditAction, AuditEntity } from "./constants";
-import type { AccountFinance, AuditChange } from "./types";
+import { Account, Activity, AuditLog, Invoice, Expense, User, type IAccount, type IAuditLog, type IExpense, type IInvoice, type ILead, type IUser } from "./models";
+import { LEAD_STAGES, type ActivityKind, type AuditAction, type AuditEntity, type LeadStage } from "./constants";
+import type { AccountFinance, AuditChange, LeadStageSpan } from "./types";
+import { HttpError } from "./api";
+import { accountScope } from "./rbac";
 import { rollupMoney } from "./receivables";
-import { LEAD_STAGES, type LeadStage } from "./constants";
-import type { ILead, IAuditLog } from "./models";
-import type { LeadStageSpan } from "./types";
+
+/**
+ * Resolve an account the user can see, or throw a 404. `"read"` also resolves
+ * an archived account, so its page and tabs stay viewable; `"write"` sees only
+ * live accounts, so nothing under an archived account changes until it is
+ * restored. Callers still check `canEditOwned()` before mutating.
+ */
+export async function loadAccount(user: IUser, id: string | Types.ObjectId, access: "read" | "write"): Promise<IAccount> {
+  const acc = Types.ObjectId.isValid(id)
+    ? await Account.findOne({ _id: id, ...accountScope(user, { archived: access === "read" ? "any" : false }) }).lean<IAccount>()
+    : null;
+  if (!acc) throw new HttpError("Account not found", 404);
+  return acc;
+}
+
+const EXPENSE_VENDOR_MAX = 200;
+
+/**
+ * The validated expense fields present on a request body, shared by create
+ * and edit. Throws a 400 naming the first bad one. Category is the caller's:
+ * create falls back to "Other", edit rejects an unknown one.
+ */
+export function expenseFields(b: Record<string, unknown>): Partial<Pick<IExpense, "amount" | "vendor" | "billable" | "date">> {
+  const out: Partial<Pick<IExpense, "amount" | "vendor" | "billable" | "date">> = {};
+  if (b.amount !== undefined) {
+    const amount = Number(b.amount);
+    if (!Number.isFinite(amount) || amount <= 0) throw new HttpError("A positive amount is required");
+    out.amount = amount;
+  }
+  if (typeof b.vendor === "string") {
+    const vendor = b.vendor.trim();
+    if (vendor.length > EXPENSE_VENDOR_MAX) throw new HttpError(`Keep the vendor or note to ${EXPENSE_VENDOR_MAX} characters`);
+    out.vendor = vendor;
+  }
+  if (typeof b.billable === "boolean") out.billable = b.billable;
+  if (b.date !== undefined) {
+    const date = typeof b.date === "string" ? new Date(b.date) : null;
+    if (!date || Number.isNaN(date.getTime())) throw new HttpError("A valid date is required");
+    out.date = date;
+  }
+  return out;
+}
 
 /** Append an activity/timeline entry. */
 export async function logActivity(opts: {
@@ -104,7 +145,9 @@ export async function accountFinances(accountIds: Types.ObjectId[]): Promise<Map
   const byAccount = new Map<string, typeof invoices>();
   for (const inv of invoices) {
     const key = String(inv.accountId);
-    byAccount.set(key, [...(byAccount.get(key) ?? []), inv]);
+    const rows = byAccount.get(key);
+    if (rows) rows.push(inv);
+    else byAccount.set(key, [inv]);
   }
   const expenseTotals = new Map(expenseAgg.map((r) => [String(r._id), r.total]));
 

@@ -5,18 +5,26 @@ import { Reminder, Lead, Account, type IReminder, type ILead, type IAccount } fr
 import { requireUser } from "@/lib/auth/server";
 import { reminderScope, leadScope, accountScope } from "@/lib/rbac";
 import { logActivity } from "@/lib/services";
-import { REMINDER_STATUSES } from "@/lib/constants";
+import { OPEN_REMINDER_STATUSES, REMINDER_STATUSES } from "@/lib/constants";
+import { absoluteTime } from "@/lib/dates";
 import { Types } from "mongoose";
 
-// GET /api/reminders — the signed-in user's reminders (optionally ?status=…&archived=1).
+// GET /api/reminders — the signed-in user's reminders. Optional filters:
+// ?status=…, ?open=1 (still waiting: the same rule as Today), ?accountId=…, ?archived=1.
 export const GET = route(async (req: NextRequest) => {
   const user = await requireUser();
   await connectDB();
-  const archived = req.nextUrl.searchParams.get("archived") === "1";
-  const status = req.nextUrl.searchParams.get("status");
+  const sp = req.nextUrl.searchParams;
+  const status = sp.get("status");
+  const accountId = sp.get("accountId");
 
-  const filter: Record<string, unknown> = reminderScope(user, { archived });
+  const filter: Record<string, unknown> = reminderScope(user, { archived: sp.get("archived") === "1" });
   if (status && REMINDER_STATUSES.includes(status as IReminder["status"])) filter.status = status;
+  else if (sp.get("open") === "1") filter.status = { $in: OPEN_REMINDER_STATUSES };
+  if (accountId) {
+    if (!Types.ObjectId.isValid(accountId)) throw new HttpError("Invalid account id");
+    filter.accountId = accountId;
+  }
 
   const reminders = await Reminder.find(filter).sort({ dueAt: 1 }).lean<IReminder[]>();
   return ok({ reminders: reminders.map(serializeReminder) });
@@ -71,7 +79,7 @@ export const POST = route(async (req: NextRequest) => {
       actorId: user._id,
       kind: "reminder",
       title: "Reminder set",
-      detail: `${title} · due ${dueAt.toLocaleString()}`,
+      detail: `${title} · due ${absoluteTime(dueAt)}`,
     });
     if (leadId) await Lead.updateOne({ _id: leadId }, { lastActivityAt: new Date() });
     if (accountId) await Account.updateOne({ _id: accountId }, { lastActivityAt: new Date() });

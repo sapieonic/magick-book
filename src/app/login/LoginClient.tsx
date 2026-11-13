@@ -8,6 +8,7 @@ import { Panel } from "@/components/ui/Panel";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { useToast } from "@/components/ui/Toast";
 import { api } from "@/lib/client";
+import { safeNextPath } from "./next-path";
 
 interface AuthConfig {
   firebase: boolean;
@@ -27,7 +28,7 @@ const DEMO_ACCOUNTS = [
 export function LoginClient() {
   const router = useRouter();
   const params = useSearchParams();
-  const next = params.get("next") || "/dashboard";
+  const next = safeNextPath(params.get("next"));
   const { toast } = useToast();
 
   const [config, setConfig] = useState<AuthConfig | null>(null);
@@ -41,7 +42,8 @@ export function LoginClient() {
     api.get<AuthConfig>("/api/auth/config").then(setConfig).catch(() => setConfig({ firebase: false, demo: true, firebaseConfig: null, allowedDomains: null }));
   }, []);
 
-  const demoMode = config !== null && !config.firebase;
+  const demoMode = config !== null && config.demo && !config.firebase;
+  const canSignIn = config === null || config.firebase || config.demo;
   const demoAccounts = demoMode ? DEMO_ACCOUNTS.filter((a) => !config.allowedDomains || config.allowedDomains.includes(`@${a.email.split("@")[1]}`)) : [];
 
   /** Run a sign-in attempt; on success go to `next`, on failure toast and re-enable. */
@@ -100,58 +102,67 @@ export function LoginClient() {
       <h2 className="text-[22px] font-semibold tracking-[-0.01em] text-ink-1">{mode === "signin" ? "Welcome back" : "Create your account"}</h2>
       <p className="mt-1 text-ink-2">{mode === "signin" ? "Sign in to your MagickBook workspace." : "Start keeping your book in MagickBook."}</p>
 
-      <SegmentedControl
-        aria-label="Sign in or sign up"
-        className="mt-6 flex w-full"
-        value={mode}
-        onChange={setMode}
-        options={[
-          { value: "signin", label: "Sign in" },
-          { value: "signup", label: "Sign up" },
-        ]}
-      />
+      {canSignIn ? (
+        <>
+        <SegmentedControl
+          aria-label="Sign in or sign up"
+          className="mt-6 flex w-full"
+          value={mode}
+          onChange={setMode}
+          options={[
+            { value: "signin", label: "Sign in" },
+            { value: "signup", label: "Sign up" },
+          ]}
+        />
 
-      <Button variant="secondary" size="lg" className="mt-5 w-full" loading={busy === "google"} onClick={handleGoogle}>
-        <GoogleMark /> Continue with Google
-      </Button>
-
-      <div className="my-5 flex items-center gap-3 text-[12px] text-ink-3">
-        <span className="h-px flex-1 bg-line" aria-hidden /> or with email <span className="h-px flex-1 bg-line" aria-hidden />
-      </div>
-
-      <form onSubmit={handleEmail} className="space-y-3.5">
-        <Field label="Work email" required>
-          <Input type="email" autoComplete="email" placeholder="you@company.com" value={email} onChange={(e) => setEmail(e.target.value)} />
-        </Field>
-        {config?.firebase && (
-          <div>
-            <Label htmlFor="login-password" required>
-              Password
-            </Label>
-            <div className="relative">
-              <Input
-                id="login-password"
-                type={showPass ? "text" : "password"}
-                autoComplete={mode === "signup" ? "new-password" : "current-password"}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="pr-10"
-              />
-              <button
-                type="button"
-                onClick={() => setShowPass((s) => !s)}
-                aria-label={showPass ? "Hide password" : "Show password"}
-                className="absolute right-1 top-1/2 flex size-7 -translate-y-1/2 items-center justify-center rounded-bar text-ink-3 hover:text-ink-1"
-              >
-                {showPass ? <EyeOff className="size-4" strokeWidth={1.5} aria-hidden /> : <Eye className="size-4" strokeWidth={1.5} aria-hidden />}
-              </button>
-            </div>
-          </div>
-        )}
-        <Button type="submit" variant="primary" size="lg" className="w-full" loading={busy === "email"}>
-          {mode === "signin" ? "Sign in" : "Create account"} <ArrowRight className="size-4" strokeWidth={1.5} aria-hidden />
+        <Button variant="secondary" size="lg" className="mt-5 w-full" loading={busy === "google"} onClick={handleGoogle}>
+          <GoogleMark /> Continue with Google
         </Button>
-      </form>
+
+        <div className="my-5 flex items-center gap-3 text-[12px] text-ink-3">
+          <span className="h-px flex-1 bg-line" aria-hidden /> or with email <span className="h-px flex-1 bg-line" aria-hidden />
+        </div>
+
+        <form onSubmit={handleEmail} className="space-y-3.5">
+          <Field label="Work email" required>
+            <Input type="email" autoComplete="email" placeholder="you@company.com" value={email} onChange={(e) => setEmail(e.target.value)} />
+          </Field>
+          {config?.firebase && (
+            <div>
+              <Label htmlFor="login-password" required>
+                Password
+              </Label>
+              <div className="relative">
+                <Input
+                  id="login-password"
+                  type={showPass ? "text" : "password"}
+                  autoComplete={mode === "signup" ? "new-password" : "current-password"}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="pr-10"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPass((s) => !s)}
+                  aria-label={showPass ? "Hide password" : "Show password"}
+                  className="absolute right-1 top-1/2 flex size-7 -translate-y-1/2 items-center justify-center rounded-bar text-ink-3 hover:text-ink-1"
+                >
+                  {showPass ? <EyeOff className="size-4" strokeWidth={1.5} aria-hidden /> : <Eye className="size-4" strokeWidth={1.5} aria-hidden />}
+                </button>
+              </div>
+            </div>
+          )}
+          <Button type="submit" variant="primary" size="lg" className="w-full" loading={busy === "email"}>
+            {mode === "signin" ? "Sign in" : "Create account"} <ArrowRight className="size-4" strokeWidth={1.5} aria-hidden />
+          </Button>
+        </form>
+        </>
+      ) : (
+        <p role="alert" className="mt-6 rounded-card bg-hover p-3.5 text-[13px] text-ink-2">
+          <span className="font-semibold text-ink-1">Sign-in isn&apos;t set up.</span> Firebase is not configured and demo sign-in is turned off
+          (ALLOW_DEMO_LOGIN=false). Ask whoever runs this workspace to configure one of them.
+        </p>
+      )}
 
       {config?.allowedDomains && (
         <p className="mt-4 flex items-center justify-center gap-1.5 text-center text-[13px] text-ink-2">

@@ -85,12 +85,38 @@ describe("PATCH /api/invoices/:id", () => {
     expect(invoice.paidAt).toBeNull();
   });
 
-  it("remind is a no-op that returns reminded:true without changing status", async () => {
-    const { inv } = await makeInvoice({ status: "overdue" });
+  it("remind logs a payment reminder on the account and in the audit trail, without changing status", async () => {
+    const { acc, inv } = await makeInvoice({ status: "overdue" });
     const res = await invoiceRoute.PATCH(jsonRequest(`/api/invoices/${inv._id}`, "PATCH", { action: "remind" }), ctx({ id: String(inv._id) }));
+    expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.reminded).toBe(true);
     expect(body.invoice.status).toBe("overdue");
+    expect((await models.Invoice.findById(inv._id).lean())!.status).toBe("overdue");
+
+    const activity = await models.Activity.findOne({ accountId: acc._id }).lean();
+    expect(activity).toMatchObject({ kind: "invoice", title: "Payment reminder for #1001", detail: "₹5,000" });
+    expect(String(activity!.actorId)).toBe(String(admin._id));
+    const entry = await models.AuditLog.findOne({ entity: "invoice", entityId: inv._id }).lean();
+    expect(entry).toMatchObject({ action: "update", entityLabel: "Invoice #1001", accountId: acc._id });
+    expect(entry!.changes.map(({ field, to }) => ({ field, to }))).toEqual([{ field: "reminder", to: "logged" }]);
+  });
+
+  it("refuses to chase a paid or draft invoice", async () => {
+    for (const status of ["paid", "draft"]) {
+      await clearDB();
+      const { acc, inv } = await makeInvoice({ status });
+      const res = await invoiceRoute.PATCH(jsonRequest(`/api/invoices/${inv._id}`, "PATCH", { action: "remind" }), ctx({ id: String(inv._id) }));
+      expect(res.status).toBe(400);
+      expect(await models.Activity.countDocuments({ accountId: acc._id })).toBe(0);
+    }
+  });
+
+  it("refuses to chase an invoice on an archived account", async () => {
+    const { acc, inv } = await makeInvoice();
+    await models.Account.updateOne({ _id: acc._id }, { deletedAt: new Date() });
+    const res = await invoiceRoute.PATCH(jsonRequest(`/api/invoices/${inv._id}`, "PATCH", { action: "remind" }), ctx({ id: String(inv._id) }));
+    expect(res.status).toBe(404);
   });
 
   it("returns 400 when there is nothing to update", async () => {
@@ -166,6 +192,16 @@ describe("invoice document route — S3 configured", () => {
     const { invoice } = await res.json();
     expect(invoice.hasFile).toBe(false);
     expect((await models.Invoice.findById(inv._id).lean())?.fileKey).toBeUndefined();
+  });
+
+  it("still serves the file of an invoice on an archived account, but won't change it", async () => {
+    const { acc, inv } = await makeInvoice({ fileKey: "k", fileName: "f.pdf" });
+    s3State.configured = true;
+    await models.Account.updateOne({ _id: acc._id }, { deletedAt: new Date() });
+    const get = await documentRoute.GET(jsonRequest(`/api/invoices/${inv._id}/document`, "GET"), ctx({ id: String(inv._id) }));
+    expect(get.status).toBe(302);
+    const del = await documentRoute.DELETE(jsonRequest(`/api/invoices/${inv._id}/document`, "DELETE"), ctx({ id: String(inv._id) }));
+    expect(del.status).toBe(404);
   });
 
   it("returns 404 for document GET/POST/DELETE on an archived invoice", async () => {

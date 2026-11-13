@@ -1,11 +1,11 @@
 import { type NextRequest } from "next/server";
 import { Types } from "mongoose";
-import { ok, fail, route, serializeDocument, HttpError } from "@/lib/api";
+import { ok, fail, route, serializeDocument } from "@/lib/api";
 import { connectDB } from "@/lib/db";
-import { Account, Document, type IAccount, type IDocument } from "@/lib/models";
+import { Account, Document, type IDocument } from "@/lib/models";
 import { requireUser } from "@/lib/auth/server";
-import { accountScope, canEditOwned } from "@/lib/rbac";
-import { audit, ownerNameMap } from "@/lib/services";
+import { canEditOwned } from "@/lib/rbac";
+import { audit, loadAccount, ownerNameMap } from "@/lib/services";
 import { isS3Configured, putObject, documentKey } from "@/lib/s3";
 import { DOCUMENT_KINDS, type DocumentKind } from "@/lib/constants";
 
@@ -20,20 +20,14 @@ const ALLOWED = new Set([
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 ]);
 
-async function requireAccount(scope: Record<string, unknown>, id: string): Promise<IAccount> {
-  const acc = await Account.findOne({ _id: id, ...scope }).lean<IAccount>();
-  if (!acc) throw new HttpError("Account not found", 404);
-  return acc;
-}
-
-// GET /api/accounts/:id/documents — proposals/agreements attached to the account.
+// GET /api/accounts/:id/documents — proposals/agreements attached to the account (archived accounts too).
 export const GET = route(async (_req: NextRequest, ctx: Ctx) => {
   const user = await requireUser();
   await connectDB();
   const { id } = await ctx.params;
-  await requireAccount(accountScope(user), id);
+  const acc = await loadAccount(user, id, "read");
 
-  const docs = await Document.find({ accountId: id, deletedAt: null }).sort({ createdAt: -1 }).lean<IDocument[]>();
+  const docs = await Document.find({ accountId: acc._id, deletedAt: null }).sort({ createdAt: -1 }).lean<IDocument[]>();
   const names = await ownerNameMap(docs.map((d) => d.uploadedById).filter(Boolean) as Types.ObjectId[]);
   return ok({ documents: docs.map((d) => serializeDocument(d, names.get(String(d.uploadedById)) ?? "")) });
 });
@@ -44,7 +38,7 @@ export const POST = route(async (req: NextRequest, ctx: Ctx) => {
   const user = await requireUser();
   await connectDB();
   const { id } = await ctx.params;
-  const acc = await requireAccount(accountScope(user), id);
+  const acc = await loadAccount(user, id, "write");
   if (!canEditOwned(user, acc.ownerId)) return fail("You can only manage documents on your own accounts.", 403);
 
   if (!isS3Configured()) {

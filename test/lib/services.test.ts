@@ -49,13 +49,24 @@ describe("accountFinance", () => {
     expect(fin.margin).toBeCloseTo((6500 - 2000) / 6500, 5);
   });
 
-  it("clamps margin to 0 when expenses exceed billings", async () => {
+  it("lets margin go negative when expenses exceed billings", async () => {
     const workspaceId = ws();
     const accountId = new Types.ObjectId();
     await models.Invoice.create({ workspaceId, accountId, number: 1, amount: 1000, status: "paid" });
     await models.Expense.create({ workspaceId, accountId, amount: 5000, category: "Other", vendor: "Z" });
     const fin = await services.accountFinance(accountId);
-    expect(fin.margin).toBe(0);
+    expect(fin.margin).toBe(-4);
+  });
+
+  it("folds many invoices per account in one pass", async () => {
+    const workspaceId = ws();
+    const [a, b] = [new Types.ObjectId(), new Types.ObjectId()];
+    await models.Invoice.create(
+      Array.from({ length: 6 }, (_, i) => ({ workspaceId, accountId: i % 2 ? a : b, number: i + 1, amount: 100 * (i + 1), status: "paid" as const })),
+    );
+    const fin = await services.accountFinances([a, b]);
+    expect(fin.get(String(a))!.billed).toBe(200 + 400 + 600);
+    expect(fin.get(String(b))!.billed).toBe(100 + 300 + 500);
   });
 
   it("excludes soft-deleted invoices from billed/paid/outstanding", async () => {
@@ -120,5 +131,34 @@ describe("logActivity", () => {
     expect(rows).toHaveLength(1);
     expect(rows[0].kind).toBe("note");
     expect(rows[0].title).toBe("Note added");
+  });
+});
+
+describe("expenseFields", () => {
+  it("reads only the fields present", () => {
+    expect(services.expenseFields({})).toEqual({});
+    expect(services.expenseFields({ amount: "250", vendor: "  Uber ", billable: true, date: "2026-11-13" })).toEqual({
+      amount: 250,
+      vendor: "Uber",
+      billable: true,
+      date: new Date("2026-11-13"),
+    });
+  });
+
+  it.each([
+    [{ amount: 0 }, "A positive amount is required"],
+    [{ amount: -5 }, "A positive amount is required"],
+    [{ amount: "Infinity" }, "A positive amount is required"],
+    [{ amount: "abc" }, "A positive amount is required"],
+    [{ date: null }, "A valid date is required"],
+    [{ date: 0 }, "A valid date is required"],
+    [{ date: "not a date" }, "A valid date is required"],
+    [{ vendor: "x".repeat(201) }, "Keep the vendor or note to 200 characters"],
+  ])("rejects %j", (body, message) => {
+    expect(() => services.expenseFields(body)).toThrow(message);
+  });
+
+  it("accepts a vendor of exactly the maximum length", () => {
+    expect(services.expenseFields({ vendor: "x".repeat(200) }).vendor).toHaveLength(200);
   });
 });

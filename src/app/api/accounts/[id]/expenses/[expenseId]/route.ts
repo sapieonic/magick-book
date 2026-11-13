@@ -3,68 +3,85 @@ import { ok, fail, route, serializeExpense, HttpError } from "@/lib/api";
 import { connectDB } from "@/lib/db";
 import { Account, Expense, type IAccount, type IExpense, type IUser } from "@/lib/models";
 import { requireUser } from "@/lib/auth/server";
-import { accountScope, canEditOwned } from "@/lib/rbac";
-import { audit, diffChanges } from "@/lib/services";
+import { canEditOwned } from "@/lib/rbac";
+import { audit, diffChanges, expenseFields, loadAccount, logActivity } from "@/lib/services";
 import { EXPENSE_CATEGORIES } from "@/lib/constants";
 import { formatINR } from "@/lib/utils";
 
 type Ctx = { params: Promise<{ id: string; expenseId: string }> };
 
-/** Resolve the account (live scope, owner-editable) and one of its live expenses. */
-async function loadOwned(user: IUser, id: string, expenseId: string) {
-  const acc = await Account.findOne({ _id: id, ...accountScope(user) }).lean<IAccount>();
-  if (!acc) throw new HttpError("Account not found", 404);
+/**
+ * Resolve the live, owner-editable account and one of its expenses: a live
+ * one, or an archived one for restore.
+ */
+async function loadOwned(user: IUser, id: string, expenseId: string, opts?: { archived?: boolean }) {
+  const acc = await loadAccount(user, id, "write");
   if (!canEditOwned(user, acc.ownerId)) throw new HttpError("You can only manage expenses on your own accounts.", 403);
-  const exp = await Expense.findOne({ _id: expenseId, accountId: acc._id, deletedAt: null }).lean<IExpense>();
+  const exp = await Expense.findOne({ _id: expenseId, accountId: acc._id, deletedAt: opts?.archived ? { $ne: null } : null }).lean<IExpense>();
   if (!exp) throw new HttpError("Expense not found", 404);
   return { acc, exp };
 }
 
 const label = (e: Pick<IExpense, "category" | "amount">) => `${e.category} · ${formatINR(e.amount)}`;
 
-// PATCH /api/accounts/:id/expenses/:expenseId — edit an expense's fields.
+/** Account timeline entry for a change to an expense, plus the activity bump. */
+async function logExpense(user: IUser, acc: IAccount, exp: Pick<IExpense, "category" | "vendor" | "amount">, verb: string) {
+  await Account.updateOne({ _id: acc._id }, { lastActivityAt: new Date() });
+  await logActivity({
+    workspaceId: user.workspaceId,
+    accountId: acc._id,
+    actorId: user._id,
+    kind: "expense",
+    title: `${exp.category} expense ${verb}`,
+    detail: `${exp.vendor || "Expense"} · ${formatINR(exp.amount)}`,
+  });
+}
+
+// PATCH /api/accounts/:id/expenses/:expenseId — edit fields, or restore an archived expense (action: "restore").
 export const PATCH = route(async (req: NextRequest, ctx: Ctx) => {
   const user = await requireUser();
   await connectDB();
   const { id, expenseId } = await ctx.params;
-  const { acc, exp } = await loadOwned(user, id, expenseId);
-
   const b = await req.json().catch(() => ({}));
-  const patch: Record<string, unknown> = {};
-  if (b.amount !== undefined) {
-    const amount = Number(b.amount);
-    if (!amount || amount <= 0) return fail("A positive amount is required");
-    patch.amount = amount;
+
+  if (b.action === "restore") {
+    const { acc, exp } = await loadOwned(user, id, expenseId, { archived: true });
+    // Claim the archived row atomically so a concurrent restore can't log twice.
+    const claimed = await Expense.updateOne({ _id: exp._id, deletedAt: { $ne: null } }, { $unset: { deletedAt: "", deletedBy: "" } });
+    if (claimed.matchedCount === 0) throw new HttpError("Expense not found", 404);
+    await logExpense(user, acc, exp, "restored");
+    await audit({ entity: "expense", entityId: exp._id, entityLabel: label(exp), action: "restore", actor: user, accountId: acc._id });
+    const fresh = await Expense.findById(exp._id).lean<IExpense>();
+    return ok({ expense: serializeExpense(fresh!) });
   }
+
+  const { acc, exp } = await loadOwned(user, id, expenseId);
+  const patch: Record<string, unknown> = expenseFields(b);
   if (b.category !== undefined) {
     if (!EXPENSE_CATEGORIES.includes(b.category)) return fail("Unknown expense category");
     patch.category = b.category;
   }
-  if (typeof b.vendor === "string") patch.vendor = b.vendor.trim();
-  if (typeof b.billable === "boolean") patch.billable = b.billable;
-  if (b.date !== undefined) {
-    const date = new Date(b.date);
-    if (isNaN(date.getTime())) return fail("A valid date is required");
-    patch.date = date;
-  }
 
   const changes = diffChanges(exp as unknown as Record<string, unknown>, patch, ["amount", "category", "vendor", "billable", "date"]);
+  if (changes.length === 0) return ok({ expense: serializeExpense(exp) });
+
   await Expense.updateOne({ _id: exp._id }, patch);
-  await Account.updateOne({ _id: acc._id }, { lastActivityAt: new Date() });
-  const fresh = await Expense.findById(exp._id).lean<IExpense>();
-  await audit({ entity: "expense", entityId: exp._id, entityLabel: label(fresh!), action: "update", actor: user, changes, accountId: acc._id });
-  return ok({ expense: serializeExpense(fresh!) });
+  const fresh = (await Expense.findById(exp._id).lean<IExpense>())!;
+  await logExpense(user, acc, fresh, "edited");
+  await audit({ entity: "expense", entityId: exp._id, entityLabel: label(fresh), action: "update", actor: user, changes, accountId: acc._id });
+  return ok({ expense: serializeExpense(fresh) });
 });
 
-// DELETE /api/accounts/:id/expenses/:expenseId — soft-delete; it drops out of the margin.
+// DELETE /api/accounts/:id/expenses/:expenseId — soft-delete; it drops out of the margin until restored.
 export const DELETE = route(async (_req: NextRequest, ctx: Ctx) => {
   const user = await requireUser();
   await connectDB();
   const { id, expenseId } = await ctx.params;
   const { acc, exp } = await loadOwned(user, id, expenseId);
 
-  await Expense.updateOne({ _id: exp._id }, { deletedAt: new Date(), deletedBy: user._id });
-  await Account.updateOne({ _id: acc._id }, { lastActivityAt: new Date() });
+  const claimed = await Expense.updateOne({ _id: exp._id, deletedAt: null }, { deletedAt: new Date(), deletedBy: user._id });
+  if (claimed.matchedCount === 0) throw new HttpError("Expense not found", 404);
+  await logExpense(user, acc, exp, "removed");
   await audit({ entity: "expense", entityId: exp._id, entityLabel: label(exp), action: "delete", actor: user, accountId: acc._id });
   return ok({ ok: true });
 });

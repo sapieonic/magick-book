@@ -28,7 +28,7 @@ export function SettingsTabs() {
 
 /** Top-bar title for a Settings page, under a "Settings" breadcrumb. */
 export function SettingsHeader({ title, actions }: { title: string; actions?: React.ReactNode }) {
-  return <PageHeader title={title} breadcrumb={[{ label: "Settings", href: TABS[0].href! }]} actions={actions} />;
+  return <PageHeader title={title} breadcrumb={[{ label: "Settings", href: "/settings" }]} actions={actions} />;
 }
 
 /** Shown in place of an admin-only section to standard users. */

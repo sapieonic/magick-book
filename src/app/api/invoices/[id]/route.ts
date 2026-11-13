@@ -6,6 +6,7 @@ import { requireUser } from "@/lib/auth/server";
 import { accountScope, canEditOwned } from "@/lib/rbac";
 import { audit, logActivity } from "@/lib/services";
 import { INVOICE_STATUSES } from "@/lib/constants";
+import { isOutstanding } from "@/lib/receivables";
 import { formatINR } from "@/lib/utils";
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -65,8 +66,23 @@ export const PATCH = route(async (req: NextRequest, ctx: Ctx) => {
   const { inv, acc } = await loadInvoice(user, id);
   if (!canEditOwned(user, acc.ownerId)) return fail("You can only manage your own invoices.", 403);
 
-  // "remind" is a no-op state nudge in this demo (would email/WhatsApp in prod).
+  // "remind" records that the customer was chased: a timeline entry and an audit
+  // entry. Nothing is delivered from here; the user follows up themselves.
   if (b.action === "remind") {
+    if (!isOutstanding(inv)) return fail("Only a sent or overdue invoice can be chased.");
+    await Account.updateOne({ _id: acc._id }, { lastActivityAt: new Date() });
+    await logActivity({
+      workspaceId: user.workspaceId,
+      accountId: acc._id,
+      actorId: user._id,
+      kind: "invoice",
+      title: `Payment reminder for #${inv.number}`,
+      detail: formatINR(inv.amount),
+    });
+    await audit({
+      entity: "invoice", entityId: inv._id, entityLabel: `Invoice #${inv.number}`, action: "update", actor: user,
+      changes: [{ field: "reminder", to: "logged" }], accountId: inv.accountId,
+    });
     return ok({ invoice: serializeInvoice(inv), reminded: true });
   }
 

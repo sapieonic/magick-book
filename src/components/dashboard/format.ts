@@ -1,27 +1,9 @@
-import { differenceInCalendarDays, format, setHours, startOfDay, addDays } from "date-fns";
 import { formatMoney } from "@/components/ui/Money";
 import { plural } from "@/lib/utils";
 import type { DashboardData } from "@/lib/types";
 
-/** Due time relative to today: "due today", "due 3 days ago", "due tomorrow". */
-export function dueWords(date: string, now: Date): string {
-  const days = differenceInCalendarDays(new Date(date), now);
-  if (days === 0) return "due today";
-  if (days === 1) return "due tomorrow";
-  return days < 0 ? `due ${plural(-days, "day")} ago` : `due in ${plural(days, "day")}`;
-}
-
-/** Tomorrow at 9:00 local time: where a snoozed item lands. */
-export function tomorrowMorning(now: Date): Date {
-  return setHours(startOfDay(addDays(now, 1)), 9);
-}
-
-export const longDate = (d: Date) => format(d, "EEEE, d MMMM yyyy");
-export const shortDay = (d: Date) => format(d, "EEE d");
-export const monthName = (d: Date) => format(d, "MMMM");
-
 /** A sentence fragment; `strong` parts carry the figures. */
-export interface Phrase {
+interface Phrase {
   text: string;
   strong?: boolean;
 }

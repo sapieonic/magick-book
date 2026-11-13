@@ -25,7 +25,6 @@ export const GET = route(async () => {
         isOwner: String(m._id) === ownerId,
       }),
     ),
-    isAdmin: isAdmin(user),
   });
 });
 

@@ -7,6 +7,7 @@ import { KbdHint } from "@/components/ui/Misc";
 import { Tabs } from "@/components/ui/Tabs";
 import { useToast } from "@/components/ui/Toast";
 import { api } from "@/lib/client";
+import { useShortcutLabel } from "@/lib/useShortcutLabel";
 
 /** Matches a `/remind [text]` command typed into the composer (text = first line). */
 const REMIND_CMD = /^\/remind\b[ \t]*(.*)/i;
@@ -59,6 +60,7 @@ export function NoteComposer({
   const kind = controlledKind ?? ownKind;
   const meta = KIND[kind];
   const remind = onRemind ? REMIND_CMD.exec(text) : null;
+  const postShortcut = useShortcutLabel("Enter");
 
   function selectKind(k: ComposerKind) {
     setOwnKind(k);
@@ -131,7 +133,7 @@ export function NoteComposer({
         ) : (
           <>
             <span className="mr-auto text-[12px] text-ink-3 max-md:hidden">
-              <KbdHint>⌘ Enter</KbdHint> to post
+              <KbdHint>{postShortcut}</KbdHint> to post
               {onRemind && (
                 <>
                   {" "}

@@ -28,7 +28,7 @@ const MOVE_HINT: Partial<Record<PipelineStage, string>> = {
 export type CardKeyHandler = (lead: LeadDTO, e: KeyboardEvent<HTMLElement>) => void;
 
 /** The header's weight rule: a hairline track filled to the stage's share of pipeline value. */
-function WeightRule({ stage, share }: { stage: PipelineStage; share: number }) {
+export function WeightRule({ stage, share }: { stage: PipelineStage; share: number }) {
   const pct = Math.round(share * 100);
   return (
     <div role="img" aria-label={`${pct}% of pipeline value`} className="mt-2 h-[3px] rounded-full bg-sunk">
@@ -55,7 +55,11 @@ function LaneHeader({ stage, total, headingId, action }: { stage: PipelineStage;
   );
 }
 
-/** A draggable card. The link inside takes focus; the wrapper reads the move shortcuts. */
+/**
+ * A draggable card. The link inside takes focus; the wrapper reads the move
+ * shortcuts. On touch, `manipulation` keeps swipes scrolling the lanes while a
+ * press and hold picks the card up (no text selection or link callout in the way).
+ */
 export function SortableItem({ lead, faded, onKey, children }: { lead: LeadDTO; faded: boolean; onKey: CardKeyHandler; children: ReactNode }) {
   const { setNodeRef, listeners, transform, transition, isDragging } = useSortable({ id: lead.id });
   return (
@@ -65,7 +69,7 @@ export function SortableItem({ lead, faded, onKey, children }: { lead: LeadDTO; 
       data-lead-id={lead.id}
       onKeyDown={(e) => onKey(lead, e)}
       style={{ transform: CSS.Transform.toString(transform), transition, opacity: faded || isDragging ? 0.35 : 1 }}
-      className="cursor-grab active:cursor-grabbing"
+      className="cursor-grab touch-manipulation select-none active:cursor-grabbing [-webkit-touch-callout:none]"
     >
       {children}
     </div>
