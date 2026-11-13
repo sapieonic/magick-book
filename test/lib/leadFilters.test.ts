@@ -3,7 +3,10 @@ import {
   deriveOwners,
   filterLeadsByOwners,
   parseOwnerParam,
+  parseStageParam,
   serializeOwnerParam,
+  stageTotals,
+  summarizeLeads,
 } from "@/lib/leadFilters";
 import type { LeadDTO } from "@/lib/types";
 
@@ -19,6 +22,7 @@ function lead(over: Partial<LeadDTO>): LeadDTO {
     email: "",
     source: "Website",
     stage: "new",
+    category: "unclassified",
     estValue: 0,
     notes: "",
     tags: [],
@@ -224,5 +228,65 @@ describe("serializeOwnerParam", () => {
 
   it("round-trips a single-id selection through parse", () => {
     expect(parseOwnerParam(serializeOwnerParam(["only"]))).toEqual(["only"]);
+  });
+});
+
+describe("parseStageParam", () => {
+  it("accepts every known stage, case-insensitively", () => {
+    expect(parseStageParam("qualified")).toBe("qualified");
+    expect(parseStageParam(" Won ")).toBe("won");
+    expect(parseStageParam("parked")).toBe("parked");
+    expect(parseStageParam("lost")).toBe("lost");
+  });
+
+  it("returns null for a missing or unknown stage", () => {
+    expect(parseStageParam(null)).toBeNull();
+    expect(parseStageParam(undefined)).toBeNull();
+    expect(parseStageParam("")).toBeNull();
+    expect(parseStageParam("closed")).toBeNull();
+  });
+});
+
+describe("summarizeLeads", () => {
+  it("rolls up pipeline value and counts in one pass", () => {
+    const sum = summarizeLeads([
+      lead({ stage: "new", estValue: 10_000 }),
+      lead({ stage: "proposal", estValue: 40_000 }),
+      lead({ stage: "won", estValue: 100_000 }),
+      lead({ stage: "parked", estValue: 70_000 }),
+      lead({ stage: "lost", estValue: 90_000 }),
+      lead({ stage: "lost", estValue: 0 }),
+    ]);
+    // Won is still on the funnel; parked and lost are not.
+    expect(sum).toEqual({ pipeline: 150_000, active: 3, won: 1, parked: 1, lost: 2 });
+  });
+
+  it("ignores negative values in the pipeline total", () => {
+    expect(summarizeLeads([lead({ estValue: -500 }), lead({ estValue: 500 })]).pipeline).toBe(500);
+  });
+
+  it("is all zeros for no leads", () => {
+    expect(summarizeLeads([])).toEqual({ pipeline: 0, active: 0, won: 0, parked: 0, lost: 0 });
+  });
+});
+
+describe("stageTotals", () => {
+  it("counts, sums and shares value per funnel stage", () => {
+    const totals = stageTotals([
+      lead({ stage: "new", estValue: 25_000 }),
+      lead({ stage: "new", estValue: 0 }),
+      lead({ stage: "qualified", estValue: 75_000 }),
+      lead({ stage: "parked", estValue: 1_000_000 }),
+      lead({ stage: "lost", estValue: 1_000_000 }),
+    ]);
+    expect(totals.new).toEqual({ count: 2, value: 25_000, share: 0.25 });
+    expect(totals.qualified).toEqual({ count: 1, value: 75_000, share: 0.75 });
+    expect(totals.proposal).toEqual({ count: 0, value: 0, share: 0 });
+    expect(Object.keys(totals)).toEqual(["new", "contacted", "qualified", "proposal", "won"]);
+  });
+
+  it("leaves every share at zero when nothing has a value", () => {
+    const totals = stageTotals([lead({ stage: "won", estValue: 0 })]);
+    expect(totals.won).toEqual({ count: 1, value: 0, share: 0 });
   });
 });

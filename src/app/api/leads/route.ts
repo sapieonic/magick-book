@@ -1,5 +1,5 @@
 import { type NextRequest } from "next/server";
-import { ok, route, serializeLead } from "@/lib/api";
+import { fail, ok, route, serializeLead } from "@/lib/api";
 import { connectDB } from "@/lib/db";
 import { Lead, Activity, type ILead } from "@/lib/models";
 import { requireUser } from "@/lib/auth/server";
@@ -47,7 +47,7 @@ export const POST = route(async (req: NextRequest) => {
   const user = await requireUser();
   await connectDB();
   const b = await req.json().catch(() => ({}));
-  if (!b.name?.trim()) return ok({ error: "Contact name is required" }, 400);
+  if (!b.name?.trim()) return fail("Contact name is required");
 
   const stage = LEAD_STAGES.includes(b.stage) ? b.stage : "new";
   const category = (await resolveLeadCategory(user.workspaceId, b.category, { mode: "create" }))!;

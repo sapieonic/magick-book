@@ -207,6 +207,32 @@ describe("PATCH /api/leads/:id/stage", () => {
     expect(acts).toHaveLength(1);
     expect(acts[0].title).toBe("Parked");
   });
+
+  it("returns the lead with its real owner's name when an admin moves someone else's lead", async () => {
+    const lead = await makeLead(standard, { stage: "new" });
+    const res = await stageRoute.PATCH(jsonRequest(`/api/leads/${lead._id}/stage`, "PATCH", { stage: "contacted" }), ctx({ id: String(lead._id) }));
+    const { lead: updated } = await res.json();
+    expect(updated.ownerName).toBe("Stan");
+  });
+
+  it("stores a valid order and ignores a negative or fractional one", async () => {
+    const lead = await makeLead(admin, { stage: "new", order: 3 });
+    const move = (order: unknown) =>
+      stageRoute.PATCH(jsonRequest(`/api/leads/${lead._id}/stage`, "PATCH", { stage: "qualified", order }), ctx({ id: String(lead._id) }));
+    await move(-1);
+    expect((await models.Lead.findById(lead._id).lean())?.order).toBe(3);
+    await move(1.5);
+    expect((await models.Lead.findById(lead._id).lean())?.order).toBe(3);
+    await move(0);
+    expect((await models.Lead.findById(lead._id).lean())?.order).toBe(0);
+  });
+
+  it("404 when a standard user moves a lead outside their scope", async () => {
+    const lead = await makeLead(admin, { stage: "new" });
+    session.user = standard;
+    const res = await stageRoute.PATCH(jsonRequest(`/api/leads/${lead._id}/stage`, "PATCH", { stage: "qualified" }), ctx({ id: String(lead._id) }));
+    expect(res.status).toBe(404);
+  });
 });
 
 describe("POST /api/leads/:id/convert", () => {

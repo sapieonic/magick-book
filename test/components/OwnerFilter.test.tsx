@@ -30,15 +30,14 @@ describe("OwnerFilter — trigger", () => {
   it("shows the default 'Owner' label and inactive state when nothing is selected", () => {
     renderFilter();
     const btn = trigger();
-    expect(btn).toHaveTextContent("Owner");
+    expect(btn).toHaveTextContent("OwnerEveryone");
     expect(btn).toHaveAttribute("aria-expanded", "false");
-    expect(btn.className).toContain("border-line");
-    expect(btn.className).not.toContain("border-violet-400");
+    expect(btn).toHaveAttribute("data-active", "false");
   });
 
   it("switches to the active style when a filter is applied", () => {
     renderFilter({ value: ["a"] });
-    expect(trigger().className).toContain("border-violet-400");
+    expect(trigger()).toHaveAttribute("data-active", "true");
   });
 
   it("labels the trigger with the single owner's name when exactly one is selected", () => {

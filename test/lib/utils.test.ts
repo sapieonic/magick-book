@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { formatINR, formatINRCompact, initials, avatarTint, relativeTime } from "@/lib/utils";
+import { formatINR, formatINRCompact, initials, relativeTime, daysSince, ageInWords } from "@/lib/utils";
 
 describe("formatINR", () => {
   it("formats with the Indian grouping and a rupee sign", () => {
@@ -50,19 +50,28 @@ describe("initials", () => {
   });
 });
 
-describe("avatarTint", () => {
-  it("is deterministic for the same seed", () => {
-    expect(avatarTint("Priya")).toEqual(avatarTint("Priya"));
+describe("daysSince", () => {
+  const now = Date.parse("2026-11-13T12:00:00Z");
+  it("counts whole days elapsed", () => {
+    expect(daysSince("2026-11-13T01:00:00Z", now)).toBe(0);
+    expect(daysSince("2026-11-12T11:00:00Z", now)).toBe(1);
+    expect(daysSince(new Date("2026-10-14T12:00:00Z"), now)).toBe(30);
   });
-  it("returns a bg/fg pair", () => {
-    const t = avatarTint("anyone");
-    expect(t.bg).toMatch(/^#/);
-    expect(t.fg).toMatch(/^#/);
+  it("clamps future and invalid dates to 0", () => {
+    expect(daysSince("2026-12-01T00:00:00Z", now)).toBe(0);
+    expect(daysSince("not a date", now)).toBe(0);
   });
-  it("can differ across seeds", () => {
-    const seeds = ["a", "b", "c", "d", "e", "f", "g", "h"];
-    const distinct = new Set(seeds.map((s) => avatarTint(s).bg));
-    expect(distinct.size).toBeGreaterThan(1);
+});
+
+describe("ageInWords", () => {
+  it("writes ages in days, months and years", () => {
+    expect(ageInWords(0)).toBe("Today");
+    expect(ageInWords(1)).toBe("1 day");
+    expect(ageInWords(17)).toBe("17 days");
+    expect(ageInWords(30)).toBe("1 month");
+    expect(ageInWords(125)).toBe("4 months");
+    expect(ageInWords(400)).toBe("1 year");
+    expect(ageInWords(800)).toBe("2 years");
   });
 });
 

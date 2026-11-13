@@ -2,14 +2,17 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { Check, ChevronDown, Search, Users, X } from "lucide-react";
 import { Avatar } from "@/components/ui/Avatar";
+import { Button } from "@/components/ui/Button";
+import { Input } from "@/components/ui/Field";
 import { cn } from "@/lib/utils";
 import type { OwnerOption } from "@/lib/leadFilters";
 
 export type { OwnerOption };
 
 /**
- * Jira-style owner (assignee) filter. The trigger is an overlapping avatar stack;
- * clicking opens a searchable, multi-select popover. Selection is controlled by the
+ * Owner (assignee) filter for the top bar. The trigger shows the selection as
+ * an avatar stack and a name or count; clicking opens a searchable, multi-select
+ * popover. Selection is controlled by the
  * parent so it can drive the filter and persist to the URL.
  */
 export function OwnerFilter({
@@ -66,6 +69,13 @@ export function OwnerFilter({
     onChange(selectedSet.has(id) ? value.filter((v) => v !== id) : [...value, id]);
   }
 
+  const valueLabel =
+    value.length === 0
+      ? "Everyone"
+      : value.length === 1 && selectedOwners.length === 1
+        ? selectedOwners[0].name
+        : `${value.length} owner${value.length === 1 ? "" : "s"}`;
+
   return (
     <div ref={rootRef} className="relative">
       <button
@@ -74,29 +84,16 @@ export function OwnerFilter({
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-controls={open ? listId : undefined}
+        data-active={value.length > 0}
         className={cn(
-          "inline-flex h-9 items-center gap-2 rounded-[var(--radius-md)] border px-2.5 text-[13px] font-semibold transition-colors focus:outline-none focus:ring-4 focus:ring-violet-100 dark:focus:ring-violet-900/40",
-          value.length > 0
-            ? "border-violet-400 bg-violet-50 text-violet-700 dark:border-violet-500 dark:bg-violet-900/30 dark:text-violet-200"
-            : "border-line bg-canvas/60 text-muted hover:text-ink dark:bg-canvas/40",
+          "inline-flex h-[34px] max-w-56 items-center gap-2 rounded-control border px-2.5 text-[13px] font-medium transition-colors",
+          value.length > 0 ? "border-accent bg-accent-tint text-ink-1" : "border-line-strong bg-control text-ink-1 hover:bg-hover",
         )}
       >
-        {value.length > 0 ? (
-          <>
-            {selectedOwners.length > 0 ? <AvatarStack owners={selectedOwners} /> : <Users className="size-4" />}
-            <span className="hidden sm:inline">
-              {value.length === 1 && selectedOwners.length === 1
-                ? selectedOwners[0].name
-                : `${value.length} owner${value.length === 1 ? "" : "s"}`}
-            </span>
-          </>
-        ) : (
-          <>
-            <Users className="size-4" />
-            <span className="hidden sm:inline">Owner</span>
-          </>
-        )}
-        <ChevronDown className={cn("size-3.5 opacity-60 transition-transform", open && "rotate-180")} />
+        {selectedOwners.length > 0 ? <AvatarStack owners={selectedOwners} /> : <Users className="size-4 text-ink-3" strokeWidth={1.5} aria-hidden />}
+        <span className="font-normal text-ink-3 max-md:sr-only">Owner</span>
+        <span className="truncate">{valueLabel}</span>
+        <ChevronDown className={cn("size-4 shrink-0 text-ink-3 transition-transform", open && "rotate-180")} strokeWidth={1.5} aria-hidden />
       </button>
 
       {value.length > 0 && (
@@ -104,9 +101,9 @@ export function OwnerFilter({
           type="button"
           aria-label="Clear owner filter"
           onClick={() => onChange([])}
-          className="absolute -right-1.5 -top-1.5 grid size-4 place-items-center rounded-full bg-violet-600 text-white shadow-sm transition-colors hover:bg-violet-700"
+          className="absolute -right-1.5 -top-1.5 grid size-4 place-items-center rounded-full bg-ink-1 text-on-ink"
         >
-          <X className="size-2.5" strokeWidth={3} />
+          <X className="size-2.5" strokeWidth={3} aria-hidden />
         </button>
       )}
 
@@ -115,17 +112,19 @@ export function OwnerFilter({
           id={listId}
           role="listbox"
           aria-multiselectable
-          className="absolute right-0 z-50 mt-2 w-72 origin-top-right animate-slide-in overflow-hidden rounded-[var(--radius-lg)] border border-line bg-paper shadow-[var(--shadow-pop)] ring-1 ring-black/5 dark:ring-white/5"
+          aria-label="Owners"
+          className="absolute right-0 z-50 mt-2 w-72 max-w-[calc(100vw-24px)] animate-rise overflow-hidden rounded-card border border-line-strong bg-surface shadow-pop"
         >
           <div className="border-b border-line p-2">
             <div className="relative">
-              <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-faint" />
-              <input
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-ink-3" strokeWidth={1.5} aria-hidden />
+              <Input
                 ref={searchRef}
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
+                aria-label="Filter owners"
                 placeholder="Filter by owner…"
-                className="h-8 w-full rounded-[var(--radius-md)] border border-line bg-canvas/60 pl-8 pr-2 text-[13px] text-ink placeholder:text-faint focus:border-violet-400 focus:bg-paper focus:outline-none dark:bg-canvas/40"
+                className="h-8 pl-8 text-[13px]"
               />
             </div>
           </div>
@@ -134,16 +133,16 @@ export function OwnerFilter({
             <button
               type="button"
               onClick={() => onChange(isMineOnly ? [] : [currentUserId!])}
-              className="flex w-full items-center gap-2 border-b border-line px-3 py-2 text-left text-[12.5px] font-semibold text-violet-700 transition-colors hover:bg-violet-50 dark:text-violet-300 dark:hover:bg-violet-900/20"
+              className="flex w-full items-center gap-2 border-b border-line px-3 py-2 text-left text-[13px] font-medium text-ink-1 transition-colors hover:bg-hover"
             >
-              <Check className={cn("size-3.5", isMineOnly ? "opacity-100" : "opacity-0")} />
+              <Check className={cn("size-4", isMineOnly ? "opacity-100" : "opacity-0")} strokeWidth={1.5} aria-hidden />
               Only my leads
             </button>
           )}
 
           <ul className="max-h-64 overflow-y-auto py-1">
             {filtered.length === 0 ? (
-              <li className="px-3 py-4 text-center text-[12.5px] text-faint">No owners match “{query}”.</li>
+              <li className="px-3 py-4 text-center text-[13px] text-ink-3">No owners match “{query}”.</li>
             ) : (
               filtered.map((o) => {
                 const checked = selectedSet.has(o.id);
@@ -154,19 +153,20 @@ export function OwnerFilter({
                       role="option"
                       aria-selected={checked}
                       onClick={() => toggle(o.id)}
-                      className="flex w-full items-center gap-2.5 px-3 py-1.5 text-left transition-colors hover:bg-violet-50/70 dark:hover:bg-violet-900/20"
+                      className="flex w-full items-center gap-2.5 px-3 py-1.5 text-left transition-colors hover:bg-hover"
                     >
                       <span
                         className={cn(
-                          "grid size-4 shrink-0 place-items-center rounded border transition-colors",
-                          checked ? "border-violet-600 bg-violet-600 text-white" : "border-line-strong",
+                          "grid size-4 shrink-0 place-items-center rounded-[4px] border transition-colors",
+                          checked ? "border-accent bg-accent text-on-ink" : "border-line-strong",
                         )}
+                        aria-hidden
                       >
                         {checked && <Check className="size-3" strokeWidth={3} />}
                       </span>
                       <Avatar name={o.name} size={24} />
-                      <span className="flex-1 truncate text-[13px] font-medium text-ink">{o.name}</span>
-                      <span className="tnum text-[11.5px] font-semibold text-faint">{o.count}</span>
+                      <span className="flex-1 truncate text-[13px] text-ink-1">{o.name}</span>
+                      <span className="tnum text-[12px] text-ink-3">{o.count}</span>
                     </button>
                   </li>
                 );
@@ -176,13 +176,9 @@ export function OwnerFilter({
 
           {value.length > 0 && (
             <div className="border-t border-line p-2">
-              <button
-                type="button"
-                onClick={() => onChange([])}
-                className="flex w-full items-center justify-center gap-1.5 rounded-[var(--radius-md)] py-1.5 text-[12.5px] font-semibold text-muted transition-colors hover:bg-canvas hover:text-ink"
-              >
-                <X className="size-3.5" /> Clear {value.length} {value.length === 1 ? "filter" : "filters"}
-              </button>
+              <Button variant="ghost" size="sm" onClick={() => onChange([])} className="w-full">
+                <X className="size-4" strokeWidth={1.5} aria-hidden /> Clear {value.length} {value.length === 1 ? "filter" : "filters"}
+              </Button>
             </div>
           )}
         </div>
@@ -198,12 +194,12 @@ function AvatarStack({ owners }: { owners: OwnerOption[] }) {
   return (
     <span className="flex items-center -space-x-1.5">
       {shown.map((o) => (
-        <span key={o.id} className="rounded-full ring-2 ring-paper dark:ring-canvas">
+        <span key={o.id} className="rounded-full ring-2 ring-surface">
           <Avatar name={o.name} size={20} />
         </span>
       ))}
       {extra > 0 && (
-        <span className="grid size-5 place-items-center rounded-full bg-violet-600 text-[10px] font-bold text-white ring-2 ring-paper dark:ring-canvas">
+        <span className="tnum grid size-5 place-items-center rounded-full bg-ink-1 text-[10px] font-semibold text-on-ink ring-2 ring-surface">
           +{extra}
         </span>
       )}

@@ -48,13 +48,10 @@ vi.mock("@/lib/client", () => ({
   ApiError: class extends Error {},
 }));
 
-// Stub the heavy children; expose the leads they receive so we can assert filtering.
-vi.mock("@/components/layout/PageHeader", () => ({
-  PageHeader: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
-}));
+// Stub the heavy children; expose the leads and props they receive so we can assert filtering.
 vi.mock("@/components/leads/LeadBoard", () => ({
-  LeadBoard: ({ leads }: { leads: LeadDTO[] }) => (
-    <div data-testid="board">
+  LeadBoard: ({ leads, focusStage, lostCount }: { leads: LeadDTO[]; focusStage?: string | null; lostCount?: number }) => (
+    <div data-testid="board" data-focus={focusStage ?? ""} data-lost={lostCount}>
       {leads.map((l) => (
         <span key={l.id} data-testid="board-lead">{l.id}</span>
       ))}
@@ -86,6 +83,7 @@ function lead(over: Partial<LeadDTO>): LeadDTO {
     email: "",
     source: "Website",
     stage: "new",
+    category: "unclassified",
     estValue: 1000,
     notes: "",
     tags: [],
@@ -118,7 +116,7 @@ function renderPage() {
 
 const boardIds = () => screen.queryAllByTestId("board-lead").map((n) => n.textContent);
 const ownerTrigger = () =>
-  screen.getAllByRole("button").find((b) => b.getAttribute("aria-haspopup") === "listbox");
+  screen.queryAllByRole("button").find((b) => b.getAttribute("aria-haspopup") === "listbox");
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -254,7 +252,7 @@ describe("Leads page — filter applies across views", () => {
       ],
     });
     renderPage();
-    await user.click(screen.getByRole("button", { name: /Lost/ }));
+    await user.click(screen.getByRole("radio", { name: /Lost/ }));
     expect(screen.queryAllByTestId("table-lead").map((n) => n.textContent)).toEqual(["L1"]);
   });
 
@@ -269,7 +267,7 @@ describe("Leads page — filter applies across views", () => {
       ],
     });
     renderPage();
-    await user.click(screen.getByRole("button", { name: "Archived" }));
+    await user.click(screen.getByRole("radio", { name: "Archived" }));
     // The archived table renders one row (owner 'a') and not the 'b' row.
     expect(screen.getByText("Archived-A")).toBeInTheDocument();
     expect(screen.queryByText("Archived-B")).not.toBeInTheDocument();
@@ -283,23 +281,69 @@ describe("Leads page — filter applies across views", () => {
       archived: [lead({ id: "AR1", ownerId: "a", name: "Archived-A" })],
     });
     renderPage();
-    await user.click(screen.getByRole("button", { name: "Archived" }));
+    await user.click(screen.getByRole("radio", { name: "Archived" }));
     expect(screen.getByText(/No archived leads match/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Clear filters/i })).toBeInTheDocument();
   });
 });
 
-describe("Leads page — parked leads stay on the board but out of active stats", () => {
-  it("keeps parked leads on the board and counts them separately from Active Leads", () => {
+describe("Leads page — summary line", () => {
+  it("keeps parked leads on the board but out of the active pipeline", () => {
     setup({
       leads: [
-        lead({ id: "1", ownerId: "a", stage: "new", estValue: 1000 }),
-        lead({ id: "2", ownerId: "a", stage: "parked", estValue: 5000, name: "On hold" }),
+        lead({ id: "1", ownerId: "a", stage: "new", estValue: 50_000 }),
+        lead({ id: "2", ownerId: "a", stage: "won", estValue: 1_00_000 }),
+        lead({ id: "3", ownerId: "a", stage: "parked", estValue: 5_000, name: "On hold" }),
+        lead({ id: "4", ownerId: "a", stage: "lost", estValue: 9_000 }),
       ],
     });
     renderPage();
+    expect(boardIds()).toEqual(["1", "2", "3"]);
+    expect(screen.getByRole("region", { name: "Pipeline summary" })).toHaveTextContent(
+      "₹1.5L pipeline across 2 active leads. 1 won, 1 parked.",
+    );
+    expect(screen.getByRole("radio", { name: /Lost/ })).toHaveTextContent("Lost 1");
+    expect(screen.getByTestId("board")).toHaveAttribute("data-lost", "1");
+  });
+});
+
+describe("Leads page — ?stage= param", () => {
+  const leads = () => [
+    lead({ id: "1", ownerId: "a", stage: "new" }),
+    lead({ id: "2", ownerId: "a", stage: "qualified" }),
+    lead({ id: "3", ownerId: "a", stage: "lost" }),
+  ];
+
+  it("focuses that stage on the board without filtering it", () => {
+    setup({ search: "stage=qualified", leads: leads() });
+    renderPage();
+    expect(screen.getByTestId("board")).toHaveAttribute("data-focus", "qualified");
     expect(boardIds()).toEqual(["1", "2"]);
-    expect(screen.getByText("Active Leads").parentElement).toHaveTextContent("1");
-    expect(screen.getByText("Parked").parentElement).toHaveTextContent("1");
+    expect(H.replace).not.toHaveBeenCalled();
+  });
+
+  it("filters the table to that stage, and clearing it restores every lead", async () => {
+    const user = userEvent.setup();
+    setup({ search: "stage=qualified", leads: leads() });
+    renderPage();
+    await user.click(screen.getByRole("radio", { name: "Table" }));
+    expect(screen.queryAllByTestId("table-lead").map((n) => n.textContent)).toEqual(["2"]);
+
+    await user.click(screen.getByRole("button", { name: "Clear stage filter" }));
+    expect(screen.queryAllByTestId("table-lead").map((n) => n.textContent)).toEqual(["1", "2"]);
+    expect(H.replace).toHaveBeenLastCalledWith("/leads", { scroll: false });
+  });
+
+  it("opens the Lost view for stage=lost", () => {
+    setup({ search: "stage=lost", leads: leads() });
+    renderPage();
+    expect(screen.getByRole("radio", { name: /Lost/ })).toHaveAttribute("aria-checked", "true");
+    expect(screen.queryAllByTestId("table-lead").map((n) => n.textContent)).toEqual(["3"]);
+  });
+
+  it("ignores an unknown stage", () => {
+    setup({ search: "stage=bogus", leads: leads() });
+    renderPage();
+    expect(screen.getByTestId("board")).toHaveAttribute("data-focus", "");
   });
 });

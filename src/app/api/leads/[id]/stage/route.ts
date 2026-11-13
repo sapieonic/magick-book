@@ -4,7 +4,7 @@ import { connectDB } from "@/lib/db";
 import { Lead, type ILead } from "@/lib/models";
 import { requireUser } from "@/lib/auth/server";
 import { leadScope, canEditOwned } from "@/lib/rbac";
-import { logActivity, audit } from "@/lib/services";
+import { logActivity, audit, ownerNameMap } from "@/lib/services";
 import { notifyLeadLost, notifyLeadStageChanged } from "@/lib/slack";
 import { LEAD_STAGES, STAGE_META } from "@/lib/constants";
 import { Types } from "mongoose";
@@ -25,7 +25,7 @@ export const PATCH = route(async (req: NextRequest, ctx: Ctx) => {
   if (!canEditOwned(user, lead.ownerId)) return fail("You can only move your own leads.", 403);
 
   const patch: Record<string, unknown> = { stage, lastActivityAt: new Date() };
-  if (typeof b.order === "number") patch.order = b.order;
+  if (Number.isInteger(b.order) && b.order >= 0) patch.order = b.order;
   if (stage === "lost" && b.lostReason) patch.lostReason = String(b.lostReason).trim();
 
   await Lead.updateOne({ _id: lead._id }, patch);
@@ -54,5 +54,6 @@ export const PATCH = route(async (req: NextRequest, ctx: Ctx) => {
   }
 
   const fresh = await Lead.findById(lead._id).lean<ILead>();
-  return ok({ lead: serializeLead(fresh!, user.name) });
+  const names = await ownerNameMap([fresh!.ownerId]);
+  return ok({ lead: serializeLead(fresh!, names.get(String(fresh!.ownerId)) ?? "") });
 });

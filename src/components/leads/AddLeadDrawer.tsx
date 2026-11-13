@@ -140,7 +140,7 @@ export function AddLeadDrawer({
       open={open}
       onClose={onClose}
       title={isEdit ? "Edit lead" : "Add a lead"}
-      subtitle={isEdit ? "Update the details and save." : "Only ★ fields are required. Add the rest whenever you like."}
+      subtitle={isEdit ? "Update the details and save." : "Only starred fields are required. Add the rest whenever you like."}
     >
       <form
         onSubmit={(e) => {
@@ -194,11 +194,8 @@ export function AddLeadDrawer({
           </Select>
         </Field>
 
-        <Field label="Est. value" hint="optional" error={errors.estValue}>
-          <div className="relative">
-            <span className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 font-mono text-[14px] text-muted">₹</span>
-            <Input ref={estValueRef} aria-invalid={!!errors.estValue} className="pl-7 tnum font-mono" inputMode="numeric" placeholder="1,20,000" value={form.estValue} onChange={(e) => set("estValue", e.target.value)} />
-          </div>
+        <Field label="Est. value (₹)" hint="optional" error={errors.estValue}>
+          <Input ref={estValueRef} aria-invalid={!!errors.estValue} className="tnum" inputMode="numeric" placeholder="1,20,000" value={form.estValue} onChange={(e) => set("estValue", e.target.value)} />
         </Field>
 
         <Field label="Notes">
