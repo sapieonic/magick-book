@@ -3,7 +3,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import Link from "next/link";
 import { Search, Plus, TrendingUp, TrendingDown, ArrowRight, Phone, BellRing, CheckCircle } from "lucide-react";
-import { PageHeader } from "@/components/layout/Sidebar";
+import { PageHeader } from "@/components/layout/PageHeader";
 import { useSession } from "@/components/layout/SessionContext";
 import { AddLeadDrawer } from "@/components/leads/AddLeadDrawer";
 import { Button } from "@/components/ui/Button";
@@ -29,7 +29,7 @@ export default function DashboardPage() {
 
   return (
     <>
-      <PageHeader className="pb-6">
+      <PageHeader>
         <div>
           <h1 className="font-display text-[26px] font-extrabold tracking-tight text-ink">
             {greeting()}, {user.name.split(" ")[0]} <span className="inline-block origin-bottom-right hover:animate-pulse">👋</span>
@@ -92,7 +92,7 @@ function Kpi({ label, value, loading, accent, delay }: { label: string; value?: 
   const bars = [40, 70, 45, 90, 60, 30, 80];
   
   return (
-    <Card premium className="relative overflow-hidden p-6 group animate-fade-up" style={{ animationDelay: delay }}>
+    <Card className="relative overflow-hidden p-6 group animate-fade-up" style={{ animationDelay: delay }}>
       {/* Subtle background glow */}
       <div className={cn("absolute -right-6 -top-6 size-28 rounded-full opacity-10 blur-[30px] transition-all duration-700 group-hover:scale-150", bgColors[accent])} />
       
@@ -121,7 +121,7 @@ function Kpi({ label, value, loading, accent, delay }: { label: string; value?: 
 function PipelineCard({ data, loading }: { data: DashboardData | null; loading: boolean }) {
   const max = Math.max(1, ...(data?.pipeline.map((p) => p.count) ?? [1]));
   return (
-    <Card premium className="flex h-full min-h-[320px] flex-col p-6 animate-fade-up" style={{ animationDelay: '200ms' }}>
+    <Card className="flex h-full min-h-[320px] flex-col p-6 animate-fade-up" style={{ animationDelay: '200ms' }}>
       <div className="flex items-center justify-between mb-8">
         <div>
           <h2 className="font-display text-[18px] font-bold text-ink">Pipeline Flow</h2>
@@ -175,7 +175,7 @@ function PipelineCard({ data, loading }: { data: DashboardData | null; loading: 
 function RevenueCard({ data, loading }: { data: DashboardData | null; loading: boolean }) {
   const up = (data?.revenueDeltaPct ?? 0) >= 0;
   return (
-    <Card premium className="relative flex h-full min-h-[320px] flex-col overflow-hidden p-6 animate-fade-up" style={{ animationDelay: '250ms' }}>
+    <Card className="relative flex h-full min-h-[320px] flex-col overflow-hidden p-6 animate-fade-up" style={{ animationDelay: '250ms' }}>
       {/* Decorative Mesh background */}
       <div className="pointer-events-none absolute inset-0 opacity-[0.15] mix-blend-multiply dark:mix-blend-screen dark:opacity-[0.22]">
         <div className="absolute -right-12 -top-12 h-48 w-48 rounded-full bg-brand-to blur-[40px]"></div>
@@ -214,7 +214,7 @@ function RevenueCard({ data, loading }: { data: DashboardData | null; loading: b
 function AttentionCard({ data, loading }: { data: DashboardData | null; loading: boolean }) {
   const items = data?.attention ?? [];
   return (
-    <Card premium className="flex h-full min-h-[320px] flex-col p-6 animate-fade-up" style={{ animationDelay: '300ms' }}>
+    <Card className="flex h-full min-h-[320px] flex-col p-6 animate-fade-up" style={{ animationDelay: '300ms' }}>
       <div className="flex items-center justify-between mb-5">
         <div>
           <h2 className="font-display text-[18px] font-bold text-ink">Needs attention</h2>

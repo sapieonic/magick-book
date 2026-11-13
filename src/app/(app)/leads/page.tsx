@@ -2,7 +2,7 @@
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { LayoutGrid, Rows3, Search, Plus, Ban, Archive, RotateCcw, X } from "lucide-react";
-import { PageHeader } from "@/components/layout/Sidebar";
+import { PageHeader } from "@/components/layout/PageHeader";
 import { useSession } from "@/components/layout/SessionContext";
 import { LeadBoard } from "@/components/leads/LeadBoard";
 import { LeadTable } from "@/components/leads/LeadTable";

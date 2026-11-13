@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import { ShieldCheck, User, Check, X, Plus, Lock, Trash2 } from "lucide-react";
-import { PageHeader } from "@/components/layout/Sidebar";
+import { PageHeader } from "@/components/layout/PageHeader";
 import { useSession } from "@/components/layout/SessionContext";
 import { InviteModal } from "@/components/settings/InviteModal";
 import { SettingsTabs } from "@/components/settings/SettingsTabs";

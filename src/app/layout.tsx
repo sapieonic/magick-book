@@ -1,28 +1,28 @@
 import type { Metadata, Viewport } from "next";
-import { Bricolage_Grotesque, Hanken_Grotesk, JetBrains_Mono } from "next/font/google";
+import { IBM_Plex_Sans, IBM_Plex_Sans_Condensed, IBM_Plex_Mono } from "next/font/google";
 import "./globals.css";
 import { ToastProvider } from "@/components/ui/Toast";
 import { ConfirmProvider } from "@/components/ui/ConfirmDialog";
 import { ThemeProvider, themeInitScript } from "@/components/theme/ThemeProvider";
 
-const bricolage = Bricolage_Grotesque({
-  variable: "--font-bricolage",
+const plexSans = IBM_Plex_Sans({
+  variable: "--font-plex-sans",
   subsets: ["latin"],
-  weight: ["500", "600", "700", "800"],
+  weight: ["400", "500", "600"],
   display: "swap",
 });
 
-const hanken = Hanken_Grotesk({
-  variable: "--font-hanken",
+const plexCondensed = IBM_Plex_Sans_Condensed({
+  variable: "--font-plex-condensed",
   subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
+  weight: ["500", "600"],
   display: "swap",
 });
 
-const jetbrains = JetBrains_Mono({
-  variable: "--font-jetbrains",
+const plexMono = IBM_Plex_Mono({
+  variable: "--font-plex-mono",
   subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
+  weight: ["400", "500"],
   display: "swap",
 });
 
@@ -37,8 +37,8 @@ export const viewport: Viewport = {
   initialScale: 1,
   viewportFit: "cover",
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#faf8f5" },
-    { media: "(prefers-color-scheme: dark)", color: "#15141a" },
+    { media: "(prefers-color-scheme: light)", color: "#eef1f4" },
+    { media: "(prefers-color-scheme: dark)", color: "#111315" },
   ],
 };
 
@@ -49,7 +49,7 @@ export default function RootLayout({
     <html
       lang="en"
       suppressHydrationWarning
-      className={`${bricolage.variable} ${hanken.variable} ${jetbrains.variable} h-full`}
+      className={`${plexSans.variable} ${plexCondensed.variable} ${plexMono.variable} h-full`}
     >
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />

@@ -20,7 +20,7 @@ import {
   Webhook,
   CirclePause,
 } from "lucide-react";
-import { PageHeader } from "@/components/layout/Sidebar";
+import { PageHeader } from "@/components/layout/PageHeader";
 import { useSession } from "@/components/layout/SessionContext";
 import { ActivityTimeline } from "@/components/ActivityTimeline";
 import { AuditTimeline } from "@/components/AuditTimeline";

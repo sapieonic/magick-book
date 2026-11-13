@@ -210,7 +210,7 @@ export function AddLeadDrawer({
             {isEdit ? "Save changes" : "Save lead"}
           </Button>
           {!isEdit && (
-            <Button type="button" variant="dashed" loading={busy} onClick={() => save(true)}>
+            <Button type="button" variant="secondary" loading={busy} onClick={() => save(true)}>
               Save & add another
             </Button>
           )}

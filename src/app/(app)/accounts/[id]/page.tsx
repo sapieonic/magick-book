@@ -20,7 +20,7 @@ import {
   Archive,
   BellRing,
 } from "lucide-react";
-import { PageHeader } from "@/components/layout/Sidebar";
+import { PageHeader } from "@/components/layout/PageHeader";
 import { ActivityTimeline } from "@/components/ActivityTimeline";
 import { AuditTimeline } from "@/components/AuditTimeline";
 import { AddContactModal, EditContactModal, NewInvoiceModal, LogExpenseModal, UploadDocumentModal, uploadInvoiceFile } from "@/components/accounts/AccountModals";

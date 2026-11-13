@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Plus, Trash2, Tags, ExternalLink } from "lucide-react";
-import { PageHeader } from "@/components/layout/Sidebar";
+import { PageHeader } from "@/components/layout/PageHeader";
 import { useSession } from "@/components/layout/SessionContext";
 import { SettingsTabs } from "@/components/settings/SettingsTabs";
 import { CategoryBadge } from "@/components/leads/CategoryBadge";

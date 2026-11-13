@@ -49,7 +49,7 @@ vi.mock("@/lib/client", () => ({
 }));
 
 // Stub the heavy children; expose the leads they receive so we can assert filtering.
-vi.mock("@/components/layout/Sidebar", () => ({
+vi.mock("@/components/layout/PageHeader", () => ({
   PageHeader: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
 }));
 vi.mock("@/components/leads/LeadBoard", () => ({

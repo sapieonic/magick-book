@@ -2,7 +2,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { BellRing, Plus, Trash2, Check, Clock, Webhook, Play } from "lucide-react";
-import { PageHeader } from "@/components/layout/Sidebar";
+import { PageHeader } from "@/components/layout/PageHeader";
 import { SettingsTabs } from "@/components/settings/SettingsTabs";
 import { ReminderModal } from "@/components/reminders/ReminderModal";
 import { WebhookForm } from "@/components/reminders/WebhookForm";

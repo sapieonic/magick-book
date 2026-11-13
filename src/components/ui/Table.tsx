@@ -1,5 +1,5 @@
 "use client";
-import { useState, type ReactNode } from "react";
+import { useState, type HTMLAttributes, type ReactNode, type TdHTMLAttributes, type ThHTMLAttributes } from "react";
 import { ArrowDown, ArrowUp, ChevronsUpDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "./Button";
@@ -59,15 +59,16 @@ export function SortHeader({
     <button
       type="button"
       onClick={() => onToggle(sortKey)}
+      aria-label={typeof label === "string" ? `Sort by ${label}` : undefined}
       className={cn(
-        "group inline-flex items-center gap-1 font-semibold tracking-tight transition-colors hover:text-ink",
-        active ? "text-ink" : "text-muted",
+        "group inline-flex items-center gap-1 font-medium transition-colors hover:text-ink-1",
+        active ? "text-ink-1" : "text-ink-3",
         align === "right" && "flex-row-reverse",
         className,
       )}
     >
       <span>{label}</span>
-      <Icon className={cn("size-3.5 transition-opacity", active ? "opacity-100 text-violet-500" : "opacity-0 group-hover:opacity-60")} />
+      <Icon className={cn("size-3.5", active ? "text-accent" : "opacity-0 group-hover:opacity-60 group-focus-visible:opacity-60")} strokeWidth={1.5} aria-hidden />
     </button>
   );
 }
@@ -101,7 +102,7 @@ export function Pagination({
   const from = (page - 1) * pageSize + 1;
   const to = Math.min(total, page * pageSize);
   return (
-    <div className={cn("flex items-center justify-between gap-3 px-1 pt-3 text-[12.5px] text-muted", className)}>
+    <div className={cn("flex items-center justify-between gap-3 pt-3 text-[13px] text-ink-3", className)}>
       <span className="tnum">
         {from}–{to} of {total}
       </span>
@@ -109,13 +110,74 @@ export function Pagination({
         <Button size="sm" variant="secondary" disabled={page <= 1} onClick={() => onPage(page - 1)}>
           Prev
         </Button>
-        <span className="tnum tabular-nums px-1 font-medium text-ink-soft">
+        <span className="tnum px-1 font-medium text-ink-2">
           {page} / {pageCount}
         </span>
         <Button size="sm" variant="secondary" disabled={page >= pageCount} onClick={() => onPage(page + 1)}>
           Next
         </Button>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Ledger table: 40px rows, hairline rules, right-aligned numeric cells. Scrolls
+ * sideways when cramped; pass `maxHeight` to scroll vertically under a sticky head.
+ */
+export function Table({
+  children,
+  maxHeight,
+  className,
+  ...props
+}: HTMLAttributes<HTMLTableElement> & { maxHeight?: number | string }) {
+  return (
+    <div className="overflow-auto" style={maxHeight ? { maxHeight } : undefined}>
+      <table className={cn("ledger", maxHeight && "ledger-sticky", className)} {...props}>
+        {children}
+      </table>
+    </div>
+  );
+}
+
+interface CellProps {
+  /** Right-aligned tabular figures. */
+  numeric?: boolean;
+  /** Drop the column on phones; fold its content into a `TwoLine` cell instead. */
+  hideOnPhone?: boolean;
+}
+
+const cellClass = ({ numeric, hideOnPhone }: CellProps, className?: string) =>
+  cn(numeric && "num", hideOnPhone && "max-md:hidden", className);
+
+export function Th({ numeric, hideOnPhone, className, scope = "col", ...props }: ThHTMLAttributes<HTMLTableCellElement> & CellProps) {
+  return <th scope={scope} className={cellClass({ numeric, hideOnPhone }, className)} {...props} />;
+}
+
+export function Td({ numeric, hideOnPhone, className, ...props }: TdHTMLAttributes<HTMLTableCellElement> & CellProps) {
+  return <td className={cellClass({ numeric, hideOnPhone }, className)} {...props} />;
+}
+
+/**
+ * Two-line cell content: a primary line over a muted secondary line. With
+ * `phoneOnly` the second line appears only on phones, carrying what the hidden
+ * columns showed.
+ */
+export function TwoLine({
+  primary,
+  secondary,
+  phoneOnly,
+  className,
+}: {
+  primary: ReactNode;
+  secondary?: ReactNode;
+  phoneOnly?: boolean;
+  className?: string;
+}) {
+  return (
+    <div className={cn("min-w-0 py-2", className)}>
+      <div className="font-medium text-ink-1">{primary}</div>
+      {secondary && <div className={cn("text-[13px] text-ink-3", phoneOnly && "md:hidden")}>{secondary}</div>}
     </div>
   );
 }

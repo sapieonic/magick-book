@@ -1,5 +1,5 @@
 import Image from "next/image";
-import { type ReactNode } from "react";
+import { type CSSProperties, type ReactNode } from "react";
 import { Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -7,30 +7,26 @@ export function Logo({ size = 32, withWordmark = false, className }: { size?: nu
   return (
     <span className={cn("inline-flex items-center gap-2.5", className)}>
       <Image src="/logo.png" alt="MagickBook" width={size} height={size} priority className="select-none" />
-      {withWordmark && (
-        <span className="font-display text-[19px] font-extrabold tracking-tight text-ink">
-          Magick<span className="brand-text">Book</span>
-        </span>
-      )}
+      {withWordmark && <span className="text-[17px] font-semibold tracking-[-0.01em] text-ink-1">MagickBook</span>}
     </span>
   );
 }
 
 export function Spinner({ className }: { className?: string }) {
-  return <Loader2 className={cn("size-5 animate-spin text-violet-500", className)} />;
+  return <Loader2 className={cn("size-5 animate-spin text-ink-3", className)} strokeWidth={1.5} role="status" aria-label="Loading" />;
 }
 
 export function PageLoader({ label = "Loading…" }: { label?: string }) {
   return (
-    <div className="flex h-[60vh] flex-col items-center justify-center gap-3 text-muted">
-      <Spinner className="size-6" />
-      <p className="text-[13px]">{label}</p>
+    <div className="flex h-[50vh] flex-col items-center justify-center gap-3 text-ink-3">
+      <Loader2 className="size-6 animate-spin" strokeWidth={1.5} aria-hidden />
+      <p role="status" className="text-[13px]">{label}</p>
     </div>
   );
 }
 
-export function Skeleton({ className, style }: { className?: string; style?: React.CSSProperties }) {
-  return <div className={cn("skeleton rounded-[var(--radius-sm)]", className)} style={style} />;
+export function Skeleton({ className, style }: { className?: string; style?: CSSProperties }) {
+  return <div className={cn("skeleton rounded-bar", className)} style={style} aria-hidden />;
 }
 
 export function EmptyState({
@@ -38,36 +34,28 @@ export function EmptyState({
   title,
   description,
   action,
+  className,
 }: {
   icon?: ReactNode;
   title: string;
   description?: string;
   action?: ReactNode;
+  className?: string;
 }) {
   return (
-    <div className="flex flex-col items-center justify-center rounded-[var(--radius-lg)] border border-dashed border-line-strong bg-paper/60 px-6 py-14 text-center">
-      {icon && (
-        <div className="mb-3 flex size-12 items-center justify-center rounded-2xl bg-violet-50 text-violet-500">{icon}</div>
-      )}
-      <h3 className="font-display text-[16px] font-bold text-ink">{title}</h3>
-      {description && <p className="mt-1 max-w-xs text-[13px] text-muted">{description}</p>}
+    <div className={cn("flex flex-col items-center justify-center rounded-card border border-dashed border-line-strong px-6 py-12 text-center", className)}>
+      {icon && <div className="mb-3 text-ink-3">{icon}</div>}
+      <h3 className="font-semibold text-ink-1">{title}</h3>
+      {description && <p className="mt-1 max-w-xs text-[13px] text-ink-3">{description}</p>}
       {action && <div className="mt-4">{action}</div>}
     </div>
   );
 }
 
-export function Card({ children, className, premium = false, style }: { children: ReactNode; className?: string; premium?: boolean; style?: React.CSSProperties }) {
+/** Bare glass surface. Prefer `Panel` when the section has a title or actions. */
+export function Card({ children, className, style }: { children: ReactNode; className?: string; style?: CSSProperties }) {
   return (
-    <div
-      className={cn(
-        "rounded-[var(--radius-lg)] border bg-paper transition-all duration-300",
-        premium
-          ? "border-line/80 shadow-[0_8px_30px_rgba(0,0,0,0.04)] backdrop-blur-sm hover:border-violet-400/40 hover:shadow-[0_8px_30px_rgba(0,0,0,0.08)] bg-gradient-to-br from-paper to-violet-50/20 dark:shadow-[0_8px_30px_rgba(0,0,0,0.35)]"
-          : "border-line shadow-[var(--shadow-card)] dark:border-white/10",
-        className
-      )}
-      style={style}
-    >
+    <div className={cn("glass rounded-panel", className)} style={style}>
       {children}
     </div>
   );
@@ -75,13 +63,20 @@ export function Card({ children, className, premium = false, style }: { children
 
 export function ErrorState({ message, onRetry }: { message: string; onRetry?: () => void }) {
   return (
-    <div className="flex flex-col items-center justify-center gap-2 rounded-[var(--radius-lg)] border border-danger/20 bg-danger-bg/40 px-6 py-12 text-center">
-      <p className="text-[13.5px] font-medium text-danger">{message}</p>
+    <div role="alert" className="flex flex-col items-center justify-center gap-2 rounded-card bg-overdue-tint px-6 py-10 text-center">
+      <p className="font-medium text-overdue">{message}</p>
       {onRetry && (
-        <button onClick={onRetry} className="text-[12.5px] font-semibold text-violet-600 underline-offset-2 hover:underline">
+        <button type="button" onClick={onRetry} className="link text-[13px] font-medium">
           Try again
         </button>
       )}
     </div>
+  );
+}
+
+/** Keyboard hint chip, e.g. `<KbdHint>⌘K</KbdHint>`. */
+export function KbdHint({ children, className }: { children: ReactNode; className?: string }) {
+  return (
+    <kbd className={cn("rounded-bar border border-line-strong px-1.5 font-mono text-[12px] text-ink-3", className)}>{children}</kbd>
   );
 }

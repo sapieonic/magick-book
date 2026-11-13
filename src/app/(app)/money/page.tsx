@@ -2,7 +2,7 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { Receipt, Wallet, X } from "lucide-react";
-import { PageHeader } from "@/components/layout/Sidebar";
+import { PageHeader } from "@/components/layout/PageHeader";
 import { MoneyCharts } from "@/components/money/MoneyCharts";
 import { Badge } from "@/components/ui/Badge";
 import { Card, PageLoader, ErrorState, EmptyState } from "@/components/ui/Misc";

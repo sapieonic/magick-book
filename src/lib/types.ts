@@ -213,3 +213,13 @@ export interface AttentionItem {
   action: string;
   href: string;
 }
+
+/** Sidebar counts from `GET /api/nav`. */
+export interface NavSummary {
+  /** Leads in the working funnel (not won, parked or lost). */
+  openLeads: number;
+  accounts: number;
+  /** Sum of sent + overdue invoices across visible accounts. */
+  moneyDue: number;
+  recentAccounts: { id: string; name: string }[];
+}

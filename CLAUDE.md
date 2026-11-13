@@ -16,7 +16,8 @@ Full-stack Next.js 16 CRM: leads → accounts → invoices/expenses → margin. 
 - `npm run seed` / `seed:force` — seed a real `MONGODB_URI` DB (seed-if-empty / wipe+reseed). Not needed for in-memory dev (auto-seeds).
 
 ## Stack & gotchas (Next 16 / React 19)
-- App Router, **Turbopack**, TypeScript, Tailwind **v4** (CSS-first `@theme` in `src/app/globals.css` — no `tailwind.config`). Design tokens (colors, fonts, radii, shadows) are CSS vars there; fonts wired in `src/app/layout.tsx`.
+- App Router, **Turbopack**, TypeScript, Tailwind **v4** (CSS-first `@theme` in `src/app/globals.css` — no `tailwind.config`). The **Daybook** glass design system lives there: tokens (`ground`, `glass*`, `ink-1/2/3`, `line`, `accent`, status `paid|due|overdue|lost` each with `-fill`/`-tint`, `stage-1..5`, radii `bar|control|card|panel|shell`) plus a few component classes (`.glass`, `.glass-lane`, `.glass-card`, `.glass-pop`, `.tnum`, `.figure`, `.ledger`, `.hatch`). Dark theme = the same tokens redefined under `:root[data-theme="dark"]` (`dark:` variant follows `data-theme`). Breakpoints: `md` = 720px, `xl` = 1280px. A marked **legacy alias** block maps pre-Daybook names (`paper`, `muted`, `violet-*`…) onto the new tokens — don't use them in new code; delete the block when nothing references it.
+- Fonts (wired in `src/app/layout.tsx` via `next/font/google`): IBM Plex Sans (`font-sans`), Plex Sans Condensed (`font-condensed`, large figures), Plex Mono (`font-mono`, invoice numbers and keys).
 - Route handler `params` and `cookies()` are **async** (`await ctx.params`, `await cookies()`).
 - Route protection lives in **`src/proxy.ts`** (Next 16 renamed `middleware` → `proxy`). It guards pages on the edge; **API handlers guard themselves** via `requireUser()` (matcher excludes `/api`).
 
@@ -43,7 +44,9 @@ Every handler in `src/app/api/**` follows the same shape — copy an existing ro
 
 ## Frontend
 - Pages are client components using `useApi`/`api` from `src/lib/client.ts` (`useApi` = fetch-on-mount + loading/error/refresh + optimistic set). The `(app)` server layout injects the session via `SessionContext`.
-- Reusable UI in `src/components/ui/*`. Money is INR — use `formatINR` / `formatINRCompact` and the `tnum` class for figures. Drag-and-drop via `@dnd-kit`.
+- **App shell** (`src/components/layout/*`, mounted by `AppShell`): glass sidebar with live counts from `GET /api/nav` (56px icon rail below `xl`, bottom tab bar below `md`), top bar with the ⌘K command palette and the ink "New" (global add-lead drawer). Pages don't render their own header: `<PageHeader title actions breadcrumb />` portals into the top bar. Lay pages out edge to edge with `<Page>` / `<PageSplit rail>` (`layout/Page.tsx`) — no centred max-width.
+- Reusable UI in `src/components/ui/*` (Button, Badge/StatusPill, Panel, Table, Tabs, SegmentedControl, ProportionBar, Overlay…). Overlays portal to `<body>` (glass panels trap `position: fixed`). Icons: `lucide-react` at `strokeWidth={1.5}`. Drag-and-drop via `@dnd-kit`.
+- Money is INR — render amounts with `<Money>` (muted ₹, tabular, "–" for zero; `compact` for lakh shorthand) or `formatMoney`/`formatINR`/`formatINRCompact` for strings.
 - Invoice files: records in Mongo, PDFs in **S3** (`src/lib/s3.ts`, presigned URLs). Disabled gracefully without `INVOICES_BUCKET`.
 
 ## Testing

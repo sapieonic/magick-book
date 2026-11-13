@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import { ScrollText } from "lucide-react";
-import { PageHeader } from "@/components/layout/Sidebar";
+import { PageHeader } from "@/components/layout/PageHeader";
 import { useSession } from "@/components/layout/SessionContext";
 import { SettingsTabs } from "@/components/settings/SettingsTabs";
 import { AuditTimeline } from "@/components/AuditTimeline";
