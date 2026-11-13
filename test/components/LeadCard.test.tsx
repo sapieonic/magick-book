@@ -31,7 +31,7 @@ function lead(over: Partial<LeadDTO>): LeadDTO {
   };
 }
 
-const daysAgo = (n: number) => new Date(Date.now() - n * 86_400_000 - 3_600_000).toISOString();
+const daysAgo = (n: number) => new Date(Date.now() - n * 86_400_000).toISOString();
 
 describe("LeadCard", () => {
   it("links the name to the lead and shows the company", () => {

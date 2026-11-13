@@ -1,6 +1,6 @@
 import { formatMoney } from "@/components/ui/Money";
 import { AUDIT_ACTION_META, STAGE_META, type LeadStage } from "@/lib/constants";
-import { absoluteTime, shortDate } from "@/lib/utils";
+import { absoluteTime, shortDate } from "@/lib/dates";
 import type { AuditLogDTO, AuditChange } from "@/lib/types";
 
 const ENTITY_LABEL: Record<string, string> = {

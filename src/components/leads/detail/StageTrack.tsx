@@ -5,7 +5,8 @@ import { StatusPill } from "@/components/ui/Badge";
 import { Spinner } from "@/components/ui/Misc";
 import { stageColor } from "@/components/ui/stage";
 import { PIPELINE_STAGES, STAGE_META, type BoardStage, type PipelineStage } from "@/lib/constants";
-import { cn, shortDate } from "@/lib/utils";
+import { cn } from "@/lib/utils";
+import { shortDate } from "@/lib/dates";
 import type { LeadDTO, LeadStageSpan } from "@/lib/types";
 import { dateRange, durationWords, timeInStages, wholeDays, type StageTime } from "./stage-time";
 

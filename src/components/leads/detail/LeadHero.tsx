@@ -1,7 +1,8 @@
 import { Fragment, type ReactNode } from "react";
 import { Panel } from "@/components/ui/Panel";
 import { Money } from "@/components/ui/Money";
-import { agoInWords, cn, daysSince } from "@/lib/utils";
+import { agoInWords, cn } from "@/lib/utils";
+import { daysSince } from "@/lib/dates";
 import type { LeadDTO } from "@/lib/types";
 
 /** Big name, the one-line story of the lead, and its stage actions. */

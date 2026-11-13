@@ -8,7 +8,7 @@ import { AmountInput, Field, Input, Select, Textarea } from "@/components/ui/Fie
 import { useToast } from "@/components/ui/Toast";
 import { api, useApi } from "@/lib/client";
 import { DEFAULT_LEAD_CATEGORIES, DEFAULT_LEAD_CATEGORY, LEAD_SOURCES, formatCategoryLabel } from "@/lib/constants";
-import { shortDate } from "@/lib/utils";
+import { shortDate } from "@/lib/dates";
 import type { LeadDTO } from "@/lib/types";
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;

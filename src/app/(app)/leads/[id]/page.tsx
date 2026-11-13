@@ -28,7 +28,8 @@ import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { useToast } from "@/components/ui/Toast";
 import { api, useApi } from "@/lib/client";
 import { STAGE_META, isActiveLeadStage, type BoardStage } from "@/lib/constants";
-import { daysSince, plural, shortDate } from "@/lib/utils";
+import { plural } from "@/lib/utils";
+import { daysSince, shortDate } from "@/lib/dates";
 import type { AuditLogDTO, LeadDTO, LeadDetail } from "@/lib/types";
 
 const COMPOSER_KINDS: ComposerKind[] = ["call", "note", "email", "meeting", "whatsapp", "sms"];

@@ -7,7 +7,8 @@ import { stageColor } from "@/components/ui/stage";
 import { STAGE_META } from "@/lib/constants";
 import { stageHref } from "./PipelineRibbon";
 import { Staleness } from "@/components/ui/Staleness";
-import { agoInWords, daysSince, plural } from "@/lib/utils";
+import { agoInWords, plural } from "@/lib/utils";
+import { daysSince } from "@/lib/dates";
 import type { PipelineStageSummary } from "@/lib/types";
 
 /** Count, value, share and the longest-waiting lead for each pipeline stage. */

@@ -4,7 +4,8 @@ import { Textarea } from "@/components/ui/Field";
 import { Button, LinkButton } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/Misc";
 import { MEETING_TITLE, type ActivityKind } from "@/lib/constants";
-import { absoluteTime, cn, shortDate } from "@/lib/utils";
+import { cn } from "@/lib/utils";
+import { absoluteTime, shortDate } from "@/lib/dates";
 import type { ActivityDTO } from "@/lib/types";
 
 const KIND_LABEL: Record<ActivityKind, string> = {

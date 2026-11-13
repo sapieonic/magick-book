@@ -1,6 +1,7 @@
 import type { LeadStage } from "@/lib/constants";
 import type { LeadStageSpan } from "@/lib/types";
-import { ageInWords, shortDate } from "@/lib/utils";
+import { ageInWords } from "@/lib/utils";
+import { shortDate } from "@/lib/dates";
 
 const DAY = 86_400_000;
 

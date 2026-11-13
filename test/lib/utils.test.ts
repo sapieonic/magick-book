@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { formatINR, formatINRCompact, initials, relativeTime, daysSince, ageInWords, agoInWords, plural, parseAmount } from "@/lib/utils";
+import { formatINR, formatINRCompact, initials, relativeTime, ageInWords, agoInWords, plural, parseAmount } from "@/lib/utils";
+import { daysSince } from "@/lib/dates";
 
 describe("formatINR", () => {
   it("formats with the Indian grouping and a rupee sign", () => {

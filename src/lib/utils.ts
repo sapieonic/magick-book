@@ -52,13 +52,6 @@ export function initials(name: string): string {
     .join("");
 }
 
-/** Absolute, locale-aware timestamp for tooltips, e.g. "1 Jun 2026, 4:05 pm". */
-export function absoluteTime(date: Date | string): string {
-  const d = typeof date === "string" ? new Date(date) : date;
-  if (Number.isNaN(d.getTime())) return "";
-  return d.toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" });
-}
-
 /** "2h ago", "3d ago", "1mo ago" — short relative time. */
 export function relativeTime(date: Date | string): string {
   const d = typeof date === "string" ? new Date(date) : date;
@@ -73,13 +66,6 @@ export function relativeTime(date: Date | string): string {
   const mo = Math.round(day / 30);
   if (mo < 12) return `${mo}mo ago`;
   return `${Math.round(mo / 12)}y ago`;
-}
-
-/** Whole days elapsed since `date` (0 for today or a future/invalid date). */
-export function daysSince(date: Date | string, now: Date | number = Date.now()): number {
-  const t = new Date(date).getTime();
-  if (Number.isNaN(t)) return 0;
-  return Math.max(0, Math.floor((Number(now) - t) / 86_400_000));
 }
 
 /** "1 lead" / "3 leads"; pass `many` for irregular plurals. */
@@ -100,9 +86,3 @@ export function agoInWords(days: number): string {
   return days < 1 ? "today" : `${ageInWords(days).toLowerCase()} ago`;
 }
 
-/** Short calendar date in en-IN, e.g. "14 Jul 2026" (or "14 Jul" with `withYear` false). */
-export function shortDate(date: Date | string, withYear = true): string {
-  const d = typeof date === "string" ? new Date(date) : date;
-  if (Number.isNaN(d.getTime())) return "";
-  return d.toLocaleDateString("en-IN", { day: "numeric", month: "short", ...(withYear && { year: "numeric" }) });
-}

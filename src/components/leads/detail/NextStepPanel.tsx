@@ -6,7 +6,8 @@ import { Field, Input } from "@/components/ui/Field";
 import { useToast } from "@/components/ui/Toast";
 import { DuePresets, toLocalInput } from "@/components/reminders/ReminderModal";
 import { api } from "@/lib/client";
-import { absoluteTime, ageInWords, cn, daysSince } from "@/lib/utils";
+import { ageInWords, cn } from "@/lib/utils";
+import { absoluteTime, daysSince } from "@/lib/dates";
 import type { ReminderDTO } from "@/lib/types";
 
 const DAY = 86_400_000;

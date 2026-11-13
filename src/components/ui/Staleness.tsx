@@ -1,4 +1,5 @@
-import { absoluteTime, ageInWords, cn, daysSince } from "@/lib/utils";
+import { ageInWords, cn } from "@/lib/utils";
+import { absoluteTime, daysSince } from "@/lib/dates";
 
 /** A record goes stale (overdue colour) after this many days without activity. */
 const STALE_AFTER_DAYS = 30;
