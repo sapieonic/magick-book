@@ -9,6 +9,7 @@ import { StatusPill } from "@/components/ui/Badge";
 import { Table, Td, Th, TwoLine } from "@/components/ui/Table";
 import { isOutstanding, isOverdue } from "@/lib/receivables";
 import type { ExpenseDTO, InvoiceDTO } from "@/lib/types";
+import { cn, plural } from "@/lib/utils";
 import { buildStatement, longDate, overdueLabel, type StatementEntry } from "./statement";
 import { useInvoiceActions } from "./useInvoiceActions";
 
@@ -17,6 +18,13 @@ export function InvoiceStatus({ invoice }: { invoice: InvoiceDTO }) {
 }
 
 export const InvoiceNumber = ({ n }: { n: number }) => <span className="font-mono text-[13px]">#{n}</span>;
+
+/**
+ * Date and Status have their own columns only on wide screens (2xl). Below that
+ * they fold into a second line under the entry, so the figures and the row
+ * action always fit without scrolling sideways.
+ */
+const WIDE_COL = "max-2xl:hidden";
 
 function describe(e: StatementEntry) {
   if (e.kind === "invoice") return <>Invoice <InvoiceNumber n={e.invoice.number} /></>;
@@ -66,13 +74,13 @@ export function StatementTable({
         <Table>
           <thead>
             <tr>
-              <Th hideOnPhone>Date</Th>
+              <Th className={WIDE_COL}>Date</Th>
               <Th>Entry</Th>
               <Th numeric hideOnPhone>Billed</Th>
               <Th numeric hideOnPhone>Received</Th>
               <Th numeric hideOnPhone>Cost</Th>
               <Th numeric>Balance</Th>
-              <Th hideOnPhone>Status</Th>
+              <Th className={WIDE_COL}>Status</Th>
               <Th>
                 <span className="sr-only">Actions</span>
               </Th>
@@ -84,11 +92,15 @@ export function StatementTable({
               const moved = e.kind === "payment" || (e.kind === "invoice" && e.counted);
               return (
                 <tr key={e.key} className={e.kind === "invoice" ? undefined : "text-ink-2"}>
-                  <Td hideOnPhone className="tnum whitespace-nowrap text-ink-2">
-                    {longDate(e.date)}
-                  </Td>
+                  <Td className={cn(WIDE_COL, "tnum whitespace-nowrap text-ink-2")}>{longDate(e.date)}</Td>
                   <Td>
-                    <TwoLine className="py-1.5" primary={describe(e)} secondary={<span className="tnum">{longDate(e.date)}</span>} phoneOnly />
+                    <TwoLine className="py-1.5" primary={describe(e)} secondary={
+                        <span className="flex flex-wrap items-center gap-x-2 gap-y-1 2xl:hidden">
+                          <span className="tnum">{longDate(e.date)}</span>
+                          {inv && <InvoiceStatus invoice={inv} />}
+                        </span>
+                      }
+                    />
                   </Td>
                   <Td numeric hideOnPhone>
                     {inv && <Money value={inv.amount} className={e.kind === "invoice" && !e.counted ? "text-ink-3" : undefined} />}
@@ -102,7 +114,7 @@ export function StatementTable({
                   <Td numeric>
                     <Money value={e.balance} className={moved ? "font-semibold text-ink-1" : "text-ink-3"} />
                   </Td>
-                  <Td hideOnPhone>{inv && <InvoiceStatus invoice={inv} />}</Td>
+                  <Td className={WIDE_COL}>{inv && <InvoiceStatus invoice={inv} />}</Td>
                   <Td className="text-right">
                     {inv && (
                       <span className="inline-flex items-center gap-3">
@@ -125,10 +137,13 @@ export function StatementTable({
           </tbody>
           <tfoot>
             <tr className="total">
-              <Td hideOnPhone colSpan={2}>
-                Total · {totals.invoices} {totals.invoices === 1 ? "invoice" : "invoices"}, {totals.payments} {totals.payments === 1 ? "payment" : "payments"}
+              <Td className={WIDE_COL} />
+              <Td>
+                <span className="max-md:hidden">
+                  Total · {plural(totals.invoices, "invoice")}, {plural(totals.payments, "payment")}
+                </span>
+                <span className="md:hidden">Outstanding</span>
               </Td>
-              <Td className="md:hidden">Outstanding</Td>
               <Td numeric hideOnPhone>
                 <Money value={totals.billed} />
               </Td>
@@ -141,7 +156,7 @@ export function StatementTable({
               <Td numeric>
                 <Money value={totals.balance} />
               </Td>
-              <Td hideOnPhone />
+              <Td className={WIDE_COL} />
               <Td />
             </tr>
           </tfoot>

@@ -219,22 +219,7 @@ function LeadsInner() {
 
   return (
     <Page>
-      <PageHeader
-        title="Leads"
-        actions={
-          <>
-            {showOwnerFilter && <OwnerFilter owners={owners} value={ownerIds} onChange={setOwnerIds} currentUserId={me.id} />}
-            <Select aria-label="Filter by category" value={category} onChange={(e) => setCategory(e.target.value)} className="w-auto max-w-44 text-[13px]">
-              <option value="">All categories</option>
-              {categorySelectOptions.map((c) => (
-                <option key={c} value={c}>
-                  {formatCategoryLabel(c)}
-                </option>
-              ))}
-            </Select>
-          </>
-        }
-      />
+      <PageHeader title="Leads" />
 
       <Panel aria-label="Pipeline summary" className="flex flex-wrap items-center gap-x-6 gap-y-3">
         <p className="tnum min-w-0 flex-[1_1_360px] text-[17px] leading-[1.3] text-ink-2 md:text-[20px]">
@@ -256,6 +241,15 @@ function LeadsInner() {
               </button>
             </span>
           )}
+          {showOwnerFilter && <OwnerFilter owners={owners} value={ownerIds} onChange={setOwnerIds} currentUserId={me.id} />}
+          <Select aria-label="Filter by category" value={category} onChange={(e) => setCategory(e.target.value)} className="w-auto max-w-44 text-[13px]">
+            <option value="">All categories</option>
+            {categorySelectOptions.map((c) => (
+              <option key={c} value={c}>
+                {formatCategoryLabel(c)}
+              </option>
+            ))}
+          </Select>
           <Input type="search" aria-label="Filter leads" placeholder="Filter leads" value={q} onChange={(e) => setQ(e.target.value)} className="w-44 text-[13px] max-md:flex-1" />
           <SegmentedControl<View>
             aria-label="View"

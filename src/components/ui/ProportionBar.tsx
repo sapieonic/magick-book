@@ -10,7 +10,7 @@ export interface Segment {
   value: number;
   /** Any CSS colour, e.g. `stageColor("new")` or `"var(--color-due-fill)"`. */
   color: string;
-  /** Shown top-right of a ribbon segment (e.g. number of leads). */
+  /** Shown after a ribbon segment's label (e.g. number of leads). */
   count?: number;
   /** Extra caption after the percentage in a ribbon. */
   note?: ReactNode;
@@ -73,9 +73,9 @@ function Ribbon({ segments, size = "md", compact = true, emptyLabel = "Empty", c
         const empty = s.value === 0;
         const body = (
           <>
-            <div className="flex justify-between gap-2 pb-1.5 text-[12px] text-ink-2">
-              <span>{s.label}</span>
-              {s.count != null && <span className="tnum">{s.count}</span>}
+            <div className="truncate pb-1.5 text-[12px] text-ink-2">
+              {s.label}
+              {s.count != null && <span className="tnum text-ink-3"> {s.count}</span>}
             </div>
             <div className={cn("rounded-bar", sz.bar, empty && "hatch")} style={empty ? undefined : { background: s.color }} />
             <div className={cn(sz.value, s.valueClassName)}>

@@ -13,9 +13,10 @@ const VARIANTS: Record<ButtonVariant, string> = {
   danger: "border border-line-strong bg-control text-overdue hover:bg-overdue-tint",
 };
 
+/** Phones (`max-md`) get taller controls: 44px touch targets, 36px for dense row actions. */
 const SIZES: Record<ButtonSize, string> = {
-  sm: "h-7 gap-1.5 px-2.5 text-[13px]",
-  md: "h-[34px] gap-1.5 px-3.5",
+  sm: "h-7 gap-1.5 px-2.5 text-[13px] max-md:h-9",
+  md: "h-[34px] gap-1.5 px-3.5 max-md:h-11",
   lg: "h-11 gap-2 px-4 text-[15px]",
 };
 
@@ -36,7 +37,8 @@ export function buttonClasses({
 
 /** Text button that reads as a link: panel header actions such as "Upload" or "Show all". */
 export function LinkButton({ className, ...props }: ButtonHTMLAttributes<HTMLButtonElement>) {
-  return <button type="button" className={cn("link", className)} {...props} />;
+  // On phones the text keeps its size but the tap area grows to ~44px.
+  return <button type="button" className={cn("link max-md:relative max-md:after:absolute max-md:after:-inset-3", className)} {...props} />;
 }
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {

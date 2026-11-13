@@ -132,7 +132,8 @@ export function Table({
   ...props
 }: HTMLAttributes<HTMLTableElement> & { maxHeight?: number | string }) {
   return (
-    <div className="overflow-auto" style={maxHeight ? { maxHeight } : undefined}>
+    // `relative` keeps absolutely positioned descendants (sr-only labels) inside the scroller instead of widening the page.
+    <div className="relative overflow-auto" style={maxHeight ? { maxHeight } : undefined}>
       <table className={cn("ledger", maxHeight && "ledger-sticky", className)} {...props}>
         {children}
       </table>

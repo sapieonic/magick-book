@@ -13,6 +13,9 @@ import {
 import { ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 
+/** Control height: 34px, or a 44px touch target with 16px text on phones (smaller text makes iOS zoom the page on focus). */
+const CONTROL_H = "h-[34px] max-md:h-11 max-md:text-[16px]";
+
 const CONTROL =
   "w-full rounded-control border border-line-strong bg-control px-2.5 text-ink-1 placeholder:text-ink-3 transition-[border-color,box-shadow] " +
   "focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent-tint disabled:opacity-60 " +
@@ -79,7 +82,7 @@ export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputE
   { className, ...props },
   ref,
 ) {
-  return <input ref={ref} className={cn(CONTROL, "h-[34px]", className)} {...props} />;
+  return <input ref={ref} className={cn(CONTROL, CONTROL_H, className)} {...props} />;
 });
 
 /** Rupee amount input: a muted ₹ prefix, numeric keypad, tabular figures. Read it with `parseAmount`. */
@@ -98,7 +101,7 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaHTMLAttributes<H
   { className, ...props },
   ref,
 ) {
-  return <textarea ref={ref} className={cn(CONTROL, "min-h-20 resize-y py-2", className)} {...props} />;
+  return <textarea ref={ref} className={cn(CONTROL, "min-h-20 resize-y py-2 max-md:text-[16px]", className)} {...props} />;
 });
 
 export const Select = forwardRef<HTMLSelectElement, SelectHTMLAttributes<HTMLSelectElement>>(function Select(
@@ -107,7 +110,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectHTMLAttributes<HTMLSel
 ) {
   return (
     <div className="relative">
-      <select ref={ref} className={cn(CONTROL, "h-[34px] cursor-pointer appearance-none pr-8", className)} {...props}>
+      <select ref={ref} className={cn(CONTROL, CONTROL_H, "cursor-pointer appearance-none pr-8", className)} {...props}>
         {children}
       </select>
       <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 size-4 -translate-y-1/2 text-ink-3" strokeWidth={1.5} aria-hidden />

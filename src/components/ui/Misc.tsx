@@ -26,7 +26,8 @@ export function PageLoader({ label = "Loading…" }: { label?: string }) {
 }
 
 export function Skeleton({ className, style }: { className?: string; style?: CSSProperties }) {
-  return <div className={cn("skeleton rounded-bar", className)} style={style} aria-hidden />;
+  // A span, so a skeleton can stand in for text inside a <p> without invalid nesting.
+  return <span className={cn("skeleton block rounded-bar", className)} style={style} aria-hidden />;
 }
 
 export function EmptyState({

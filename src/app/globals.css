@@ -51,13 +51,6 @@
   --color-lost-fill: #9aa0a8;
   --color-lost-tint: rgba(21, 24, 27, 0.07);
 
-  /* Stages are ordered, so they share one ramp (New → Won) */
-  --color-stage-1: #c9d4f5;
-  --color-stage-2: #9db0ec;
-  --color-stage-3: #6f8be0;
-  --color-stage-4: #3f62d2;
-  --color-stage-5: #2f9e62;
-
   /* Type (wired via next/font CSS variables in layout.tsx) */
   --font-sans: var(--font-plex-sans), ui-sans-serif, system-ui, sans-serif;
   --font-condensed: var(--font-plex-condensed), var(--font-plex-sans), ui-sans-serif, sans-serif;
@@ -92,6 +85,19 @@
   @keyframes mb-slide-in {
     from { transform: translateX(100%); }
   }
+}
+
+/*
+  Stages are ordered, so they share one ramp (New → Won). `static` because the
+  ramp is read through inline `var()` (stageColor), which Tailwind cannot see:
+  without it an unreferenced step is pruned and its band renders blank.
+*/
+@theme static {
+  --color-stage-1: #c9d4f5;
+  --color-stage-2: #9db0ec;
+  --color-stage-3: #6f8be0;
+  --color-stage-4: #3f62d2;
+  --color-stage-5: #2f9e62;
 }
 
 :root {
@@ -275,6 +281,17 @@
   }
   .ledger :is(th, td):last-child {
     padding-right: 0;
+  }
+  /* When a leading column is hidden (`hideOnPhone`, or below 2xl), the first one left showing sits flush too. */
+  @media (width < 45rem) {
+    .ledger :is(th, td):first-child.max-md\:hidden + :is(th, td) {
+      padding-left: 0;
+    }
+  }
+  @media (width < 96rem) {
+    .ledger :is(th, td):first-child.max-2xl\:hidden + :is(th, td) {
+      padding-left: 0;
+    }
   }
   .ledger :is(th, td).num {
     text-align: right;

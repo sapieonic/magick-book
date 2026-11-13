@@ -9,6 +9,8 @@ import type { OwnerOption } from "@/lib/leadFilters";
 
 export type { OwnerOption };
 
+const POPOVER_WIDTH = 288;
+
 /**
  * Owner (assignee) filter for the top bar. The trigger shows the selection as
  * an avatar stack and a name or count; clicking opens a searchable, multi-select
@@ -28,6 +30,8 @@ export function OwnerFilter({
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
+  // The popover hangs from the trigger's right edge unless that would push it off the left of the screen.
+  const [alignLeft, setAlignLeft] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const listId = useId();
@@ -80,13 +84,17 @@ export function OwnerFilter({
     <div ref={rootRef} className="relative">
       <button
         type="button"
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => {
+          const rect = rootRef.current?.getBoundingClientRect();
+          setAlignLeft(rect != null && rect.right < POPOVER_WIDTH + 12);
+          setOpen((o) => !o);
+        }}
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-controls={open ? listId : undefined}
         data-active={value.length > 0}
         className={cn(
-          "inline-flex h-[34px] max-w-56 items-center gap-2 rounded-control border px-2.5 text-[13px] font-medium transition-colors",
+          "inline-flex h-[34px] max-w-56 items-center gap-2 max-md:h-11 rounded-control border px-2.5 text-[13px] font-medium transition-colors",
           value.length > 0 ? "border-accent bg-accent-tint text-ink-1" : "border-line-strong bg-control text-ink-1 hover:bg-hover",
         )}
       >
@@ -113,7 +121,11 @@ export function OwnerFilter({
           role="listbox"
           aria-multiselectable
           aria-label="Owners"
-          className="absolute right-0 z-50 mt-2 w-72 max-w-[calc(100vw-24px)] animate-rise overflow-hidden rounded-card border border-line-strong bg-surface shadow-pop"
+          style={{ width: POPOVER_WIDTH }}
+          className={cn(
+            "absolute z-50 mt-2 max-w-[calc(100vw-24px)] animate-rise overflow-hidden rounded-card border border-line-strong bg-surface shadow-pop",
+            alignLeft ? "left-0" : "right-0",
+          )}
         >
           <div className="border-b border-line p-2">
             <div className="relative">

@@ -13,7 +13,7 @@ export interface TabItem<K extends string = string> {
 
 const tabClass = (active: boolean) =>
   cn(
-    "-mb-px whitespace-nowrap border-b-2 pb-2.5 transition-colors",
+    "-mb-px whitespace-nowrap border-b-2 pb-2.5 transition-colors max-md:pb-3 max-md:pt-2.5",
     active ? "border-ink-1 font-semibold text-ink-1" : "border-transparent text-ink-2 hover:text-ink-1",
   );
 

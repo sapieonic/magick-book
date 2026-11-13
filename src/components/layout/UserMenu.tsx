@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils";
 import { useSession } from "./SessionContext";
 import { SETTINGS_NAV } from "./nav";
 
-const ITEM = "flex w-full items-center gap-2.5 rounded-control px-2 py-[7px] text-left text-ink-2 transition-colors hover:bg-hover hover:text-ink-1";
+const ITEM = "flex w-full items-center gap-2.5 rounded-control px-2 py-[7px] text-left max-md:min-h-11 text-ink-2 transition-colors hover:bg-hover hover:text-ink-1";
 
 function MenuIcon({ icon: Icon }: { icon: LucideIcon }) {
   return <Icon className="size-[18px] shrink-0" strokeWidth={1.5} aria-hidden />;

@@ -45,7 +45,8 @@ export function AccountHeader({ account, actions, menu }: { account: AccountDTO;
           </p>
         )}
       </div>
-      <div className="flex flex-wrap items-center gap-2">
+      {/* Phones: the actions share one full-width row, the menu keeps its square. */}
+      <div className="flex flex-wrap items-center gap-2 max-md:w-full max-md:flex-nowrap max-md:[&>button]:min-w-0 max-md:[&>button]:flex-1 max-md:[&>button]:px-2">
         {actions}
         {menu.length > 0 && <OverflowMenu label="More account actions" items={menu} />}
       </div>

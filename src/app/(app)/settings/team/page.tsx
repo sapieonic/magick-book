@@ -76,7 +76,7 @@ export default function TeamPage() {
         title="Team & roles"
         actions={
           isAdmin && (
-            <Button variant="primary" onClick={() => setInviting(true)}>
+            <Button onClick={() => setInviting(true)}>
               <Plus className="size-4" strokeWidth={1.5} aria-hidden /> Invite
             </Button>
           )

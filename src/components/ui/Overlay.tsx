@@ -86,7 +86,7 @@ function Heading({ id, title, subtitle, onClose }: { id: string; title?: ReactNo
       <button
         type="button"
         onClick={onClose}
-        className="-mr-1.5 -mt-1 flex size-8 shrink-0 items-center justify-center rounded-control text-ink-3 transition-colors hover:bg-hover hover:text-ink-1"
+        className="-mr-1.5 -mt-1 flex size-8 shrink-0 max-md:size-11 items-center justify-center rounded-control text-ink-3 transition-colors hover:bg-hover hover:text-ink-1"
         aria-label="Close"
       >
         <X className="size-[18px]" strokeWidth={1.5} />

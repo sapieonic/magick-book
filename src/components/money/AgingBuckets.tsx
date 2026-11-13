@@ -47,7 +47,7 @@ export function AgingBuckets({
       {!owed ? (
         <p className="py-2 text-[13px] text-ink-2">Nothing outstanding. Every issued invoice is paid.</p>
       ) : (
-        <div className="flex flex-wrap gap-0.5">
+        <div className="flex flex-wrap items-start gap-0.5">
           {shares.map((b) => {
             const empty = b.count === 0;
             const active = selected === b.key;

@@ -29,7 +29,7 @@ export function DuePresets({ onPick, className }: { onPick: (local: string) => v
           key={p.label}
           type="button"
           onClick={() => onPick(toLocalInput(p.at()))}
-          className="rounded-full border border-line-strong bg-control px-2.5 py-0.5 text-[13px] text-ink-2 transition-colors hover:bg-hover hover:text-ink-1"
+          className="rounded-full border border-line-strong bg-control px-2.5 py-0.5 text-[13px] text-ink-2 transition-colors hover:bg-hover hover:text-ink-1 max-md:px-3.5 max-md:py-2"
         >
           {p.label}
         </button>

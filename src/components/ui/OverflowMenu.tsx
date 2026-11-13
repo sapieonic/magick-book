@@ -59,7 +59,7 @@ export function OverflowMenu({ label, items }: { label: string; items: MenuItem[
         aria-expanded={open}
         aria-controls={open ? menuId : undefined}
         onClick={() => setOpen((o) => !o)}
-        className="w-[34px] px-0"
+        className="w-[34px] px-0 max-md:w-11"
       >
         <MoreHorizontal className="size-4" strokeWidth={1.5} aria-hidden />
       </Button>
@@ -81,7 +81,7 @@ export function OverflowMenu({ label, items }: { label: string; items: MenuItem[
                 close();
                 item.onSelect();
               }}
-              className={cn("flex h-8 w-full items-center rounded-bar px-2.5 text-left hover:bg-hover", item.danger ? "text-overdue" : "text-ink-1")}
+              className={cn("flex h-8 w-full items-center rounded-bar px-2.5 text-left hover:bg-hover max-md:h-11", item.danger ? "text-overdue" : "text-ink-1")}
             >
               {item.label}
             </button>

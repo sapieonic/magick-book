@@ -210,7 +210,7 @@ export function StageLane({
                 onClick={onCollapse}
                 aria-expanded
                 aria-label={`Collapse ${label}`}
-                className="grid size-7 place-items-center rounded-control text-ink-3 transition-colors hover:bg-hover hover:text-ink-1"
+                className="-my-1.5 -mr-1.5 grid size-7 place-items-center rounded-control text-ink-3 transition-colors hover:bg-hover hover:text-ink-1"
               >
                 <ChevronsRight className="size-4" strokeWidth={1.5} aria-hidden />
               </button>

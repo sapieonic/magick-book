@@ -48,15 +48,16 @@ export default function RemindersSettingsPage() {
     }
   }
 
-  const newReminder = (
-    <Button variant="primary" onClick={() => setCreating(true)}>
+  // Secondary in the top bar (the ink button there is the shell's "New"); primary as the empty state's call to action.
+  const newReminder = (variant?: "primary") => (
+    <Button variant={variant} onClick={() => setCreating(true)}>
       <Plus className="size-4" strokeWidth={1.5} aria-hidden /> New reminder
     </Button>
   );
 
   return (
     <>
-      <SettingsHeader title="Reminders" actions={newReminder} />
+      <SettingsHeader title="Reminders" actions={newReminder()} />
 
       <PageSplit
         railLabel="Your reminders"
@@ -82,7 +83,7 @@ export default function RemindersSettingsPage() {
                 icon={<BellRing className="size-6" strokeWidth={1.5} aria-hidden />}
                 title="No reminders yet"
                 description="Set one here, or from any lead or account. It calls your webhook when due."
-                action={newReminder}
+                action={newReminder("primary")}
               />
             ) : (
               <ul>
