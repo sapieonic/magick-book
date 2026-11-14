@@ -28,5 +28,5 @@ export async function proxy(req: NextRequest) {
 export const config = {
   // Protect app pages; skip API (handlers guard themselves), static assets,
   // and the onboarding route (it has its own server-side gating).
-  matcher: ["/((?!api|_next/static|_next/image|favicon.ico|icon.svg).*)"],
+  matcher: ["/((?!api|_next/static|_next/image|favicon.ico|logo.png|icon.png).*)"],
 };

@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="src/app/icon.svg" width="84" alt="MagickBook" />
+  <img src="public/logo.png" width="84" alt="MagickBook" />
   <h1>MagickBook CRM</h1>
   <p><em>Your whole book of business, in one place.</em></p>
   <p>Leads → accounts → invoices &amp; expenses. A full-stack Next.js CRM.</p>
