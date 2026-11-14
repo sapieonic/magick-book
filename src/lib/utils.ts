@@ -12,6 +12,11 @@ export function formatINR(amount: number): string {
   return "₹" + new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 }).format(Math.round(amount));
 }
 
+/** "1,10,000" or "₹ 6200" → 110000 / 6200; anything unparseable → 0. */
+export function parseAmount(raw: string): number {
+  return Number(raw.replace(/[^\d.]/g, "")) || 0;
+}
+
 /** Human-readable file size, e.g. 824 KB, 3.1 MB. */
 export function formatBytes(bytes?: number | null): string {
   if (!bytes || bytes <= 0) return "—";
@@ -47,44 +52,6 @@ export function initials(name: string): string {
     .join("");
 }
 
-/**
- * Deterministic avatar tint from a string. Returns a tailwind-ish inline style
- * pair (bg + fg) so the same person always gets the same color.
- */
-const AVATAR_TINTS = [
-  ["#e6e2fd", "#4a39c9"],
-  ["#e4f6ec", "#15803d"],
-  ["#fbf0d8", "#b45309"],
-  ["#e3eefb", "#1d4ed8"],
-  ["#fbe6e3", "#be3a31"],
-  ["#f3e8fd", "#7e22ce"],
-  ["#ddf4f1", "#0f766e"],
-];
-export function avatarTint(seed: string): { bg: string; fg: string } {
-  let h = 0;
-  for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0;
-  const [bg, fg] = AVATAR_TINTS[h % AVATAR_TINTS.length];
-  return { bg, fg };
-}
-
-/**
- * Lead value tier — one colour band per ₹25k, low → high, capped at 4.
- * Bands are half-open: tier 0 = [0,25k), 1 = [25k,50k), 2 = [50k,75k),
- * 3 = [75k,100k), 4 = ≥100k. Returns -1 when there is no estimated value.
- * Pairs with the --color-tier{0..4} tokens to colour board cards by deal size.
- */
-export function valueTier(estValue: number): number {
-  if (!estValue || estValue <= 0) return -1;
-  return Math.min(4, Math.floor(estValue / 25000));
-}
-
-/** Absolute, locale-aware timestamp for tooltips, e.g. "1 Jun 2026, 4:05 pm". */
-export function absoluteTime(date: Date | string): string {
-  const d = typeof date === "string" ? new Date(date) : date;
-  if (Number.isNaN(d.getTime())) return "";
-  return d.toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" });
-}
-
 /** "2h ago", "3d ago", "1mo ago" — short relative time. */
 export function relativeTime(date: Date | string): string {
   const d = typeof date === "string" ? new Date(date) : date;
@@ -100,3 +67,22 @@ export function relativeTime(date: Date | string): string {
   if (mo < 12) return `${mo}mo ago`;
   return `${Math.round(mo / 12)}y ago`;
 }
+
+/** "1 lead" / "3 leads"; pass `many` for irregular plurals. */
+export function plural(n: number, one: string, many = `${one}s`): string {
+  return `${n} ${n === 1 ? one : many}`;
+}
+
+/** An age written in words: "Today", "1 day", "17 days", "3 months", "2 years". */
+export function ageInWords(days: number): string {
+  if (days < 1) return "Today";
+  if (days < 30) return plural(days, "day");
+  if (days < 365) return plural(Math.floor(days / 30), "month");
+  return plural(Math.floor(days / 365), "year");
+}
+
+/** "today" or "17 days ago": an age for the middle of a sentence. */
+export function agoInWords(days: number): string {
+  return days < 1 ? "today" : `${ageInWords(days).toLowerCase()} ago`;
+}
+

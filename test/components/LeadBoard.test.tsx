@@ -1,11 +1,17 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, within, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { LeadDTO } from "@/lib/types";
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), prefetch: vi.fn() }),
+}));
+
+const { patch, post } = vi.hoisted(() => ({ patch: vi.fn(), post: vi.fn() }));
+vi.mock("@/lib/client", () => ({
+  api: { patch, post, get: vi.fn(), put: vi.fn(), delete: vi.fn() },
+  useApi: () => ({ data: null, loading: false, error: null, refresh: vi.fn(), setData: vi.fn() }),
 }));
 
 import { LeadBoard } from "@/components/leads/LeadBoard";
@@ -48,57 +54,235 @@ function lead(over: Partial<LeadDTO>): LeadDTO {
   };
 }
 
-function renderBoard(leads: LeadDTO[]) {
-  return render(
+function renderBoard(leads: LeadDTO[], props: Partial<React.ComponentProps<typeof LeadBoard>> = {}) {
+  const onShowLost = vi.fn();
+  render(
     <ToastProvider>
-      <LeadBoard leads={leads} onAdd={vi.fn()} onChanged={vi.fn()} />
+      <LeadBoard leads={leads} lostCount={4} onAdd={vi.fn()} onShowLost={onShowLost} {...props} />
     </ToastProvider>,
   );
+  return { onShowLost };
 }
+
+const laneNames = (stage: string) => within(screen.getByTestId(`col-${stage}`)).getAllByRole("link").map((a) => a.textContent);
 
 beforeEach(() => {
   localStorage.clear();
+  vi.clearAllMocks();
+  patch.mockResolvedValue({});
+});
+
+describe("LeadBoard lanes", () => {
+  it("renders the five funnel lanes with step, name, count and value", () => {
+    renderBoard([lead({ id: "n1", stage: "new", estValue: 50000 }), lead({ id: "n2", stage: "new", estValue: 50000 })]);
+    const heading = within(screen.getByTestId("col-new")).getByRole("heading");
+    expect(heading).toHaveTextContent("1 New 2");
+    expect(within(screen.getByTestId("col-new")).getByText("1L", { exact: false })).toBeInTheDocument();
+    for (const s of ["contacted", "qualified", "proposal", "won"]) expect(screen.getByTestId(`col-${s}`)).toBeInTheDocument();
+  });
+
+  it("fills each header rule in proportion to the stage's share of pipeline value", () => {
+    renderBoard([lead({ id: "n1", stage: "new", estValue: 25000 }), lead({ id: "w1", stage: "won", estValue: 75000 })]);
+    expect(within(screen.getByTestId("col-new")).getByRole("img")).toHaveAccessibleName("25% of pipeline value");
+    expect(within(screen.getByTestId("col-won")).getByRole("img")).toHaveAccessibleName("75% of pipeline value");
+    expect(within(screen.getByTestId("col-proposal")).getByRole("img")).toHaveAccessibleName("0% of pipeline value");
+  });
+
+  it("caps a long lane and reveals the rest with the value still hidden", async () => {
+    const user = userEvent.setup();
+    const many = Array.from({ length: 8 }, (_, i) => lead({ id: `n${i}`, name: `Lead ${i}`, order: i, estValue: 10000 }));
+    renderBoard(many);
+    expect(screen.queryByText("Lead 7")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "2 more · ₹20k" }));
+    expect(screen.getByText("Lead 7")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Show fewer" })).toBeInTheDocument();
+  });
+
+  it("shows Won as compact rows with a link to the converted account", () => {
+    renderBoard([lead({ id: "w1", name: "Won Deal", stage: "won", convertedAccountId: "acc9" })]);
+    const won = screen.getByTestId("col-won");
+    expect(within(won).getByRole("link", { name: "View account" })).toHaveAttribute("href", "/accounts/acc9");
+  });
+});
+
+describe("LeadBoard empty stages", () => {
+  it("suggests the previous stage's leads and moves one in", async () => {
+    const user = userEvent.setup();
+    renderBoard([
+      lead({ id: "q1", name: "Naresh", stage: "qualified", estValue: 50000 }),
+      lead({ id: "q2", name: "Ramkumar", stage: "qualified", estValue: 40000 }),
+    ]);
+    const proposal = screen.getByTestId("col-proposal");
+    expect(within(proposal).getByText("Nothing in proposal")).toBeInTheDocument();
+    expect(within(proposal).getByText(/are waiting/)).toHaveTextContent("2 qualified leads worth ₹90k are waiting. Send a proposal to move them here.");
+
+    await user.click(within(proposal).getByRole("button", { name: "Move Naresh to Proposal" }));
+    // An empty lane: no neighbour to place against.
+    expect(patch).toHaveBeenCalledWith("/api/leads/q1/stage", { stage: "proposal" });
+    expect(within(screen.getByTestId("col-proposal")).getByRole("link", { name: "Naresh" })).toBeInTheDocument();
+  });
+});
+
+describe("LeadBoard keyboard moves", () => {
+  it("moves a focused card with the number keys and opens the lost dialog with L", async () => {
+    const user = userEvent.setup();
+    renderBoard([lead({ id: "n1", name: "Asha", stage: "new" }), lead({ id: "q1", name: "Naresh", stage: "qualified" })]);
+
+    screen.getByRole("link", { name: "Asha" }).focus();
+    await user.keyboard("3");
+    // To the top of the lane: placed above the first card there.
+    expect(patch).toHaveBeenCalledWith("/api/leads/n1/stage", { stage: "qualified", afterId: "q1" });
+    expect(laneNames("qualified")).toEqual(["Asha", "Naresh"]);
+
+    within(screen.getByTestId("col-qualified")).getByRole("link", { name: "Asha" }).focus();
+    await user.keyboard("l");
+    const dialog = screen.getByRole("dialog", { name: "Mark as lost" });
+    await user.click(within(dialog).getByRole("button", { name: "Price" }));
+    expect(patch).toHaveBeenLastCalledWith("/api/leads/n1/stage", { stage: "lost", lostReason: "Price" });
+    // Gone from the board straight away, before the page's reload lands.
+    await waitFor(() => expect(screen.queryByRole("link", { name: "Asha" })).not.toBeInTheDocument());
+  });
+
+  it("keeps focus on the board when P parks a card into the collapsed Parked lane", async () => {
+    const user = userEvent.setup();
+    renderBoard([lead({ id: "n1", name: "Asha", stage: "new", order: 0 }), lead({ id: "n2", name: "Bela", stage: "new", order: 1 })]);
+
+    screen.getByRole("link", { name: "Asha" }).focus();
+    await user.keyboard("p");
+    expect(patch).toHaveBeenCalledWith("/api/leads/n1/stage", { stage: "parked" });
+    // Asha is out of sight in the folded lane: the card that took her place gets focus.
+    await waitFor(() => expect(screen.getByRole("link", { name: "Bela" })).toHaveFocus());
+
+    await user.keyboard("p");
+    // The lane is empty now, so focus lands on the Parked shelf that holds both.
+    await waitFor(() => expect(screen.getByRole("button", { name: /Parked 2/ })).toHaveFocus());
+  });
+
+  it("describes the shortcuts to assistive tech", () => {
+    renderBoard([lead({ id: "n1", name: "Asha" })]);
+    expect(screen.getByRole("link", { name: "Asha" })).toHaveAccessibleDescription(/Press 1 to 5/);
+  });
 });
 
 describe("LeadBoard parked + collapsible columns", () => {
-  it("renders a Parked lane and collapses it by default", () => {
-    renderBoard([
-      lead({ id: "n1", name: "Active One", stage: "new" }),
-      lead({ id: "p1", name: "Hari Nair", stage: "parked" }),
-    ]);
-
-    const parked = screen.getByTestId("col-parked");
-    expect(parked).toHaveAttribute("data-collapsed", "true");
-    expect(within(parked).getByText("Parked")).toBeInTheDocument();
+  it("keeps Parked collapsed by default behind the shelf toggle", () => {
+    renderBoard([lead({ id: "n1", name: "Active One", stage: "new" }), lead({ id: "p1", name: "Hari Nair", stage: "parked" })]);
+    const toggle = screen.getByRole("button", { name: /Parked 1/ });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByTestId("col-parked")).not.toBeInTheDocument();
     expect(screen.queryByText("Hari Nair")).not.toBeInTheDocument();
-    expect(screen.getByText("Active One")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Active One" })).toBeInTheDocument();
   });
 
-  it("expands the parked lane to show its cards", async () => {
+  it("expands the parked lane from the shelf, and collapses it again", async () => {
     const user = userEvent.setup();
     renderBoard([lead({ id: "p1", name: "Hari Nair", stage: "parked" })]);
 
-    await user.click(screen.getByRole("button", { name: "Expand Parked" }));
-
-    const parked = screen.getByTestId("col-parked");
-    expect(parked).toHaveAttribute("data-collapsed", "false");
+    await user.click(screen.getByRole("button", { name: /Parked 1/ }));
+    expect(screen.getByTestId("col-parked")).toHaveAttribute("data-collapsed", "false");
     expect(screen.getByText("Hari Nair")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Collapse Parked" }));
+    expect(screen.queryByText("Hari Nair")).not.toBeInTheDocument();
   });
 
   it("lets Won collapse to a slim rail, and keeps sequential lanes expanded", async () => {
     const user = userEvent.setup();
-    renderBoard([
-      lead({ id: "n1", name: "New Lead", stage: "new" }),
-      lead({ id: "w1", name: "Won Deal", stage: "won" }),
-    ]);
+    renderBoard([lead({ id: "n1", name: "New Lead", stage: "new" }), lead({ id: "w1", name: "Won Deal", stage: "won" })]);
 
-    expect(screen.getByTestId("col-new")).toHaveAttribute("data-collapsed", "false");
-    expect(screen.getByTestId("col-won")).toHaveAttribute("data-collapsed", "false");
     expect(screen.queryByRole("button", { name: "Collapse New" })).not.toBeInTheDocument();
-
     await user.click(screen.getByRole("button", { name: "Collapse Won" }));
     expect(screen.getByTestId("col-won")).toHaveAttribute("data-collapsed", "true");
     expect(screen.queryByText("Won Deal")).not.toBeInTheDocument();
-    expect(screen.getByText("New Lead")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Expand Won" }));
+    expect(screen.getByText("Won Deal")).toBeInTheDocument();
+  });
+
+  it("opens and highlights the lane named by ?stage=, even when it was collapsed", () => {
+    localStorage.setItem("mb.leads.board.collapsed", JSON.stringify(["won", "parked"]));
+    renderBoard([lead({ id: "p1", name: "Hari Nair", stage: "parked" })], { focusStage: "parked" });
+    expect(screen.getByTestId("col-parked")).toHaveAttribute("data-collapsed", "false");
+    expect(screen.getByText("Hari Nair")).toBeInTheDocument();
+    expect(screen.getByTestId("col-won")).toHaveAttribute("data-collapsed", "true");
+  });
+
+  it("marks a focused funnel lane", () => {
+    renderBoard([lead({})], { focusStage: "qualified" });
+    expect(screen.getByTestId("col-qualified")).toHaveAttribute("data-focused", "true");
+    expect(screen.getByTestId("col-new")).not.toHaveAttribute("data-focused");
+  });
+
+  it("opens the Lost view from the shelf", async () => {
+    const user = userEvent.setup();
+    const { onShowLost } = renderBoard([lead({})]);
+    await user.click(screen.getByRole("button", { name: /Lost 4/ }));
+    expect(onShowLost).toHaveBeenCalled();
+  });
+});
+
+describe("LeadBoard inline quick-add", () => {
+  it("adds a lead straight into the column's stage", async () => {
+    const user = userEvent.setup();
+    post.mockResolvedValueOnce({ lead: lead({ id: "x", name: "Meera", stage: "contacted" }) });
+    renderBoard([lead({ id: "c1", name: "Older", stage: "contacted", createdAt: "2026-01-01T00:00:00.000Z" })]);
+    const contacted = screen.getByTestId("col-contacted");
+
+    await user.click(within(contacted).getByRole("button", { name: "Add lead" }));
+    const form = within(contacted).getByRole("form", { name: "Add a lead to Contacted" });
+    await user.click(within(form).getByRole("button", { name: "Add" }));
+    expect(within(form).getByRole("alert")).toHaveTextContent("Add a name and a phone number.");
+    expect(post).not.toHaveBeenCalled();
+
+    await user.type(within(form).getByRole("textbox", { name: "Contact name" }), "Meera");
+    await user.type(within(form).getByRole("textbox", { name: "Phone" }), "+91 98765 43210");
+    await user.type(within(form).getByRole("textbox", { name: "Est. value (₹)" }), "45,000");
+    await user.click(within(form).getByRole("button", { name: "Add" }));
+
+    expect(post).toHaveBeenCalledWith("/api/leads", { name: "Meera", company: "", phone: "+91 98765 43210", estValue: 45000, stage: "contacted" });
+    // Shown at once in its lane slot (order 0, newest last), ahead of the page's reload.
+    await waitFor(() => expect(laneNames("contacted")).toEqual(["Older", "Meera"]));
+  });
+});
+
+describe("LeadBoard stage jump (tablet)", () => {
+  it("offers the five stages as jump tabs that scroll their lane into view", async () => {
+    const user = userEvent.setup();
+    const scrollIntoView = vi.fn();
+    Element.prototype.scrollIntoView = scrollIntoView;
+    renderBoard([lead({ id: "q1", name: "Asha", stage: "qualified", estValue: 90000 })]);
+    const nav = screen.getByRole("navigation", { name: "Stages" });
+    const tabs = within(nav).getAllByRole("button");
+    expect(tabs.map((t) => t.textContent!.replace(/\s+/g, " "))).toEqual(["1 New0–", "2 Contacted0–", "3 Qualified1₹90k", "4 Proposal0–", "5 Won0–"]);
+
+    scrollIntoView.mockClear();
+    await user.click(tabs[2]);
+    expect(scrollIntoView).toHaveBeenCalledTimes(1);
+    expect(scrollIntoView.mock.contexts[0]).toBe(screen.getByTestId("col-qualified"));
+  });
+});
+
+describe("LeadBoard on phones", () => {
+  it("shows one stage at a time behind a stage switch", async () => {
+    const user = userEvent.setup();
+    const original = window.matchMedia;
+    window.matchMedia = ((query: string) => ({
+      matches: true,
+      media: query,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    })) as unknown as typeof window.matchMedia;
+    try {
+      renderBoard([lead({ id: "n1", name: "Asha", stage: "new" }), lead({ id: "c1", name: "Bela", stage: "contacted" })]);
+      expect(screen.getByRole("radiogroup", { name: "Stage" })).toBeInTheDocument();
+      expect(screen.getByRole("link", { name: "Asha" })).toBeInTheDocument();
+      expect(screen.queryByTestId("col-contacted")).not.toBeInTheDocument();
+
+      await user.click(screen.getByRole("radio", { name: "Contacted" }));
+      expect(screen.getByRole("link", { name: "Bela" })).toBeInTheDocument();
+      expect(screen.queryByRole("link", { name: "Asha" })).not.toBeInTheDocument();
+    } finally {
+      window.matchMedia = original;
+    }
   });
 });

@@ -1,5 +1,5 @@
 import { type NextRequest } from "next/server";
-import { ok, route, serializeLead } from "@/lib/api";
+import { fail, ok, route, serializeLead } from "@/lib/api";
 import { connectDB } from "@/lib/db";
 import { Lead, Activity, type ILead } from "@/lib/models";
 import { requireUser } from "@/lib/auth/server";
@@ -7,6 +7,7 @@ import { leadScope } from "@/lib/rbac";
 import { logActivity, ownerNameMap, audit } from "@/lib/services";
 import { LEAD_STAGES } from "@/lib/constants";
 import { resolveLeadCategory } from "@/lib/lead-categories";
+import { LANE_SORT } from "@/lib/leadFilters";
 import { Types } from "mongoose";
 
 // GET /api/leads — all leads visible to the user (board + table).
@@ -27,7 +28,7 @@ export const GET = route(async (req: NextRequest) => {
   }
   if (category) filter.category = category;
 
-  const leads = await Lead.find(filter).sort({ stage: 1, order: 1, createdAt: -1 }).lean<ILead[]>();
+  const leads = await Lead.find(filter).sort({ stage: 1, ...LANE_SORT }).lean<ILead[]>();
 
   // Comment ("note") counts per lead, in one indexed group query, for the board card badges.
   const noteCounts = await Activity.aggregate<{ _id: Types.ObjectId; count: number }>([
@@ -47,7 +48,7 @@ export const POST = route(async (req: NextRequest) => {
   const user = await requireUser();
   await connectDB();
   const b = await req.json().catch(() => ({}));
-  if (!b.name?.trim()) return ok({ error: "Contact name is required" }, 400);
+  if (!b.name?.trim()) return fail("Contact name is required");
 
   const stage = LEAD_STAGES.includes(b.stage) ? b.stage : "new";
   const category = (await resolveLeadCategory(user.workspaceId, b.category, { mode: "create" }))!;

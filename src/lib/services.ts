@@ -1,8 +1,72 @@
 import "server-only";
 import { Types } from "mongoose";
-import { Activity, AuditLog, Invoice, Expense, User, type IUser } from "./models";
-import type { ActivityKind, AuditAction, AuditEntity } from "./constants";
-import type { AccountFinance, AuditChange } from "./types";
+import { Account, Activity, AuditLog, Invoice, Expense, Lead, User, type IAccount, type IAuditLog, type IExpense, type ILead, type IUser } from "./models";
+import { LEAD_STAGES, type ActivityKind, type AuditAction, type AuditEntity, type LeadStage } from "./constants";
+import type { AccountFinance, AuditChange, LeadStageSpan } from "./types";
+import { HttpError } from "./api";
+import { accountScope, leadScope } from "./rbac";
+import { OUTSTANDING_STATUSES, marginOf, overdueExpr } from "./receivables";
+import { isoDay } from "./dates";
+
+/**
+ * Resolve an account the user can see, or throw a 404. `"read"` also resolves
+ * an archived account, so its page and tabs stay viewable; `"write"` sees only
+ * live accounts, so nothing under an archived account changes until it is
+ * restored. Callers still check `canEditOwned()` before mutating.
+ */
+export async function loadAccount(user: IUser, id: string | Types.ObjectId, access: "read" | "write"): Promise<IAccount> {
+  const acc = Types.ObjectId.isValid(id)
+    ? await Account.findOne({ _id: id, ...accountScope(user, { archived: access === "read" ? "any" : false }) }).lean<IAccount>()
+    : null;
+  if (!acc) throw new HttpError("Account not found", 404);
+  return acc;
+}
+
+/** Lead counterpart of `loadAccount`: `"read"` also finds an archived lead, `"write"` only a live one. */
+export async function loadLead(user: IUser, id: string | Types.ObjectId, access: "read" | "write"): Promise<ILead> {
+  const lead = Types.ObjectId.isValid(id)
+    ? await Lead.findOne({ _id: id, ...leadScope(user, { archived: access === "read" ? "any" : false }) }).lean<ILead>()
+    : null;
+  if (!lead) throw new HttpError("Lead not found", 404);
+  return lead;
+}
+
+/**
+ * An expense date is a calendar day, not a moment. It is stored at UTC
+ * midnight of its IST day, the instant a date-only string like "2026-11-14"
+ * parses to (05:30 IST that same day), so `isoDay()` round-trips it.
+ */
+export function expenseDay(d: Date | string = new Date()): Date {
+  return new Date(isoDay(d));
+}
+
+const EXPENSE_VENDOR_MAX = 200;
+
+/**
+ * The validated expense fields present on a request body, shared by create
+ * and edit. Throws a 400 naming the first bad one. Category is the caller's:
+ * create falls back to "Other", edit rejects an unknown one.
+ */
+export function expenseFields(b: Record<string, unknown>): Partial<Pick<IExpense, "amount" | "vendor" | "billable" | "date">> {
+  const out: Partial<Pick<IExpense, "amount" | "vendor" | "billable" | "date">> = {};
+  if (b.amount !== undefined) {
+    const amount = Number(b.amount);
+    if (!Number.isFinite(amount) || amount <= 0) throw new HttpError("A positive amount is required");
+    out.amount = amount;
+  }
+  if (typeof b.vendor === "string") {
+    const vendor = b.vendor.trim();
+    if (vendor.length > EXPENSE_VENDOR_MAX) throw new HttpError(`Keep the vendor or note to ${EXPENSE_VENDOR_MAX} characters`);
+    out.vendor = vendor;
+  }
+  if (typeof b.billable === "boolean") out.billable = b.billable;
+  if (b.date !== undefined) {
+    const date = typeof b.date === "string" ? new Date(b.date) : null;
+    if (!date || Number.isNaN(date.getTime())) throw new HttpError("A valid date is required");
+    out.date = expenseDay(date);
+  }
+  return out;
+}
 
 /** Append an activity/timeline entry. */
 export async function logActivity(opts: {
@@ -80,28 +144,54 @@ export async function ownerNameMap(ids: (Types.ObjectId | string)[]): Promise<Ma
   return new Map(users.map((u) => [String(u._id), u.name]));
 }
 
-/** Roll up an account's money: billed / paid / outstanding / expenses / margin. */
-export async function accountFinance(accountId: Types.ObjectId | string): Promise<AccountFinance> {
-  const accId = new Types.ObjectId(accountId);
+export const NO_FINANCE: AccountFinance = { billed: 0, paid: 0, outstanding: 0, overdue: 0, expenses: 0, margin: 0 };
+
+/**
+ * Money rollup for many accounts at once (list views): one `$group` over
+ * invoices and one over expenses, summed in the database. "Overdue" is
+ * `overdueExpr`, the database form of `isOverdue` in receivables.ts, so it
+ * means the same here as on Today and Money. Accounts with no money rows are
+ * absent from the map.
+ */
+export async function accountFinances(accountIds: Types.ObjectId[], now = new Date()): Promise<Map<string, AccountFinance>> {
+  if (!accountIds.length) return new Map();
+  const match = { accountId: { $in: accountIds }, deletedAt: null };
+  const sumIf = (cond: unknown) => ({ $sum: { $cond: [cond, "$amount", 0] } });
   const [invoiceAgg, expenseAgg] = await Promise.all([
-    Invoice.aggregate<{ _id: string; total: number }>([
-      { $match: { accountId: accId, deletedAt: null } },
-      { $group: { _id: "$status", total: { $sum: "$amount" } } },
+    Invoice.aggregate<{ _id: Types.ObjectId; billed: number; paid: number; outstanding: number; overdue: number }>([
+      { $match: { ...match, status: { $ne: "draft" } } },
+      {
+        $group: {
+          _id: "$accountId",
+          billed: { $sum: "$amount" },
+          paid: sumIf({ $eq: ["$status", "paid"] }),
+          outstanding: sumIf({ $in: ["$status", [...OUTSTANDING_STATUSES]] }),
+          overdue: sumIf(overdueExpr(now)),
+        },
+      },
     ]),
-    Expense.aggregate<{ _id: null; total: number }>([
-      { $match: { accountId: accId, deletedAt: null } },
-      { $group: { _id: null, total: { $sum: "$amount" } } },
+    Expense.aggregate<{ _id: Types.ObjectId; total: number }>([
+      { $match: match },
+      { $group: { _id: "$accountId", total: { $sum: "$amount" } } },
     ]),
   ]);
 
-  const byStatus = new Map(invoiceAgg.map((r) => [r._id, r.total]));
-  const billed = (byStatus.get("sent") ?? 0) + (byStatus.get("paid") ?? 0) + (byStatus.get("overdue") ?? 0);
-  const paid = byStatus.get("paid") ?? 0;
-  const outstanding = (byStatus.get("sent") ?? 0) + (byStatus.get("overdue") ?? 0);
-  const expenses = expenseAgg[0]?.total ?? 0;
-  const margin = billed > 0 ? Math.max(0, (billed - expenses) / billed) : 0;
+  const out = new Map<string, AccountFinance>();
+  for (const { _id, billed, paid, outstanding, overdue } of invoiceAgg) {
+    out.set(String(_id), { billed, paid, outstanding, overdue, expenses: 0, margin: 0 });
+  }
+  for (const { _id, total } of expenseAgg) {
+    const key = String(_id);
+    out.set(key, { ...(out.get(key) ?? NO_FINANCE), expenses: total });
+  }
+  for (const f of out.values()) f.margin = marginOf(f.billed, f.expenses);
+  return out;
+}
 
-  return { billed, paid, outstanding, expenses, margin };
+/** One account's money rollup (see `accountFinances`). */
+export async function accountFinance(accountId: Types.ObjectId | string): Promise<AccountFinance> {
+  const id = new Types.ObjectId(accountId);
+  return (await accountFinances([id])).get(String(id)) ?? NO_FINANCE;
 }
 
 /** Next sequential invoice number for a workspace (starts at 1001). */
@@ -111,4 +201,31 @@ export async function nextInvoiceNumber(workspaceId: Types.ObjectId | string): P
     .select("number")
     .lean<{ number: number }>();
   return last ? last.number + 1 : 1001;
+}
+
+const isLeadStage = (v: unknown): v is LeadStage => LEAD_STAGES.includes(v as LeadStage);
+
+/**
+ * How long a lead spent in each stage, oldest first. Folds every recorded
+ * `stage` diff on the lead's audit trail (lane moves, edits, conversion) in
+ * one indexed query. A lead with no recorded move gets a single open span
+ * starting at `createdAt`.
+ */
+export async function leadStageSpans(lead: Pick<ILead, "_id" | "workspaceId" | "stage" | "createdAt">): Promise<LeadStageSpan[]> {
+  const entries = await AuditLog.find({ workspaceId: lead.workspaceId, leadId: lead._id, "changes.field": "stage" })
+    .sort({ createdAt: 1 })
+    .select({ changes: 1, createdAt: 1 })
+    .lean<Pick<IAuditLog, "changes" | "createdAt">[]>();
+  const moves = entries.flatMap((e) => e.changes.filter((c) => c.field === "stage").map((c) => ({ ...c, at: e.createdAt })));
+
+  const spans: LeadStageSpan[] = [];
+  const firstFrom = moves[0]?.from;
+  let open = { stage: isLeadStage(firstFrom) ? firstFrom : lead.stage, enteredAt: lead.createdAt };
+  for (const m of moves) {
+    if (!isLeadStage(m.to) || m.to === open.stage) continue;
+    spans.push({ stage: open.stage, enteredAt: open.enteredAt.toISOString(), leftAt: m.at.toISOString() });
+    open = { stage: m.to, enteredAt: m.at };
+  }
+  spans.push({ stage: open.stage, enteredAt: open.enteredAt.toISOString(), leftAt: null });
+  return spans;
 }

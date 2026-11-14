@@ -1,60 +1,45 @@
 "use client";
-import { use, useState } from "react";
+import { use, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import {
-  Phone,
-  MessageCircle,
-  Mail,
-  MessageSquare,
-  Check,
-  Pencil,
-  ArrowRight,
-  Ban,
-  Building2,
-  ChevronRight,
-  Plus,
-  Archive,
-  Loader2,
-  BellRing,
-  Webhook,
-  CirclePause,
-} from "lucide-react";
-import { PageHeader } from "@/components/layout/Sidebar";
+import { Archive, Pencil } from "lucide-react";
+import { Page, PageSplit } from "@/components/layout/Page";
+import { PageHeader } from "@/components/layout/PageHeader";
 import { useSession } from "@/components/layout/SessionContext";
 import { ActivityTimeline } from "@/components/ActivityTimeline";
-import { AuditTimeline } from "@/components/AuditTimeline";
+import { NoteComposer, type ComposerKind } from "@/components/activity/NoteComposer";
 import { AddLeadDrawer } from "@/components/leads/AddLeadDrawer";
-import { CategoryBadge } from "@/components/leads/CategoryBadge";
 import { ConvertModal } from "@/components/leads/ConvertModal";
-import { NoteComposer } from "@/components/activity/NoteComposer";
+import { LostLeadModal } from "@/components/leads/LostLeadModal";
+import { LeadDetailSkeleton } from "@/components/leads/detail/LeadDetailSkeleton";
+import { LeadFacts } from "@/components/leads/detail/LeadFacts";
+import { LeadHero } from "@/components/leads/detail/LeadHero";
+import { LeadHistory } from "@/components/leads/detail/LeadHistory";
+import { NextStepPanel } from "@/components/leads/detail/NextStepPanel";
+import { StageTrack } from "@/components/leads/detail/StageTrack";
 import { ReminderModal } from "@/components/reminders/ReminderModal";
 import { LeadWebhookModal } from "@/components/reminders/LeadWebhookModal";
-import { Avatar } from "@/components/ui/Avatar";
-import { Badge } from "@/components/ui/Badge";
-import { Button } from "@/components/ui/Button";
-import { Card, PageLoader, ErrorState } from "@/components/ui/Misc";
-import { Modal } from "@/components/ui/Overlay";
-import { Textarea, Field } from "@/components/ui/Field";
-import { useToast } from "@/components/ui/Toast";
+import { Badge, StatusPill } from "@/components/ui/Badge";
+import { Button, buttonClasses } from "@/components/ui/Button";
+import { ErrorState } from "@/components/ui/Misc";
+import { Panel } from "@/components/ui/Panel";
+import { stageColor } from "@/components/ui/stage";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
+import { useToast } from "@/components/ui/Toast";
 import { api, useApi } from "@/lib/client";
-import { PIPELINE_STAGES, STAGE_META } from "@/lib/constants";
-import type { BoardStage, PipelineStage } from "@/lib/constants";
-import { formatINR, cn } from "@/lib/utils";
-import type { LeadDTO, ActivityDTO, AuditLogDTO } from "@/lib/types";
+import { STAGE_META, isOpenLeadStage, type BoardStage } from "@/lib/constants";
+import { plural } from "@/lib/utils";
+import { daysSince, shortDate } from "@/lib/dates";
+import type { AuditLogDTO, LeadDTO, LeadDetail } from "@/lib/types";
 
-interface LeadResponse {
-  lead: LeadDTO;
-  activities: ActivityDTO[];
+const COMPOSER_KINDS: ComposerKind[] = ["call", "note", "email", "meeting", "whatsapp", "sms"];
+const BREADCRUMB = [{ label: "Leads", href: "/leads" }];
+
+function StageChip({ lead }: { lead: LeadDTO }) {
+  if (lead.deletedAt) return <StatusPill tone="lost">Archived</StatusPill>;
+  if (lead.stage === "won" || lead.stage === "lost" || lead.stage === "parked") return <StatusPill status={lead.stage} />;
+  return <Badge dot={stageColor(lead.stage)}>{STAGE_META[lead.stage].label}</Badge>;
 }
-
-const REACH = [
-  { method: "call", label: "Call", icon: Phone },
-  { method: "whatsapp", label: "WhatsApp", icon: MessageCircle },
-  { method: "email", label: "Email", icon: Mail },
-  { method: "sms", label: "SMS", icon: MessageSquare },
-] as const;
 
 export default function LeadDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -62,25 +47,47 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
   const me = useSession();
   const { toast } = useToast();
   const confirm = useConfirm();
-  const { data, loading, error, refresh } = useApi<LeadResponse>(`/api/leads/${id}`);
+  const { data, loading, error, refresh } = useApi<LeadDetail>(`/api/leads/${id}`);
   const history = useApi<{ entries: AuditLogDTO[] }>(`/api/leads/${id}/audit`);
   const [editing, setEditing] = useState(false);
   const [converting, setConverting] = useState(false);
   const [lostOpen, setLostOpen] = useState(false);
-  const [reach, setReach] = useState<(typeof REACH)[number] | null>(null);
-  const [reminderOpen, setReminderOpen] = useState(false);
-  const [remindTitle, setRemindTitle] = useState("");
+  const [reminder, setReminder] = useState<{ title: string } | null>(null);
   const [webhookOpen, setWebhookOpen] = useState(false);
-  const [rightTab, setRightTab] = useState<"activity" | "history">("activity");
-  const [archiving, setArchiving] = useState(false);
+  const [busy, setBusy] = useState<"archive" | "restore" | null>(null);
   const [pendingStage, setPendingStage] = useState<BoardStage | null>(null);
+  const [composerKind, setComposerKind] = useState<ComposerKind>(COMPOSER_KINDS[0]);
+  const composerRef = useRef<HTMLTextAreaElement>(null);
 
-  if (loading) return <PageLoader label="Loading lead…" />;
-  if (error || !data) return <div className="p-8"><ErrorState message={error ?? "Lead not found"} onRetry={refresh} /></div>;
+  if (loading) return <LeadDetailSkeleton />;
+  if (error || !data) {
+    return (
+      <Page>
+        <PageHeader title="Lead" breadcrumb={BREADCRUMB} />
+        <Panel>
+          <ErrorState message={error ?? "Lead not found"} onRetry={refresh} />
+        </Panel>
+      </Page>
+    );
+  }
 
-  const { lead, activities } = data;
-  const meta = STAGE_META[lead.stage];
+  const { lead, activities, stages, nextStep } = data;
+  const archived = !!lead.deletedAt;
   const converted = !!lead.convertedAccountId;
+  const owns = me.role === "admin" || lead.ownerId === me.id;
+  const canEdit = owns && !archived;
+  const open = !converted && isOpenLeadStage(lead.stage);
+  const idle = daysSince(lead.lastActivityAt || lead.createdAt);
+  const kindCount = (kind: "note" | "call") => activities.filter((a) => a.kind === kind).length;
+  const activityMeta = (["note", "call"] as const)
+    .filter((kind) => kindCount(kind) > 0)
+    .map((kind) => plural(kindCount(kind), kind))
+    .join(" · ");
+
+  function reloadAll() {
+    refresh();
+    history.refresh();
+  }
 
   async function moveStage(stage: BoardStage) {
     if (pendingStage || lead.stage === stage) return;
@@ -88,8 +95,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
     try {
       await api.patch(`/api/leads/${id}/stage`, { stage });
       toast(`Moved to ${STAGE_META[stage].label}.`, "success");
-      refresh();
-      history.refresh();
+      reloadAll();
     } catch (err) {
       toast(err instanceof Error ? err.message : "Couldn't update stage", "error");
     } finally {
@@ -109,205 +115,163 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
   }
 
   async function archiveLead() {
-    if (
-      !(await confirm({
-        title: "Archive this lead?",
-        description:
-          "It moves to the Archived view. You can restore it anytime — its activity and history are kept.",
-        confirmLabel: "Archive",
-        tone: "danger",
-      }))
-    )
-      return;
-    setArchiving(true);
+    const ok = await confirm({
+      title: "Archive this lead?",
+      description: "It moves to the Archived view. You can restore it anytime; its activity and history are kept.",
+      confirmLabel: "Archive",
+      tone: "danger",
+    });
+    if (!ok) return;
+    setBusy("archive");
     try {
       await api.delete(`/api/leads/${id}`);
       toast("Lead archived.", "info");
       router.push("/leads");
     } catch (err) {
       toast(err instanceof Error ? err.message : "Couldn't archive", "error");
-      setArchiving(false);
+      setBusy(null);
     }
   }
 
+  async function restoreLead() {
+    setBusy("restore");
+    try {
+      await api.patch(`/api/leads/${id}`, { action: "restore" });
+      toast("Lead restored.", "success");
+      reloadAll();
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Couldn't restore", "error");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  function logCall() {
+    setComposerKind("call");
+    composerRef.current?.focus();
+  }
+
+  const heroActions = converted ? (
+    <Link href={`/accounts/${lead.convertedAccountId}`} className={buttonClasses({ variant: "primary" })}>
+      View account
+    </Link>
+  ) : (
+    canEdit && (
+      <>
+        {lead.stage !== "parked" && lead.stage !== "lost" && (
+          <Button onClick={() => moveStage("parked")} loading={pendingStage === "parked"} disabled={pendingStage !== null}>
+            Park
+          </Button>
+        )}
+        {lead.stage !== "lost" && (
+          <Button onClick={() => setLostOpen(true)} disabled={pendingStage !== null}>
+            Mark lost
+          </Button>
+        )}
+        <Button variant="primary" onClick={() => setConverting(true)} disabled={lead.stage === "lost"}>
+          Convert to account
+        </Button>
+      </>
+    )
+  );
+
   return (
-    <>
-      <PageHeader>
-        <nav className="flex min-w-0 items-center gap-1.5 text-[13px] text-muted">
-          <Link href="/leads" className="hover:text-ink">Leads</Link>
-          <ChevronRight className="size-3.5 text-faint" />
-          <span className="truncate font-display text-[20px] font-bold tracking-tight text-ink">{lead.name}</span>
-          <Badge tint={meta.tint} dot={meta.dot} className="ml-1">{meta.label}</Badge>
-          <CategoryBadge category={lead.category} className="ml-0.5" />
-        </nav>
-        <div className="ml-auto flex shrink-0 items-center gap-2">
-          <Button variant="ghost" onClick={archiveLead} loading={archiving} aria-label="Archive lead">
-            <Archive className="size-4" /> <span className="hidden sm:inline">Archive</span>
-          </Button>
-          <Button variant="secondary" onClick={() => setEditing(true)} aria-label="Edit lead">
-            <Pencil className="size-4" /> <span className="hidden sm:inline">Edit</span>
-          </Button>
-          {converted ? (
-            <Button variant="primary" onClick={() => router.push(`/accounts/${lead.convertedAccountId}`)}>
-              <Building2 className="size-4" /> <span className="hidden sm:inline">View account</span><span className="sm:hidden">Account</span>
-            </Button>
-          ) : (
-            <Button variant="primary" onClick={() => setConverting(true)} disabled={lead.stage === "lost"}>
-              <span className="hidden sm:inline">Convert to account</span><span className="sm:hidden">Convert</span> <ArrowRight className="size-4" />
-            </Button>
-          )}
-        </div>
+    <Page>
+      <PageHeader
+        title={lead.name}
+        breadcrumb={BREADCRUMB}
+        actions={
+          canEdit && (
+            <>
+              <Button variant="ghost" onClick={archiveLead} loading={busy === "archive"} aria-label="Archive lead">
+                <Archive className="size-4" strokeWidth={1.5} aria-hidden />
+                <span className="max-md:hidden">Archive</span>
+              </Button>
+              <Button onClick={() => setEditing(true)} aria-label="Edit lead">
+                <Pencil className="size-4" strokeWidth={1.5} aria-hidden />
+                <span className="max-md:hidden">Edit</span>
+              </Button>
+            </>
+          )
+        }
+      >
+        <StageChip lead={lead} />
       </PageHeader>
 
-      <div className="px-6 py-6 lg:px-8">
-        <div className="mx-auto max-w-[1100px]">
-          {/* Stage stepper */}
-          <div className="mb-6 flex flex-wrap items-center gap-2">
-            {PIPELINE_STAGES.map((s, i) => {
-              const idx = PIPELINE_STAGES.indexOf(lead.stage as PipelineStage);
-              const done = idx > i;
-              const current = lead.stage === s;
-              const pending = pendingStage === s;
-              const busy = pendingStage !== null;
-              return (
-                <button
-                  key={s}
-                  onClick={() => moveStage(s)}
-                  disabled={converted || current || busy}
-                  aria-current={current ? "step" : undefined}
-                  title={converted ? "Converted leads can't change stage" : `Move to ${STAGE_META[s].label}`}
-                  className={cn(
-                    "inline-flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-[12.5px] font-semibold transition-all",
-                    "disabled:cursor-not-allowed",
-                    current
-                      ? "border-violet-400 bg-violet-50 text-violet-700 shadow-[0_0_0_3px_rgba(109,92,245,0.1)]"
-                      : done
-                        ? "border-success/30 bg-success-bg text-success hover:border-violet-300 hover:bg-violet-50 hover:text-violet-600"
-                        : "border-line-strong bg-paper text-muted hover:border-violet-300 hover:text-violet-600",
-                    !current && !converted && "cursor-pointer",
-                    busy && !pending && "opacity-50",
-                  )}
-                >
-                  {pending ? (
-                    <Loader2 className="size-3.5 animate-spin" />
-                  ) : (
-                    done && <Check className="size-3.5" />
-                  )}
-                  {STAGE_META[s].label}
-                </button>
-              );
-            })}
-            <button
-              onClick={() => moveStage("parked")}
-              disabled={converted || lead.stage === "parked" || lead.stage === "lost" || pendingStage !== null}
-              className={cn(
-                "ml-auto inline-flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-[12.5px] font-semibold transition-all disabled:opacity-40",
-                lead.stage === "parked"
-                  ? "border-[#c4a574]/50 bg-line text-ink-soft"
-                  : "border-line-strong text-muted hover:border-[#c4a574]/50 hover:bg-line hover:text-ink-soft",
-              )}
-            >
-              {pendingStage === "parked" ? <Loader2 className="size-3.5 animate-spin" /> : <CirclePause className="size-3.5" />}
-              {lead.stage === "parked" ? "Parked" : "Park"}
-            </button>
-            <button
-              onClick={() => setLostOpen(true)}
-              disabled={converted || lead.stage === "lost" || pendingStage !== null}
-              className="inline-flex items-center gap-1.5 rounded-full border border-line-strong px-3.5 py-1.5 text-[12.5px] font-semibold text-muted transition-all hover:border-danger/40 hover:bg-danger-bg hover:text-danger disabled:opacity-40"
-            >
-              <Ban className="size-3.5" /> {lead.stage === "lost" ? "Lost" : "Mark lost"}
-            </button>
-          </div>
+      {archived && (
+        <Panel aria-label="Archived" className="flex flex-wrap items-center justify-between gap-3">
+          <p className="text-ink-2">
+            Archived on <span className="tnum">{shortDate(lead.deletedAt!)}</span>. Its activity and history are kept.
+          </p>
+          {owns && (
+            <Button variant="primary" onClick={restoreLead} loading={busy === "restore"}>
+              Restore lead
+            </Button>
+          )}
+        </Panel>
+      )}
 
-          <div className="grid gap-5 lg:grid-cols-[340px_1fr]">
-            {/* Left: contact + reach out */}
-            <div className="space-y-5">
-              <Card className="p-6 text-center">
-                <Avatar name={lead.name} size={72} className="mx-auto" />
-                <h2 className="mt-3 font-display text-[19px] font-bold text-ink">{lead.name}</h2>
-                {(lead.title || lead.company) && (
-                  <p className="text-[12.5px] text-muted">
-                    {[lead.title, lead.company].filter(Boolean).join(" · ")}
-                  </p>
-                )}
-                <div className="my-4 border-t border-dashed border-line" />
-                <dl className="space-y-2.5 text-left text-[13px]">
-                  {lead.phone && <Row icon={<Phone className="size-3.5" />} value={lead.phone} />}
-                  {lead.email && <Row icon={<Mail className="size-3.5" />} value={lead.email} />}
-                  <Row label="Source" value={lead.source} />
-                  <Row label="Category" value={<CategoryBadge category={lead.category} />} />
-                  <Row label="Owner" value={lead.ownerName} />
-                  {lead.estValue > 0 && <Row label="Est." value={<span className="font-mono font-semibold tnum">{formatINR(lead.estValue)}</span>} bold />}
-                </dl>
-              </Card>
+      <LeadHero lead={lead} open={open} actions={heroActions || undefined} />
 
-              <Card className="p-5">
-                <p className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-faint">Reach out</p>
-                <div className="grid grid-cols-2 gap-2.5">
-                  {REACH.map((r) => (
-                    <button
-                      key={r.method}
-                      onClick={() => setReach(r)}
-                      className="inline-flex items-center justify-center gap-2 rounded-[var(--radius-md)] border border-dashed border-line-strong py-2.5 text-[13px] font-semibold text-ink-soft transition-all hover:border-violet-400 hover:bg-violet-50 hover:text-violet-700"
-                    >
-                      <r.icon className="size-4" /> {r.label}
-                    </button>
-                  ))}
-                </div>
-                <button
-                  onClick={() => { setRemindTitle(""); setReminderOpen(true); }}
-                  className="mt-2.5 inline-flex w-full items-center justify-center gap-2 rounded-[var(--radius-md)] border border-dashed border-line-strong py-2.5 text-[13px] font-semibold text-ink-soft transition-all hover:border-violet-400 hover:bg-violet-50 hover:text-violet-700"
-                >
-                  <BellRing className="size-4" /> Set reminder
-                </button>
-                <button
-                  onClick={() => setWebhookOpen(true)}
-                  className="mt-2 inline-flex w-full items-center justify-center gap-1.5 text-[12px] font-medium text-muted transition-colors hover:text-violet-700"
-                >
-                  <Webhook className="size-3.5" /> Customize webhook for this lead
-                </button>
-              </Card>
-            </div>
+      <StageTrack
+        lead={lead}
+        spans={stages}
+        locked={!canEdit || converted}
+        pending={pendingStage}
+        onMove={moveStage}
+        onConvert={() => setConverting(true)}
+      />
 
-            {/* Right: timeline */}
-            <Card className="p-6">
-              <div className="mb-4 flex items-center gap-1 rounded-[var(--radius-md)] border border-line bg-paper p-1">
-                {(["activity", "history"] as const).map((t) => (
-                  <button
-                    key={t}
-                    onClick={() => setRightTab(t)}
-                    className={cn(
-                      "inline-flex h-8 flex-1 items-center justify-center gap-1.5 rounded-[var(--radius-sm)] text-[12.5px] font-semibold capitalize transition-all",
-                      rightTab === t ? "bg-violet-50 text-violet-700" : "text-muted hover:text-ink",
-                    )}
-                  >
-                    {t === "activity" ? "Lifecycle & activity" : "Change history"}
-                  </button>
-                ))}
-              </div>
-              {rightTab === "activity" ? (
-                <>
-                  <NoteComposer
-                    postUrl={`/api/leads/${id}/activities`}
-                    onAdded={() => { refresh(); history.refresh(); }}
-                    onRemind={(t) => { setRemindTitle(t); setReminderOpen(true); }}
-                  />
-                  {lead.notes && (
-                    <div className="mb-5 rounded-[var(--radius-md)] border border-line bg-canvas/60 p-3.5 text-[13px] leading-relaxed text-ink-soft">
-                      {lead.notes}
-                    </div>
-                  )}
-                  <ActivityTimeline activities={activities} currentUserId={me.id} onEdit={editNote} />
-                </>
-              ) : history.loading ? (
-                <PageLoader />
-              ) : (
-                <AuditTimeline entries={history.data?.entries ?? []} />
-              )}
-            </Card>
-          </div>
-        </div>
-      </div>
+      <PageSplit
+        railLabel="Lead details"
+        rail={
+          <>
+            {!archived && (
+              <NextStepPanel
+                leadId={id}
+                step={nextStep}
+                prompt={open}
+                onChanged={refresh}
+                onMoreOptions={(title) => setReminder({ title })}
+                onWebhook={() => setWebhookOpen(true)}
+              />
+            )}
+            <LeadFacts lead={lead} canEdit={canEdit} onSaved={reloadAll} />
+            <LeadHistory entries={history.data?.entries ?? []} loading={history.loading} />
+          </>
+        }
+      >
+        {!archived && (
+          <Panel aria-label="Log activity">
+            <NoteComposer
+              postUrl={`/api/leads/${id}/activities`}
+              kinds={COMPOSER_KINDS}
+              kind={composerKind}
+              onKindChange={setComposerKind}
+              inputRef={composerRef}
+              onAdded={refresh}
+              onRemind={(title) => setReminder({ title })}
+            />
+          </Panel>
+        )}
+        <Panel
+          title="Activity"
+          meta={activityMeta || undefined}
+          actions={activities.length > 1 && <span className="text-ink-3">Newest first</span>}
+          ruled
+        >
+          {open && !archived && idle > 30 && (
+            <p className="mt-3 rounded-bar bg-due-tint px-3 py-2.5 text-[13px] text-ink-1">
+              Nothing logged since <span className="tnum">{shortDate(lead.lastActivityAt || lead.createdAt)}</span>.{" "}
+              <button type="button" onClick={logCall} className="font-medium underline">
+                Log a call
+              </button>{" "}
+              or set a next step to bring this lead back into the queue.
+            </p>
+          )}
+          <ActivityTimeline activities={activities} currentUserId={me.id} onEdit={archived ? undefined : editNote} collapseAfter={12} />
+        </Panel>
+      </PageSplit>
 
       {editing && (
         <AddLeadDrawer
@@ -316,129 +280,23 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
           onClose={() => setEditing(false)}
           onSaved={() => {
             setEditing(false);
-            refresh();
-            history.refresh();
+            reloadAll();
           }}
         />
       )}
       {converting && (
-        <ConvertModal
-          lead={lead}
-          open
-          onClose={() => setConverting(false)}
-          onConverted={(acc) => router.push(`/accounts/${acc.id}`)}
-        />
+        <ConvertModal lead={lead} open onClose={() => setConverting(false)} onConverted={(acc) => router.push(`/accounts/${acc.id}`)} />
       )}
-      <LogModal
-        leadId={id}
-        reach={reach}
-        onClose={() => setReach(null)}
-        onDone={() => {
-          setReach(null);
-          refresh();
-        }}
-      />
-      <LostModal open={lostOpen} leadId={id} name={lead.name} onClose={() => setLostOpen(false)} onDone={() => { setLostOpen(false); refresh(); history.refresh(); }} />
+      <LostLeadModal lead={lostOpen ? lead : null} onClose={() => setLostOpen(false)} onDone={reloadAll} />
       <ReminderModal
-        open={reminderOpen}
+        open={!!reminder}
         leadId={id}
         entityName={lead.name}
-        initialTitle={remindTitle}
-        onClose={() => setReminderOpen(false)}
-        onCreated={() => { refresh(); history.refresh(); }}
+        initialTitle={reminder?.title}
+        onClose={() => setReminder(null)}
+        onCreated={refresh}
       />
       <LeadWebhookModal open={webhookOpen} leadId={id} leadName={lead.name} onClose={() => setWebhookOpen(false)} />
-    </>
-  );
-}
-
-// (helper components below)
-
-function Row({ icon, label, value, bold }: { icon?: React.ReactNode; label?: string; value: React.ReactNode; bold?: boolean }) {
-  return (
-    <div className="flex items-center justify-between gap-3">
-      <span className="flex items-center gap-1.5 text-muted">
-        {icon}
-        {label && <span>{label}</span>}
-      </span>
-      <span className={cn("truncate text-ink-soft", bold && "font-semibold text-ink")}>{value}</span>
-    </div>
-  );
-}
-
-function LogModal({
-  leadId,
-  reach,
-  onClose,
-  onDone,
-}: {
-  leadId: string;
-  reach: { method: string; label: string } | null;
-  onClose: () => void;
-  onDone: () => void;
-}) {
-  const { toast } = useToast();
-  const [detail, setDetail] = useState("");
-  const [busy, setBusy] = useState(false);
-  if (!reach) return null;
-
-  async function submit() {
-    if (!reach) return;
-    setBusy(true);
-    try {
-      await api.post(`/api/leads/${leadId}/activities`, { kind: reach.method, detail: detail.trim() });
-      toast(`${reach.label} logged.`, "success");
-      setDetail("");
-      onDone();
-    } catch (err) {
-      toast(err instanceof Error ? err.message : "Couldn't log", "error");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <Modal open onClose={onClose} title={`Log ${reach.label.toLowerCase()}`} subtitle="Add a quick note so it lands on the timeline." size="sm">
-      <Field label="What happened?">
-        <Textarea autoFocus placeholder={`Summary of the ${reach.label.toLowerCase()}…`} value={detail} onChange={(e) => setDetail(e.target.value)} />
-      </Field>
-      <div className="mt-5 flex gap-3">
-        <Button variant="primary" onClick={submit} loading={busy}>Log {reach.label.toLowerCase()}</Button>
-        <Button variant="ghost" onClick={onClose}>Cancel</Button>
-      </div>
-    </Modal>
-  );
-}
-
-function LostModal({ open, leadId, name, onClose, onDone }: { open: boolean; leadId: string; name: string; onClose: () => void; onDone: () => void }) {
-  const { toast } = useToast();
-  const [reason, setReason] = useState("");
-  const [busy, setBusy] = useState(false);
-  if (!open) return null;
-
-  async function submit() {
-    setBusy(true);
-    try {
-      await api.patch(`/api/leads/${leadId}/stage`, { stage: "lost", lostReason: reason.trim() });
-      toast(`${name} marked lost.`, "info");
-      setReason("");
-      onDone();
-    } catch (err) {
-      toast(err instanceof Error ? err.message : "Couldn't update", "error");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <Modal open onClose={onClose} title="Mark as lost" subtitle={`What happened with ${name}?`} size="sm">
-      <Field label="Reason" hint="helps you learn">
-        <Textarea autoFocus placeholder="budget, timing, went with competitor…" value={reason} onChange={(e) => setReason(e.target.value)} />
-      </Field>
-      <div className="mt-5 flex gap-3">
-        <Button variant="danger" onClick={submit} loading={busy}>Mark lost</Button>
-        <Button variant="ghost" onClick={onClose}>Cancel</Button>
-      </div>
-    </Modal>
+    </Page>
   );
 }

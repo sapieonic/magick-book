@@ -1,10 +1,10 @@
 import { type NextRequest } from "next/server";
-import { ok, fail, route, serializeAccount, HttpError } from "@/lib/api";
+import { ok, fail, route, serializeAccount } from "@/lib/api";
 import { connectDB } from "@/lib/db";
-import { Lead, Account, Contact, Activity, User, type ILead } from "@/lib/models";
+import { Lead, Account, Contact, Activity, User } from "@/lib/models";
 import { requireUser } from "@/lib/auth/server";
-import { leadScope, canEditOwned } from "@/lib/rbac";
-import { logActivity, audit } from "@/lib/services";
+import { canEditOwned } from "@/lib/rbac";
+import { logActivity, audit, loadLead } from "@/lib/services";
 import { notifyLeadConverted } from "@/lib/slack";
 import { Types } from "mongoose";
 
@@ -21,8 +21,7 @@ export const POST = route(async (req: NextRequest, ctx: Ctx) => {
   await connectDB();
   const { id } = await ctx.params;
 
-  const lead = await Lead.findOne({ _id: id, ...leadScope(user) }).lean<ILead>();
-  if (!lead) throw new HttpError("Lead not found", 404);
+  const lead = await loadLead(user, id, "write");
   if (!canEditOwned(user, lead.ownerId)) return fail("You can only convert your own leads.", 403);
   if (lead.convertedAccountId) return fail("This lead is already an account.", 409);
 
@@ -92,7 +91,7 @@ export const POST = route(async (req: NextRequest, ctx: Ctx) => {
   });
 
   return ok(
-    { account: serializeAccount(account.toObject(), { ownerName: user.name, primaryContact: primary.toObject(), contactCount: 1 }) },
+    { account: serializeAccount(account.toObject(), { ownerName, primaryContact: primary.toObject(), contactCount: 1 }) },
     201,
   );
 });

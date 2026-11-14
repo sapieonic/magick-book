@@ -1,35 +1,79 @@
 "use client";
-import { forwardRef, type InputHTMLAttributes, type TextareaHTMLAttributes, type SelectHTMLAttributes, type ReactNode } from "react";
+import {
+  cloneElement,
+  forwardRef,
+  isValidElement,
+  useId,
+  type InputHTMLAttributes,
+  type ReactElement,
+  type ReactNode,
+  type SelectHTMLAttributes,
+  type TextareaHTMLAttributes,
+} from "react";
 import { ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-const baseInput =
-  "w-full rounded-[var(--radius-md)] border border-line-strong bg-paper px-3.5 text-[14px] text-ink placeholder:text-faint " +
-  "transition-all duration-150 focus:border-violet-400 focus:outline-none focus:ring-4 focus:ring-violet-100 disabled:opacity-60 " +
-  "aria-[invalid=true]:border-danger aria-[invalid=true]:focus:border-danger aria-[invalid=true]:focus:ring-danger/15";
+/** Control height: 34px, or a 44px touch target with 16px text on phones (smaller text makes iOS zoom the page on focus). */
+const CONTROL_H = "h-[34px] max-md:h-11 max-md:text-[16px]";
 
-export function Label({ children, required, hint }: { children: ReactNode; required?: boolean; hint?: ReactNode }) {
+const CONTROL =
+  "w-full rounded-control border border-line-strong bg-control px-2.5 text-ink-1 placeholder:text-ink-3 transition-[border-color,box-shadow] " +
+  "focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent-tint disabled:opacity-60 " +
+  "aria-[invalid=true]:border-overdue aria-[invalid=true]:focus:ring-overdue-tint";
+
+export function Label({
+  children,
+  required,
+  hint,
+  htmlFor,
+}: {
+  children: ReactNode;
+  required?: boolean;
+  hint?: ReactNode;
+  htmlFor?: string;
+}) {
   return (
-    <label className="mb-1.5 flex items-baseline justify-between text-[12.5px] font-semibold text-ink-soft">
+    <label htmlFor={htmlFor} className="mb-1 flex items-baseline justify-between gap-2 text-[12px] font-medium text-ink-2">
       <span>
         {children}
-        {required && <span className="ml-0.5 text-violet-500">*</span>}
+        {required && <span className="ml-0.5 text-overdue" aria-hidden>*</span>}
       </span>
-      {hint && <span className="text-[11px] font-normal text-faint">{hint}</span>}
+      {hint && <span className="font-normal text-ink-3">{hint}</span>}
     </label>
   );
 }
 
-export function Field({ label, required, hint, children, error }: { label?: ReactNode; required?: boolean; hint?: ReactNode; children: ReactNode; error?: string }) {
+/**
+ * Label + control + error. When the child is a single element (Input, Select,
+ * Textarea…) the label is wired to it automatically via a generated id.
+ */
+export function Field({
+  label,
+  required,
+  hint,
+  children,
+  error,
+  className,
+}: {
+  label?: ReactNode;
+  required?: boolean;
+  hint?: ReactNode;
+  children: ReactNode;
+  error?: string;
+  className?: string;
+}) {
+  const autoId = useId();
+  const child = isValidElement(children) ? (children as ReactElement<{ id?: string; "aria-invalid"?: boolean }>) : null;
+  const id = child ? (child.props.id ?? autoId) : undefined;
   return (
-    <div>
+    <div className={className}>
       {label && (
-        <Label required={required} hint={hint}>
+        <Label required={required} hint={hint} htmlFor={id}>
           {label}
         </Label>
       )}
-      {children}
-      {error && <p className="mt-1 text-[11.5px] text-danger">{error}</p>}
+      {child ? cloneElement(child, { id, "aria-invalid": child.props["aria-invalid"] ?? (error ? true : undefined) }) : children}
+      {error && <p className="mt-1 text-[12px] text-overdue">{error}</p>}
     </div>
   );
 }
@@ -38,14 +82,26 @@ export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputE
   { className, ...props },
   ref,
 ) {
-  return <input ref={ref} className={cn(baseInput, "h-10", className)} {...props} />;
+  return <input ref={ref} className={cn(CONTROL, CONTROL_H, className)} {...props} />;
+});
+
+/** Rupee amount input: a muted ₹ prefix, numeric keypad, tabular figures. Read it with `parseAmount`. */
+export const AmountInput = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement>>(function AmountInput({ className, ...props }, ref) {
+  return (
+    <div className="relative">
+      <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-3" aria-hidden>
+        ₹
+      </span>
+      <Input ref={ref} inputMode="numeric" className={cn("tnum pl-6", className)} {...props} />
+    </div>
+  );
 });
 
 export const Textarea = forwardRef<HTMLTextAreaElement, TextareaHTMLAttributes<HTMLTextAreaElement>>(function Textarea(
   { className, ...props },
   ref,
 ) {
-  return <textarea ref={ref} className={cn(baseInput, "min-h-[84px] resize-y py-2.5 leading-relaxed", className)} {...props} />;
+  return <textarea ref={ref} className={cn(CONTROL, "min-h-20 resize-y py-2 max-md:text-[16px]", className)} {...props} />;
 });
 
 export const Select = forwardRef<HTMLSelectElement, SelectHTMLAttributes<HTMLSelectElement>>(function Select(
@@ -54,14 +110,10 @@ export const Select = forwardRef<HTMLSelectElement, SelectHTMLAttributes<HTMLSel
 ) {
   return (
     <div className="relative">
-      <select
-        ref={ref}
-        className={cn(baseInput, "h-10 cursor-pointer appearance-none pr-9", className)}
-        {...props}
-      >
+      <select ref={ref} className={cn(CONTROL, CONTROL_H, "cursor-pointer appearance-none pr-8", className)} {...props}>
         {children}
       </select>
-      <ChevronDown className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-muted" />
+      <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 size-4 -translate-y-1/2 text-ink-3" strokeWidth={1.5} aria-hidden />
     </div>
   );
 });

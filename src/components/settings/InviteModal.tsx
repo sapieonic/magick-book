@@ -1,88 +1,84 @@
 "use client";
 import { useState } from "react";
-import { Check, ShieldCheck, User } from "lucide-react";
 import { Modal } from "@/components/ui/Overlay";
 import { Button } from "@/components/ui/Button";
 import { Input, Field } from "@/components/ui/Field";
 import { useToast } from "@/components/ui/Toast";
 import { api } from "@/lib/client";
-import { cn } from "@/lib/utils";
+import type { Role } from "@/lib/constants";
 import type { MemberDTO } from "@/lib/types";
 
-const ROLE_OPTIONS = [
-  { key: "admin", icon: ShieldCheck, title: "Admin", desc: "All access — everything in the workspace." },
-  { key: "standard", icon: User, title: "Standard user", desc: "Only sees the leads & accounts they add." },
-] as const;
+export const ROLE_COPY: Record<Role, { title: string; desc: string }> = {
+  admin: { title: "Admin", desc: "Sees and edits everything in the workspace." },
+  standard: { title: "Standard user", desc: "Only sees the leads and accounts they add." },
+};
 
-export function InviteModal({ open, onClose, onInvited }: { open: boolean; onClose: () => void; onInvited: (m: MemberDTO) => void }) {
+/** Mount only while open (`{inviting && <InviteModal … />}`), so every invite starts from a blank form. */
+export function InviteModal({ onClose, onInvited }: { onClose: () => void; onInvited: (m: MemberDTO) => void }) {
   const { toast } = useToast();
   const [email, setEmail] = useState("");
-  const [role, setRole] = useState<"admin" | "standard">("standard");
+  const [role, setRole] = useState<Role>("standard");
   const [busy, setBusy] = useState(false);
-  if (!open) return null;
 
-  async function submit() {
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
     if (!email.includes("@")) return toast("Enter a valid work email.", "error");
     setBusy(true);
     try {
       const { member } = await api.post<{ member: MemberDTO }>("/api/members", { email: email.trim(), role });
-      toast(`Invite sent to ${member.email}.`, "success");
+      toast(`Invited ${member.email}.`, "success");
       onInvited(member);
       onClose();
-      setEmail("");
-    } catch (e) {
-      toast(e instanceof Error ? e.message : "Could not invite", "error");
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Could not invite", "error");
     } finally {
       setBusy(false);
     }
   }
 
   return (
-    <Modal open onClose={onClose} title="Invite a teammate" subtitle="They'll get an email to join your workspace.">
-      <div className="space-y-5">
+    <Modal open onClose={onClose} title="Invite a teammate" subtitle="They join your workspace when they sign in with this email.">
+      <form onSubmit={submit} className="space-y-5">
         <Field label="Work email" required>
-          <Input autoFocus type="email" placeholder="name@company.com" value={email} onChange={(e) => setEmail(e.target.value)} />
+          <Input autoFocus type="email" autoComplete="off" placeholder="name@company.com" value={email} onChange={(e) => setEmail(e.target.value)} />
         </Field>
 
-        <div>
-          <p className="mb-2 text-[12.5px] font-semibold text-ink-soft">Choose a role</p>
-          <div className="space-y-2.5">
-            {ROLE_OPTIONS.map((r) => {
-              const active = role === r.key;
-              return (
-                <button
-                  key={r.key}
-                  onClick={() => setRole(r.key)}
-                  className={cn(
-                    "flex w-full items-center gap-3.5 rounded-[var(--radius-md)] border p-3.5 text-left transition-all",
-                    active ? "border-violet-400 bg-violet-50 ring-2 ring-violet-100" : "border-line-strong hover:border-faint",
-                  )}
-                >
-                  <span className={cn("flex size-9 items-center justify-center rounded-full", active ? "bg-violet-500 text-white" : "bg-canvas text-muted")}>
-                    {active ? <Check className="size-4" /> : <r.icon className="size-4" />}
-                  </span>
-                  <div>
-                    <p className="text-[14px] font-bold text-ink">{r.title}</p>
-                    <p className="text-[12.5px] text-muted">{r.desc}</p>
-                  </div>
-                </button>
-              );
-            })}
+        <fieldset>
+          <legend className="mb-1 text-[12px] font-medium text-ink-2">Role</legend>
+          <div className="space-y-2">
+            {(Object.keys(ROLE_COPY) as Role[]).map((r) => (
+              <label
+                key={r}
+                className="flex cursor-pointer items-start gap-3 rounded-card border border-line-strong bg-control p-3 transition-colors hover:bg-hover has-[:checked]:border-accent has-[:checked]:bg-accent-tint"
+              >
+                <input
+                  type="radio"
+                  name="invite-role"
+                  value={r}
+                  checked={role === r}
+                  onChange={() => setRole(r)}
+                  className="mt-1 size-4 accent-accent"
+                />
+                <span>
+                  <span className="block font-medium text-ink-1">{ROLE_COPY[r].title}</span>
+                  <span className="block text-[13px] text-ink-2">{ROLE_COPY[r].desc}</span>
+                </span>
+              </label>
+            ))}
           </div>
-        </div>
+        </fieldset>
 
         {role === "standard" && (
-          <div className="rounded-[var(--radius-md)] border border-violet-200 bg-violet-50/60 p-3.5 text-[12.5px] leading-relaxed text-violet-800">
-            🐢 They&apos;ll land on a dashboard scoped to <b>their own</b> leads, accounts, invoices &amp; expenses — nothing else.
-          </div>
+          <p className="text-[13px] text-ink-2">
+            They land on a Today view scoped to their own leads, accounts, invoices and expenses, and nothing else.
+          </p>
         )}
 
-        <div className="flex items-center gap-3">
-          <Button variant="primary" onClick={submit} loading={busy}>Send invite</Button>
-          <Button variant="ghost" onClick={onClose}>Cancel</Button>
-          <span className="ml-auto text-[11.5px] text-faint">via email + WhatsApp</span>
+        <div className="flex items-center gap-2">
+          <Button type="submit" variant="primary" loading={busy}>Send invite</Button>
+          <Button type="button" variant="ghost" onClick={onClose}>Cancel</Button>
         </div>
-      </div>
+      </form>
     </Modal>
   );
 }

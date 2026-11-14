@@ -207,9 +207,143 @@ describe("PATCH /api/leads/:id/stage", () => {
     expect(acts).toHaveLength(1);
     expect(acts[0].title).toBe("Parked");
   });
+
+  it("returns the lead with its real owner's name when an admin moves someone else's lead", async () => {
+    const lead = await makeLead(standard, { stage: "new" });
+    const res = await stageRoute.PATCH(jsonRequest(`/api/leads/${lead._id}/stage`, "PATCH", { stage: "contacted" }), ctx({ id: String(lead._id) }));
+    const { lead: updated } = await res.json();
+    expect(updated.ownerName).toBe("Stan");
+  });
+
+  it("ignores the old numeric `order` slot: a same-lane PATCH without neighbours leaves the order alone", async () => {
+    const lead = await makeLead(admin, { stage: "new", order: 3 });
+    await stageRoute.PATCH(jsonRequest(`/api/leads/${lead._id}/stage`, "PATCH", { stage: "new", order: 0 }), ctx({ id: String(lead._id) }));
+    expect((await models.Lead.findById(lead._id).lean())?.order).toBe(3);
+  });
+
+  it("404 for a malformed id or an archived lead", async () => {
+    const malformed = await stageRoute.PATCH(jsonRequest("/api/leads/nope/stage", "PATCH", { stage: "qualified" }), ctx({ id: "nope" }));
+    expect(malformed.status).toBe(404);
+    const gone = await makeLead(admin, { deletedAt: new Date() });
+    const res = await stageRoute.PATCH(jsonRequest(`/api/leads/${gone._id}/stage`, "PATCH", { stage: "qualified" }), ctx({ id: String(gone._id) }));
+    expect(res.status).toBe(404);
+  });
+
+  it("404 when a standard user moves a lead outside their scope", async () => {
+    const lead = await makeLead(admin, { stage: "new" });
+    session.user = standard;
+    const res = await stageRoute.PATCH(jsonRequest(`/api/leads/${lead._id}/stage`, "PATCH", { stage: "qualified" }), ctx({ id: String(lead._id) }));
+    expect(res.status).toBe(404);
+  });
+});
+
+describe("PATCH /api/leads/:id/stage placement (beforeId / afterId)", () => {
+  type Named = { _id: Types.ObjectId; name: string };
+  const drop = (lead: Named, body: Record<string, unknown>) =>
+    stageRoute.PATCH(jsonRequest(`/api/leads/${lead._id}/stage`, "PATCH", { stage: "qualified", ...body }), ctx({ id: String(lead._id) }));
+  /** The qualified lane as the user in `session` sees it from GET /api/leads. */
+  async function lane(): Promise<string[]> {
+    const { leads } = await (await leadsRoute.GET(jsonRequest("/api/leads", "GET"))).json();
+    return leads.filter((l: { stage: string }) => l.stage === "qualified").map((l: { name: string }) => l.name);
+  }
+  const orders = async () => Object.fromEntries((await models.Lead.find({ stage: "qualified" }).lean()).map((l) => [l.name, l.order]));
+
+  it("drops between two order-0 cards exactly where it was put (the reviewer's example)", async () => {
+    const a = await makeLead(admin, { name: "A", stage: "qualified" });
+    const b = await makeLead(admin, { name: "B", stage: "qualified" });
+    await makeLead(admin, { name: "C", stage: "qualified" });
+    const d = await makeLead(admin, { name: "D", stage: "new" });
+    expect(await lane()).toEqual(["A", "B", "C"]); // all order 0: oldest first, like the board
+    await drop(d, { beforeId: String(a._id), afterId: String(b._id) });
+    expect(await lane()).toEqual(["A", "D", "B", "C"]);
+  });
+
+  it("lands right after beforeId when the user's filtered view skips cards in between", async () => {
+    const a = await makeLead(admin, { name: "A", stage: "qualified" });
+    await makeLead(admin, { name: "B", stage: "qualified" });
+    const c = await makeLead(admin, { name: "C", stage: "qualified" });
+    await makeLead(admin, { name: "E", stage: "qualified" });
+    const d = await makeLead(admin, { name: "D", stage: "new" });
+    // A search showed only A and C, adjacent on screen; B sits between them in the real lane.
+    await drop(d, { beforeId: String(a._id), afterId: String(c._id) });
+    expect(await lane()).toEqual(["A", "D", "B", "C", "E"]);
+  });
+
+  it("keeps the admin's combined lane consistent when a standard user drops among their own cards", async () => {
+    await makeLead(admin, { name: "X1", stage: "qualified" });
+    const s1 = await makeLead(standard, { name: "S1", stage: "qualified" });
+    await makeLead(admin, { name: "X2", stage: "qualified" });
+    const s2 = await makeLead(standard, { name: "S2", stage: "qualified" });
+    const s3 = await makeLead(standard, { name: "S3", stage: "new" });
+    const s4 = await makeLead(standard, { name: "S4", stage: "new" });
+
+    session.user = standard;
+    await drop(s3, { beforeId: String(s1._id), afterId: String(s2._id) });
+    await drop(s4, { afterId: String(s1._id) }); // top of their view: directly above S1, below X1
+    expect(await lane()).toEqual(["S4", "S1", "S3", "S2"]);
+    session.user = admin;
+    expect(await lane()).toEqual(["X1", "S4", "S1", "S3", "X2", "S2"]);
+    // Orders stay distinct across owners: no collisions for the next drop to trip on.
+    const all = await models.Lead.find({ stage: "qualified" }).lean();
+    expect(new Set(all.map((l) => l.order)).size).toBe(all.length);
+  });
+
+  it("ignores a neighbour that is malformed, out of scope, in another lane or archived", async () => {
+    const x = await makeLead(admin, { name: "X", stage: "qualified" });
+    const s1 = await makeLead(standard, { name: "S1", stage: "qualified" });
+    const elsewhere = await makeLead(standard, { name: "W", stage: "won" });
+    const gone = await makeLead(standard, { name: "G", stage: "qualified", deletedAt: new Date() });
+    const s2 = await makeLead(standard, { name: "S2", stage: "new" });
+    const s3 = await makeLead(standard, { name: "S3", stage: "new" });
+
+    session.user = standard;
+    // Someone else's card and junk: no usable neighbour, so the cross-lane move lands at the end.
+    expect((await drop(s2, { beforeId: String(x._id), afterId: "nope" })).status).toBe(200);
+    // Another lane's card and an archived one are skipped; the valid afterId still places it.
+    await drop(s3, { beforeId: String(elsewhere._id), afterId: String(gone._id) });
+    session.user = admin;
+    expect(await lane()).toEqual(["X", "S1", "S2", "S3"]);
+    await drop(s3, { beforeId: String(gone._id), afterId: String(s1._id) });
+    expect(await lane()).toEqual(["X", "S3", "S1", "S2"]);
+  });
+
+  it("writes only the moved lead when its neighbours leave room", async () => {
+    const a = await makeLead(admin, { name: "A", stage: "qualified", order: 1024 });
+    const b = await makeLead(admin, { name: "B", stage: "qualified", order: 2048 });
+    const d = await makeLead(admin, { name: "D", stage: "new" });
+    const bulk = vi.spyOn(models.Lead, "bulkWrite");
+    const updateOne = vi.spyOn(models.Lead, "updateOne");
+    const updateMany = vi.spyOn(models.Lead, "updateMany");
+    try {
+      await drop(d, { beforeId: String(a._id), afterId: String(b._id) });
+      expect(bulk).toHaveBeenCalledTimes(1);
+      expect(bulk.mock.calls[0][0]).toHaveLength(1);
+      expect(updateOne).not.toHaveBeenCalled();
+      expect(updateMany).not.toHaveBeenCalled();
+    } finally {
+      vi.restoreAllMocks();
+    }
+    expect(await orders()).toEqual({ A: 1024, D: 1536, B: 2048 });
+  });
+
 });
 
 describe("POST /api/leads/:id/convert", () => {
+  it("names the chosen account owner, not the admin who converted", async () => {
+    const lead = await makeLead(admin, { company: "Orbit" });
+    const res = await convertRoute.POST(
+      jsonRequest(`/api/leads/${lead._id}/convert`, "POST", { ownerId: String(standard._id) }),
+      ctx({ id: String(lead._id) }),
+    );
+    expect(res.status).toBe(201);
+    expect((await res.json()).account.ownerName).toBe("Stan");
+  });
+
+  it("404s a malformed lead id instead of failing", async () => {
+    const res = await convertRoute.POST(jsonRequest(`/api/leads/nope/convert`, "POST", {}), ctx({ id: "nope" }));
+    expect(res.status).toBe(404);
+  });
+
   it("creates an account + primary contact, marks lead won+converted, carries activities", async () => {
     const lead = await makeLead(admin, { name: "Priya", company: "Lumen", title: "CTO", email: "p@l.com", phone: "+91", estValue: 12000 });
     await models.Activity.create({ workspaceId, leadId: lead._id, actorId: admin._id, kind: "lead_created", title: "Lead created" });

@@ -1,17 +1,20 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
-import { Plus, Trash2, Tags, ExternalLink } from "lucide-react";
-import { PageHeader } from "@/components/layout/Sidebar";
+import { Plus, Tags, Trash2 } from "lucide-react";
+import { PageSplit } from "@/components/layout/Page";
 import { useSession } from "@/components/layout/SessionContext";
-import { SettingsTabs } from "@/components/settings/SettingsTabs";
+import { SettingsHeader } from "@/components/settings/SettingsTabs";
 import { CategoryBadge } from "@/components/leads/CategoryBadge";
 import { Button } from "@/components/ui/Button";
-import { Input, Field } from "@/components/ui/Field";
-import { Card, PageLoader, ErrorState, EmptyState } from "@/components/ui/Misc";
-import { useToast } from "@/components/ui/Toast";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
+import { Field, Input } from "@/components/ui/Field";
+import { EmptyState, ErrorState, RowsSkeleton } from "@/components/ui/Misc";
+import { Panel } from "@/components/ui/Panel";
+import { Table, Td, Th } from "@/components/ui/Table";
+import { useToast } from "@/components/ui/Toast";
 import { api, useApi } from "@/lib/client";
+import { plural } from "@/lib/utils";
 import { DEFAULT_LEAD_CATEGORY, formatCategoryLabel } from "@/lib/constants";
 
 interface CategoriesResponse {
@@ -21,34 +24,28 @@ interface CategoriesResponse {
   isAdmin: boolean;
 }
 
+const leadsHref = (category: string) => `/leads?category=${encodeURIComponent(category)}`;
+const leadCount = (n: number) => plural(n, "lead");
+
 export default function CategoriesSettingsPage() {
   const me = useSession();
   const { toast } = useToast();
   const confirm = useConfirm();
-  const { data, loading, error, refresh } = useApi<CategoriesResponse>("/api/workspace/categories");
-  const [categories, setCategories] = useState<string[]>([]);
-  const [counts, setCounts] = useState<Record<string, number>>({});
-  const [orphans, setOrphans] = useState<{ category: string; count: number }[]>([]);
+  const { data, setData, loading, error, refresh } = useApi<CategoriesResponse>("/api/workspace/categories");
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
 
-  useEffect(() => {
-    if (data?.categories) setCategories(data.categories);
-    if (data?.counts) setCounts(data.counts);
-    if (data?.orphans) setOrphans(data.orphans);
-  }, [data?.categories, data?.counts, data?.orphans]);
-
+  const categories = data?.categories ?? [];
+  const counts = data?.counts ?? {};
+  const orphans = data?.orphans ?? [];
   const canManage = data?.isAdmin ?? me.role === "admin";
 
   async function persist(next: string[]) {
     setBusy(true);
     try {
-      const res = await api.put<CategoriesResponse>("/api/workspace/categories", { categories: next });
-      setCategories(res.categories);
-      setCounts(res.counts ?? {});
-      setOrphans(res.orphans ?? []);
+      const res = await api.put<Omit<CategoriesResponse, "isAdmin">>("/api/workspace/categories", { categories: next });
+      setData((cur) => (cur ? { ...cur, ...res } : cur));
       toast("Categories updated.", "success");
-      refresh();
     } catch (e) {
       toast(e instanceof Error ? e.message : "Couldn't save categories", "error");
       refresh();
@@ -57,7 +54,8 @@ export default function CategoriesSettingsPage() {
     }
   }
 
-  async function addCategory() {
+  async function addCategory(e: React.FormEvent) {
+    e.preventDefault();
     const slug = draft.trim().toLowerCase().replace(/\s+/g, " ");
     if (!slug) return;
     if (categories.includes(slug)) {
@@ -69,149 +67,124 @@ export default function CategoriesSettingsPage() {
   }
 
   async function removeCategory(slug: string) {
-    if (slug === DEFAULT_LEAD_CATEGORY) {
-      toast("Unclassified can't be removed.", "info");
-      return;
-    }
     const n = counts[slug] ?? 0;
     const ok = await confirm({
       title: `Remove “${formatCategoryLabel(slug)}”?`,
       description:
         n > 0
-          ? `${n} ${n === 1 ? "lead still uses" : "leads still use"} this. They keep the tag — you'll see them under “Needs reclassify” below so you can update them.`
-          : "No leads use this category. It will disappear from the dropdown.",
+          ? `${leadCount(n)} still ${n === 1 ? "uses" : "use"} this. They keep the tag, and show under “Needs reclassify” so you can update them.`
+          : "No leads use this category. It disappears from the dropdown.",
       confirmLabel: "Remove",
       tone: "danger",
     });
-    if (!ok) return;
-    await persist(categories.filter((c) => c !== slug));
+    if (ok) await persist(categories.filter((c) => c !== slug));
   }
 
   return (
     <>
-      <PageHeader>
-        <nav className="flex items-center gap-1.5 text-[13px] text-muted">
-          <span>Settings</span>
-          <span className="text-faint">/</span>
-          <span className="font-display text-[20px] font-bold tracking-tight text-ink">Lead categories</span>
-        </nav>
-      </PageHeader>
+      <SettingsHeader title="Lead categories" />
 
-      <SettingsTabs />
-
-      <div className="px-6 py-6 lg:px-8">
-        <div className="mx-auto max-w-[640px] space-y-6">
-          {error ? (
-            <ErrorState message={error} onRetry={refresh} />
-          ) : loading ? (
-            <PageLoader />
-          ) : (
+      {error ? (
+        <Panel>
+          <ErrorState message={error} onRetry={refresh} />
+        </Panel>
+      ) : (
+        <PageSplit
+          railLabel="Manage categories"
+          rail={
             <>
-              <Card className="p-6">
-                <div className="mb-5 flex items-start gap-3">
-                  <span className="flex size-9 shrink-0 items-center justify-center rounded-[var(--radius-sm)] bg-violet-100 text-violet-700">
-                    <Tags className="size-[18px]" />
-                  </span>
-                  <div>
-                    <h2 className="font-display text-[16px] font-bold text-ink">Classification</h2>
-                    <p className="text-[12.5px] text-muted">
-                      Tag leads by industry or vertical so the pipeline is easier to scan. New leads default to Unclassified.
-                    </p>
-                  </div>
-                </div>
-
-                {categories.length === 0 ? (
-                  <EmptyState title="No categories yet" description="Add your first classification below." />
-                ) : (
-                  <ul className="divide-y divide-line rounded-[var(--radius-md)] border border-line">
-                    {categories.map((c) => {
-                      const n = counts[c] ?? 0;
-                      return (
-                        <li key={c} className="flex items-center gap-3 px-4 py-3">
-                          <CategoryBadge category={c} />
-                          <Link
-                            href={`/leads?category=${encodeURIComponent(c)}`}
-                            className="text-[12.5px] font-medium text-muted transition-colors hover:text-violet-700"
-                          >
-                            {n} {n === 1 ? "lead" : "leads"}
-                            <ExternalLink className="ml-1 inline size-3 opacity-60" />
-                          </Link>
-                          {canManage && c !== DEFAULT_LEAD_CATEGORY && (
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              className="ml-auto text-muted hover:text-danger"
-                              disabled={busy}
-                              onClick={() => removeCategory(c)}
-                              aria-label={`Remove ${c}`}
-                            >
-                              <Trash2 className="size-3.5" />
-                            </Button>
-                          )}
-                          {c === DEFAULT_LEAD_CATEGORY && (
-                            <span className="ml-auto text-[11.5px] font-medium text-faint">Default</span>
-                          )}
-                        </li>
-                      );
-                    })}
-                  </ul>
-                )}
-
+              <Panel title="Add a category" ruled className={orphans.length ? undefined : "md:col-span-2"}>
                 {canManage ? (
-                  <form
-                    className="mt-5 flex items-end gap-3"
-                    onSubmit={(e) => {
-                      e.preventDefault();
-                      addCategory();
-                    }}
-                  >
-                    <div className="min-w-0 flex-1">
-                      <Field label="Add category" hint="press Enter">
-                        <Input
-                          placeholder="e.g. telecom"
-                          value={draft}
-                          onChange={(e) => setDraft(e.target.value)}
-                          maxLength={40}
-                          disabled={busy}
-                          autoFocus
-                        />
-                      </Field>
-                    </div>
+                  <form className="mt-3 flex items-end gap-2" onSubmit={addCategory}>
+                    <Field label="Name" hint="Enter to add" className="min-w-0 flex-1">
+                      <Input placeholder="e.g. telecom" value={draft} onChange={(e) => setDraft(e.target.value)} maxLength={40} disabled={busy} />
+                    </Field>
                     <Button type="submit" variant="primary" loading={busy} disabled={!draft.trim()}>
-                      <Plus className="size-4" /> Add
+                      <Plus className="size-4" strokeWidth={1.5} aria-hidden /> Add
                     </Button>
                   </form>
                 ) : (
-                  <p className="mt-4 text-[12.5px] text-muted">Only admins can add or remove categories.</p>
+                  <p className="mt-3 text-[13px] text-ink-2">Only admins can add or remove categories.</p>
                 )}
-              </Card>
-
+                <p className="mt-3 text-[13px] text-ink-3">
+                  Tag leads by industry or vertical so the pipeline is easier to scan. New leads start as Unclassified.
+                </p>
+              </Panel>
               {orphans.length > 0 && (
-                <Card className="p-6">
-                  <h3 className="font-display text-[15px] font-bold text-ink">Needs reclassify</h3>
-                  <p className="mt-1 text-[12.5px] text-muted">
-                    These tags were removed from the dropdown but are still on leads. Open the list to update them.
-                  </p>
-                  <ul className="mt-4 divide-y divide-line rounded-[var(--radius-md)] border border-line">
+                <Panel title="Needs reclassify" meta={orphans.length} ruled>
+                  <p className="mt-2 text-[13px] text-ink-3">Removed from the dropdown but still on leads. Open the list to update them.</p>
+                  <ul className="mt-1">
                     {orphans.map((o) => (
-                      <li key={o.category} className="flex items-center gap-3 px-4 py-3">
+                      <li key={o.category} className="flex items-center justify-between gap-3 border-b border-line py-[9px] last:border-b-0">
                         <CategoryBadge category={o.category} />
-                        <Link
-                          href={`/leads?category=${encodeURIComponent(o.category)}`}
-                          className="ml-auto inline-flex items-center gap-1 text-[12.5px] font-semibold text-violet-700 hover:underline"
-                        >
-                          {o.count} {o.count === 1 ? "lead" : "leads"}
-                          <ExternalLink className="size-3" />
+                        <Link href={leadsHref(o.category)} className="link tnum text-[13px]">
+                          {leadCount(o.count)}
                         </Link>
                       </li>
                     ))}
                   </ul>
-                </Card>
+                </Panel>
               )}
             </>
-          )}
-        </div>
-      </div>
+          }
+        >
+          <Panel title="Categories" meta={loading ? undefined : categories.length} ruled>
+            {loading ? (
+              <RowsSkeleton rows={4} label="Loading categories" />
+            ) : categories.length === 0 ? (
+              <EmptyState
+                className="mt-3"
+                icon={<Tags className="size-6" strokeWidth={1.5} aria-hidden />}
+                title="No categories yet"
+                description="Add your first classification to start tagging leads."
+              />
+            ) : (
+              <Table>
+                <thead>
+                  <tr>
+                    <Th>Category</Th>
+                    <Th numeric>Leads</Th>
+                    <Th>
+                      <span className="sr-only">Actions</span>
+                    </Th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {categories.map((c) => (
+                    <tr key={c}>
+                      <Td>
+                        <CategoryBadge category={c} />
+                      </Td>
+                      <Td numeric>
+                        <Link href={leadsHref(c)} className="link" aria-label={`${leadCount(counts[c] ?? 0)} in ${formatCategoryLabel(c)}`}>
+                          {counts[c] ?? 0}
+                        </Link>
+                      </Td>
+                      <Td className="w-24 text-right">
+                        {c === DEFAULT_LEAD_CATEGORY ? (
+                          <span className="text-[13px] text-ink-3">Default</span>
+                        ) : (
+                          canManage && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              disabled={busy}
+                              onClick={() => removeCategory(c)}
+                              aria-label={`Remove ${formatCategoryLabel(c)}`}
+                            >
+                              <Trash2 className="size-4" strokeWidth={1.5} aria-hidden />
+                            </Button>
+                          )
+                        )}
+                      </Td>
+                    </tr>
+                  ))}
+                </tbody>
+              </Table>
+            )}
+          </Panel>
+        </PageSplit>
+      )}
     </>
   );
 }

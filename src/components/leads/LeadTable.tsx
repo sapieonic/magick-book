@@ -1,28 +1,38 @@
 "use client";
-import React, { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Archive, X } from "lucide-react";
-import { Avatar } from "@/components/ui/Avatar";
-import { Badge } from "@/components/ui/Badge";
+import { CategoryBadge } from "./CategoryBadge";
+import { OwnerCell } from "@/components/ui/Avatar";
+import { StageLabel } from "@/components/ui/Badge";
+import { Staleness } from "@/components/ui/Staleness";
 import { Button } from "@/components/ui/Button";
-import { Time } from "@/components/ui/Time";
-import { SortHeader, useSort, sortRows, usePagination, Pagination } from "@/components/ui/Table";
-import { CategoryBadge } from "@/components/leads/CategoryBadge";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
+import { Money } from "@/components/ui/Money";
+import { Portal } from "@/components/ui/Overlay";
+import { Pagination, SortHeader, Table, Td, Th, TwoLine, sortRows, usePagination, useSort } from "@/components/ui/Table";
 import { useToast } from "@/components/ui/Toast";
 import { api } from "@/lib/client";
-import { STAGE_META, BOARD_STAGES } from "@/lib/constants";
-import { formatINRCompact } from "@/lib/utils";
+import { BOARD_STAGES, STAGE_META } from "@/lib/constants";
 import type { LeadDTO } from "@/lib/types";
 
-export function LeadTable({ leads, onChanged }: { leads: LeadDTO[]; onChanged?: () => void }) {
+/**
+ * Leads as a sortable ledger (the Table and Lost views). Rows open the lead;
+ * checkboxes select rows for bulk archive. On phones the row folds into two
+ * lines: name over company, stage and value. `variant="lost"` swaps Source for
+ * the lost reason. Archiving goes through `api`, whose change event reloads the
+ * page's leads.
+ */
+export function LeadTable({ leads, variant = "active" }: { leads: LeadDTO[]; variant?: "active" | "lost" }) {
   const router = useRouter();
   const { toast } = useToast();
   const confirm = useConfirm();
   const { sort, toggle } = useSort("activity", "desc");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [archiving, setArchiving] = useState(false);
-  const selectAllRef = React.useRef<HTMLInputElement>(null);
+  const selectAllRef = useRef<HTMLInputElement>(null);
+  const lost = variant === "lost";
 
   const sorted = useMemo(
     () =>
@@ -42,24 +52,19 @@ export function LeadTable({ leads, onChanged }: { leads: LeadDTO[]; onChanged?: 
           return Number.isNaN(t) ? null : t;
         },
       }),
-    [leads, sort.key, sort.dir],
+    [leads, sort],
   );
   const { page, setPage, pageCount, pageRows, total, pageSize } = usePagination(sorted, 25);
 
-  // Re-sorting should bring you back to the top of the newly-ordered list.
+  // Re-sorting should bring you back to the top of the newly ordered list.
   useEffect(() => setPage(1), [sort.key, sort.dir, setPage]);
 
   // Drop selections that no longer exist (e.g. after a refresh removed archived rows).
   useEffect(() => {
     setSelected((prev) => {
       const valid = new Set(leads.map((l) => l.id));
-      let changed = false;
-      const next = new Set<string>();
-      for (const id of prev) {
-        if (valid.has(id)) next.add(id);
-        else changed = true;
-      }
-      return changed ? next : prev;
+      const next = new Set([...prev].filter((id) => valid.has(id)));
+      return next.size === prev.size ? prev : next;
     });
   }, [leads]);
 
@@ -67,10 +72,8 @@ export function LeadTable({ leads, onChanged }: { leads: LeadDTO[]; onChanged?: 
   const allOnPageSelected = pageIds.length > 0 && pageIds.every((id) => selected.has(id));
   const someOnPageSelected = pageIds.some((id) => selected.has(id));
 
-  React.useEffect(() => {
-    if (selectAllRef.current) {
-      selectAllRef.current.indeterminate = !allOnPageSelected && someOnPageSelected;
-    }
+  useEffect(() => {
+    if (selectAllRef.current) selectAllRef.current.indeterminate = !allOnPageSelected && someOnPageSelected;
   }, [allOnPageSelected, someOnPageSelected]);
 
   function toggleRow(id: string) {
@@ -85,14 +88,12 @@ export function LeadTable({ leads, onChanged }: { leads: LeadDTO[]; onChanged?: 
   function toggleAllOnPage() {
     setSelected((prev) => {
       const next = new Set(prev);
-      if (allOnPageSelected) for (const id of pageIds) next.delete(id);
-      else for (const id of pageIds) next.add(id);
+      for (const id of pageIds) {
+        if (allOnPageSelected) next.delete(id);
+        else next.add(id);
+      }
       return next;
     });
-  }
-
-  function clearSelection() {
-    setSelected(new Set());
   }
 
   async function archiveSelected() {
@@ -107,111 +108,115 @@ export function LeadTable({ leads, onChanged }: { leads: LeadDTO[]; onChanged?: 
     if (!ok) return;
     setArchiving(true);
     try {
-      // allSettled so one failure doesn't strand the rest — some may have archived server-side.
+      // allSettled so one failure doesn't strand the rest: some may have archived server-side.
       const results = await Promise.allSettled(ids.map((id) => api.delete(`/api/leads/${id}`)));
       const failed = results.filter((r) => r.status === "rejected").length;
       const done = ids.length - failed;
       if (done > 0) toast(`${done} ${done === 1 ? "lead" : "leads"} archived.`, "success");
-      if (failed > 0) toast(`${failed} couldn't be archived — try again.`, "error");
+      if (failed > 0) toast(`${failed} couldn't be archived. Try again.`, "error");
     } finally {
-      // Always reconcile: clear selection and refresh so the UI matches the server on every path.
-      clearSelection();
-      onChanged?.();
+      setSelected(new Set());
       setArchiving(false);
     }
   }
 
-  const selectedCount = selected.size;
+  const sortHead = (label: string, key: string, align?: "right") => <SortHeader label={label} sortKey={key} sort={sort} onToggle={toggle} align={align} />;
 
   return (
-    <div className="px-4 pb-6 sm:px-6 lg:px-8">
-      <div className="max-h-[calc(100vh-280px)] overflow-x-auto overflow-y-auto rounded-[var(--radius-xl)] border border-line bg-paper shadow-sm ring-1 ring-black/5 dark:ring-white/5 relative">
-        <table className="w-full min-w-[900px] border-collapse text-left">
-          <thead className="sticky top-0 z-10 bg-canvas/90 backdrop-blur-md shadow-sm dark:bg-canvas/80">
-            <tr className="border-b border-line text-[11px] font-bold uppercase tracking-wider text-muted">
-              <th className="w-10 px-5 py-3">
+    <>
+      <Table className="min-w-full">
+        <thead>
+          <tr>
+            <Th className="w-8">
+              <input
+                ref={selectAllRef}
+                type="checkbox"
+                aria-label="Select all on page"
+                checked={allOnPageSelected}
+                onChange={toggleAllOnPage}
+                className="size-4 cursor-pointer accent-[var(--color-accent)]"
+              />
+            </Th>
+            <Th>{sortHead("Lead", "name")}</Th>
+            <Th hideOnPhone>{sortHead("Company", "company")}</Th>
+            <Th hideOnPhone>{sortHead("Category", "category")}</Th>
+            <Th hideOnPhone>{sortHead("Stage", "stage")}</Th>
+            <Th hideOnPhone>{sortHead("Owner", "owner")}</Th>
+            <Th numeric>{sortHead("Est. value", "estValue", "right")}</Th>
+            <Th hideOnPhone>{lost ? "Reason" : "Source"}</Th>
+            <Th numeric hideOnPhone>
+              {sortHead("Last activity", "activity", "right")}
+            </Th>
+          </tr>
+        </thead>
+        <tbody>
+          {pageRows.map((l) => (
+            <tr
+              key={l.id}
+              onClick={() => router.push(`/leads/${l.id}`)}
+              data-selected={selected.has(l.id)}
+              className="cursor-pointer hover:bg-hover data-[selected=true]:bg-accent-tint"
+            >
+              <Td onClick={(e) => e.stopPropagation()}>
                 <input
                   type="checkbox"
-                  aria-label="Select all on page"
-                  checked={allOnPageSelected}
-                  ref={selectAllRef}
-                  onChange={toggleAllOnPage}
-                  className="size-4 cursor-pointer rounded border-line-strong accent-violet-600 transition-all hover:ring-2 hover:ring-violet-200"
+                  aria-label={`Select ${l.name}`}
+                  checked={selected.has(l.id)}
+                  onChange={() => toggleRow(l.id)}
+                  className="size-4 cursor-pointer accent-[var(--color-accent)]"
                 />
-              </th>
-              <th className="px-5 py-3"><SortHeader label="Lead" sortKey="name" sort={sort} onToggle={toggle} /></th>
-              <th className="px-5 py-3"><SortHeader label="Company" sortKey="company" sort={sort} onToggle={toggle} /></th>
-              <th className="px-5 py-3"><SortHeader label="Category" sortKey="category" sort={sort} onToggle={toggle} /></th>
-              <th className="px-5 py-3"><SortHeader label="Stage" sortKey="stage" sort={sort} onToggle={toggle} /></th>
-              <th className="px-5 py-3"><SortHeader label="Owner" sortKey="owner" sort={sort} onToggle={toggle} /></th>
-              <th className="px-5 py-3 text-right"><SortHeader label="Est. value" sortKey="estValue" sort={sort} onToggle={toggle} align="right" /></th>
-              <th className="px-5 py-3">Source</th>
-              <th className="px-5 py-3 text-right"><SortHeader label="Activity" sortKey="activity" sort={sort} onToggle={toggle} align="right" /></th>
+              </Td>
+              <Td className="max-w-[260px]">
+                <TwoLine
+                  phoneOnly
+                  primary={
+                    <Link href={`/leads/${l.id}`} onClick={(e) => e.stopPropagation()} className="block truncate hover:underline">
+                      {l.name}
+                    </Link>
+                  }
+                  secondary={[l.company, STAGE_META[l.stage].label].filter(Boolean).join(" · ")}
+                />
+              </Td>
+              <Td hideOnPhone className="text-ink-2">{l.company || <span className="text-ink-3">–</span>}</Td>
+              <Td hideOnPhone>
+                <CategoryBadge category={l.category} />
+              </Td>
+              <Td hideOnPhone>
+                <StageLabel stage={l.stage} />
+              </Td>
+              <Td hideOnPhone>
+                <OwnerCell name={l.ownerName} />
+              </Td>
+              <Td numeric>
+                <Money value={l.estValue} />
+              </Td>
+              <Td hideOnPhone className="max-w-[220px] truncate text-ink-2">{(lost ? l.lostReason : l.source) || <span className="text-ink-3">–</span>}</Td>
+              <Td numeric hideOnPhone className="text-ink-2">
+                <Staleness since={l.lastActivityAt} />
+              </Td>
             </tr>
-          </thead>
-          <tbody className="divide-y divide-line bg-paper">
-            {pageRows.map((l) => {
-              const meta = STAGE_META[l.stage];
-              const checked = selected.has(l.id);
-              return (
-                <tr
-                  key={l.id}
-                  onClick={() => router.push(`/leads/${l.id}`)}
-                  className="group cursor-pointer transition-all duration-150 hover:bg-violet-50/50 data-[selected=true]:bg-violet-50/80 dark:hover:bg-violet-900/20 dark:data-[selected=true]:bg-violet-900/40"
-                  data-selected={checked}
-                >
-                  <td className="px-5 py-3.5" onClick={(e) => e.stopPropagation()}>
-                    <input
-                      type="checkbox"
-                      aria-label={`Select ${l.name}`}
-                      checked={checked}
-                      onChange={() => toggleRow(l.id)}
-                      className="size-4 cursor-pointer rounded border-line-strong accent-violet-600 transition-all hover:ring-2 hover:ring-violet-200"
-                    />
-                  </td>
-                  <td className="px-5 py-3.5 text-[14px] font-bold text-ink group-hover:text-violet-700 dark:group-hover:text-violet-400 transition-colors">{l.name}</td>
-                  <td className="px-5 py-3.5 text-[13px] font-medium text-muted">{l.company || "—"}</td>
-                  <td className="px-5 py-3.5">
-                    <CategoryBadge category={l.category} />
-                  </td>
-                  <td className="px-5 py-3.5">
-                    <Badge tint={meta.tint} dot={meta.dot}>{meta.label}</Badge>
-                  </td>
-                  <td className="px-5 py-3.5">
-                    {l.ownerName ? (
-                      <span className="inline-flex items-center gap-2 text-[13px] text-ink-soft">
-                        <Avatar name={l.ownerName} size={22} /> {l.ownerName}
-                      </span>
-                    ) : (
-                      "—"
-                    )}
-                  </td>
-                  <td className="px-5 py-3.5 text-right font-mono text-[13px] text-ink-soft tnum">{l.estValue > 0 ? formatINRCompact(l.estValue) : "—"}</td>
-                  <td className="px-5 py-3.5 text-[13px] text-muted">{l.source}</td>
-                  <td className="px-5 py-3.5 text-right text-[12.5px] text-faint"><Time value={l.lastActivityAt} /></td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
+          ))}
+        </tbody>
+      </Table>
 
       <Pagination page={page} pageCount={pageCount} total={total} pageSize={pageSize} onPage={setPage} />
 
-      {selectedCount > 0 && (
-        <div className="fixed inset-x-0 z-50 flex justify-center px-4 bottom-[calc(5rem+env(safe-area-inset-bottom))] md:bottom-6">
-          <div className="animate-slide-in flex items-center gap-3 rounded-[var(--radius-lg)] border border-line bg-paper px-4 py-2.5 shadow-[var(--shadow-pop)]">
-            <span className="text-[13px] font-semibold text-ink tnum">{selectedCount} selected</span>
-            <div className="h-5 w-px bg-line" />
-            <Button size="sm" variant="danger" loading={archiving} onClick={archiveSelected}>
-              <Archive className="size-3.5" /> Archive
-            </Button>
-            <Button size="sm" variant="ghost" onClick={clearSelection} disabled={archiving}>
-              <X className="size-3.5" /> Clear
-            </Button>
+      {selected.size > 0 && (
+        <Portal>
+          <div className="fixed inset-x-0 bottom-[calc(5.5rem+env(safe-area-inset-bottom))] z-40 flex justify-center px-4 md:bottom-6">
+            <div role="region" aria-label="Selection" className="glass-pop flex animate-rise items-center gap-3 rounded-card px-4 py-2.5">
+              <span className="tnum text-[13px] font-medium">{selected.size} selected</span>
+              <span className="h-5 w-px bg-line" aria-hidden />
+              <Button size="sm" variant="danger" loading={archiving} onClick={archiveSelected}>
+                <Archive className="size-4" strokeWidth={1.5} aria-hidden /> Archive
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())} disabled={archiving}>
+                <X className="size-4" strokeWidth={1.5} aria-hidden /> Clear
+              </Button>
+            </div>
           </div>
-        </div>
+        </Portal>
       )}
-    </div>
+    </>
   );
 }

@@ -1,135 +1,90 @@
-"use client";
-import type { CSSProperties } from "react";
-import { Phone, Mail, MessageSquare, CornerDownRight } from "lucide-react";
-import { CategoryBadge } from "@/components/leads/CategoryBadge";
-import { formatINRCompact, initials, avatarTint, valueTier, relativeTime, absoluteTime, cn } from "@/lib/utils";
+import Link from "next/link";
+import { Avatar } from "@/components/ui/Avatar";
+import { Tag } from "@/components/ui/Badge";
+import { Money } from "@/components/ui/Money";
+import { DEFAULT_LEAD_CATEGORY, formatCategoryLabel } from "@/lib/constants";
+import { Staleness } from "@/components/ui/Staleness";
+import { cn, plural } from "@/lib/utils";
 import type { LeadDTO } from "@/lib/types";
 
-const TAG_TINT: Record<string, string> = {
-  hot: "bg-danger-bg text-danger",
-  called: "bg-info-bg text-info",
-  warm: "bg-warn-bg text-warn",
-};
+/** The lead's name as a link stretched over the whole card, so the card is one target. */
+function NameLink({ lead, dragging, describedBy }: { lead: LeadDTO; dragging?: boolean; describedBy?: string }) {
+  if (dragging) return <span className="truncate font-medium">{lead.name}</span>;
+  return (
+    <Link
+      href={`/leads/${lead.id}`}
+      draggable={false}
+      aria-describedby={describedBy}
+      className="truncate font-medium text-ink-1 after:absolute after:inset-0 after:rounded-[inherit]"
+    >
+      {lead.name}
+    </Link>
+  );
+}
 
-/** Presentational lead card used on the board. */
-export function LeadCard({ lead, dragging }: { lead: LeadDTO; dragging?: boolean }) {
-  const tint = avatarTint(lead.ownerName || lead.name);
-  // Colour the card by deal size — one hue per ₹25k band (see --color-tier* tokens).
-  const tier = valueTier(lead.estValue);
-  const tierStyle =
-    tier >= 0
-      ? ({
-          "--tier": `var(--color-tier${tier})`,
-          "--tier-bg": `var(--color-tier${tier}-bg)`,
-          "--tier-shadow": `color-mix(in srgb, var(--color-tier${tier}) 10%, transparent)`,
-          borderLeftColor: "var(--tier)",
-          borderLeftWidth: "3px",
-        } as CSSProperties)
-      : undefined;
-
-  const hasTags = lead.tags.length > 0;
-  const hasValue = lead.estValue > 0;
-  // Skip unclassified on the board — it clutters cards until something is actually classified.
-  const classified = !!lead.category && lead.category !== "unclassified";
-  // The footer carries at-a-glance signals: comment count, conversion, last touch.
-  const showFooter = lead.commentCount > 0 || !!lead.convertedAccountId || !!lead.lastActivityAt;
+/**
+ * Board card: name and value, company, then category, note count, staleness
+ * and the owner's initials.
+ */
+export function LeadCard({ lead, dragging, describedBy }: { lead: LeadDTO; dragging?: boolean; describedBy?: string }) {
+  const subtitle = [lead.title, lead.company].filter(Boolean).join(" · ");
+  const classified = !!lead.category && lead.category !== DEFAULT_LEAD_CATEGORY;
+  const meta = [classified && formatCategoryLabel(lead.category), lead.commentCount > 0 && plural(lead.commentCount, "note")]
+    .filter(Boolean)
+    .join(" · ");
 
   return (
-    <div
-      style={tierStyle}
+    <article
       className={cn(
-        "group relative rounded-[var(--radius-lg)] border border-line bg-paper p-4 shadow-[var(--shadow-card)] transition-all duration-200",
-        "dark:border-white/10 dark:shadow-[0_10px_28px_rgba(0,0,0,0.45),inset_0_1px_0_rgba(255,255,255,0.07)]",
-        dragging
-          ? "rotate-[2deg] scale-[1.03] shadow-[0_12px_24px_rgba(0,0,0,0.15)] ring-2 ring-violet-400 z-50 cursor-grabbing"
-          : tier >= 0
-            ? "hover:-translate-y-1 hover:shadow-md hover:shadow-[var(--tier-shadow)] hover:ring-1 hover:ring-[var(--tier)]"
-            : "hover:-translate-y-1 hover:border-line-strong hover:shadow-md dark:hover:border-white/20",
+        "glass-card relative rounded-card px-3 py-2.5 transition-colors hover:border-line-strong has-[a:focus-visible]:border-accent",
+        dragging && "cursor-grabbing shadow-pop",
       )}
     >
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0 pr-12">
-          <p className="truncate text-[14.5px] font-bold leading-tight text-ink">{lead.name}</p>
-          {(lead.title || lead.company) && (
-            <p className="mt-1 truncate text-[12.5px] font-medium text-ink-soft">{[lead.title, lead.company].filter(Boolean).join(" · ")}</p>
-          )}
-        </div>
-        {lead.ownerName && (
-          <span
-            className="flex size-7 shrink-0 items-center justify-center rounded-full text-[11px] font-bold shadow-sm ring-2 ring-paper"
-            style={{ background: tint.bg, color: tint.fg }}
-            title={lead.ownerName}
-          >
-            {initials(lead.ownerName)}
-          </span>
-        )}
+      <div className="flex items-baseline justify-between gap-2">
+        <NameLink lead={lead} dragging={dragging} describedBy={describedBy} />
+        <Money value={lead.estValue} compact className="shrink-0 font-medium" />
       </div>
-
-      {(classified || hasTags || hasValue) && (
-        <div className="mt-4 flex flex-wrap items-center gap-1.5">
-          {classified && <CategoryBadge category={lead.category} hideUnclassified />}
-          {(lead.tags || []).map((t) => {
-            const tagStr = t || "";
-            const tLower = tagStr.toLowerCase();
-            return (
-            <span key={tagStr} className={cn("rounded-full px-2.5 py-0.5 text-[10px] font-bold tracking-wide uppercase", TAG_TINT[tLower] ?? "bg-violet-50 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300")}>
-              {tLower === "called" ? (
-                <span className="inline-flex items-center gap-1">
-                  <Phone className="size-3" /> called
-                </span>
-              ) : (
-                tagStr
-              )}
-            </span>
-          )})}
-          {hasValue && (
-            <span
-              className="ml-auto rounded-full px-2.5 py-0.5 font-mono text-[12.5px] font-bold tnum shadow-sm"
-              style={{ background: "var(--tier-bg)", color: "var(--tier)" }}
-            >
-              {formatINRCompact(lead.estValue)}
-            </span>
-          )}
+      {subtitle && <p className="truncate text-[13px] text-ink-3">{subtitle}</p>}
+      {lead.tags.length > 0 && (
+        <div className="mt-1.5 flex flex-wrap gap-1">
+          {lead.tags.map((t) => (
+            <Tag key={t}>{t}</Tag>
+          ))}
         </div>
       )}
-
-      {showFooter && (
-        <div className="mt-3 flex items-center gap-3 border-t border-dashed border-line pt-2.5 text-[11px] text-muted">
-          {lead.commentCount > 0 && (
-            <span
-              className="inline-flex items-center gap-1 font-semibold text-muted"
-              title={`${lead.commentCount} ${lead.commentCount === 1 ? "comment" : "comments"}`}
-            >
-              <MessageSquare className="size-3.5" />
-              <span className="tnum">{lead.commentCount}</span>
-            </span>
+      <div className="mt-2 flex items-center justify-between gap-2 text-[12px] text-ink-3">
+        <span className="min-w-0 truncate">{meta}</span>
+        <span className="flex shrink-0 items-center gap-1.5">
+          <Staleness since={lead.lastActivityAt} />
+          {lead.ownerName && (
+            <>
+              <span className="sr-only">, owner {lead.ownerName}</span>
+              <Avatar name={lead.ownerName} size={24} />
+            </>
           )}
-          {lead.convertedAccountId && (
-            <span className="inline-flex items-center gap-1 font-semibold text-success">
-              <CornerDownRight className="size-3.5" /> account
-            </span>
-          )}
-          {lead.lastActivityAt && (
-            <time
-              dateTime={lead.lastActivityAt}
-              title={absoluteTime(lead.lastActivityAt)}
-              className="ml-auto tnum"
-            >
-              {relativeTime(lead.lastActivityAt)}
-            </time>
-          )}
-        </div>
-      )}
-
-      {/* Quick Actions (Hover) */}
-      <div className="absolute top-3 right-3 flex items-center gap-1 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
-        <button onClick={(e) => { e.stopPropagation(); if (lead.email) window.location.href = `mailto:${lead.email}` }} className="rounded-full bg-paper p-1.5 text-muted shadow-sm ring-1 ring-line hover:text-violet-600 dark:ring-white/10" title="Email">
-          <Mail className="size-3.5" />
-        </button>
-        <button onClick={(e) => { e.stopPropagation(); if (lead.phone) window.location.href = `tel:${lead.phone}` }} className="rounded-full bg-paper p-1.5 text-muted shadow-sm ring-1 ring-line hover:text-violet-600 dark:ring-white/10" title="Call">
-          <Phone className="size-3.5" />
-        </button>
+        </span>
       </div>
+    </article>
+  );
+}
+
+/** Compact Won row: name and value over company and age, with a link to the account it became. */
+export function LeadRow({ lead, dragging, describedBy }: { lead: LeadDTO; dragging?: boolean; describedBy?: string }) {
+  return (
+    <div className="relative grid grid-cols-[minmax(0,1fr)_auto] gap-x-2 border-b border-line py-2 text-[13px]">
+      <NameLink lead={lead} dragging={dragging} describedBy={describedBy} />
+      <Money value={lead.estValue} compact className="text-right text-[14px] font-medium" />
+      <span className="truncate text-ink-3">
+        {lead.company && <>{lead.company} · </>}
+        <Staleness since={lead.lastActivityAt} plain />
+      </span>
+      {lead.convertedAccountId && !dragging ? (
+        <Link href={`/accounts/${lead.convertedAccountId}`} draggable={false} className="link relative z-[1] text-right">
+          View account
+        </Link>
+      ) : (
+        <span />
+      )}
     </div>
   );
 }

@@ -5,19 +5,56 @@ import { Button } from "@/components/ui/Button";
 import { Input, Textarea, Field } from "@/components/ui/Field";
 import { useToast } from "@/components/ui/Toast";
 import { api } from "@/lib/client";
+import { cn } from "@/lib/utils";
+import { businessDay, fromBusinessInput, toBusinessInput } from "@/lib/dates";
 import type { ReminderDTO } from "@/lib/types";
-
-/** Format a Date as the local value a <input type="datetime-local"> expects. */
-function toLocalInput(d: Date): string {
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
 
 const PRESETS: { label: string; at: () => Date }[] = [
   { label: "In 1 hour", at: () => new Date(Date.now() + 60 * 60 * 1000) },
-  { label: "Tomorrow 9am", at: () => { const d = new Date(); d.setDate(d.getDate() + 1); d.setHours(9, 0, 0, 0); return d; } },
-  { label: "Next week", at: () => { const d = new Date(); d.setDate(d.getDate() + 7); d.setHours(9, 0, 0, 0); return d; } },
+  { label: "Tomorrow 9am", at: () => businessDay(Date.now(), 1, 9) },
+  { label: "Next week", at: () => businessDay(Date.now(), 7, 9) },
 ];
+
+/** Quick-pick chips that set a `WhenField` value ("In 1 hour", "Tomorrow 9am", "Next week"), in IST. */
+export function DuePresets({ onPick, className }: { onPick: (value: string) => void; className?: string }) {
+  return (
+    <div role="group" aria-label="Quick picks" className={cn("flex flex-wrap gap-1.5", className)}>
+      {PRESETS.map((p) => (
+        <button
+          key={p.label}
+          type="button"
+          onClick={() => onPick(toBusinessInput(p.at()))}
+          className="rounded-full border border-line-strong bg-control px-2.5 py-0.5 text-[13px] text-ink-2 transition-colors hover:bg-hover hover:text-ink-1 max-md:px-3.5 max-md:py-2"
+        >
+          {p.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * The required "When" date-time input. Its value is IST wall-clock time
+ * (`toBusinessInput` / `fromBusinessInput`), so the label says so for anyone
+ * outside India. `marked` shows the required asterisk.
+ */
+export function WhenField({
+  value,
+  onChange,
+  marked,
+  className,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  marked?: boolean;
+  className?: string;
+}) {
+  return (
+    <Field label="When" required={marked} hint={<abbr title="India Standard Time" className="no-underline">IST</abbr>} className={className}>
+      <Input type="datetime-local" required value={value} onChange={(e) => onChange(e.target.value)} />
+    </Field>
+  );
+}
 
 export function ReminderModal({
   open,
@@ -40,7 +77,7 @@ export function ReminderModal({
   const { toast } = useToast();
   const [title, setTitle] = useState("");
   const [notes, setNotes] = useState("");
-  const [due, setDue] = useState(() => toLocalInput(PRESETS[0].at()));
+  const [due, setDue] = useState(() => toBusinessInput(PRESETS[0].at()));
   const [busy, setBusy] = useState(false);
 
   // Seed the title each time the modal opens (state persists between opens).
@@ -52,13 +89,14 @@ export function ReminderModal({
 
   async function submit() {
     if (!title.trim()) return toast("Give the reminder a title.", "error");
-    if (!due) return toast("Pick when it's due.", "error");
+    const dueAt = fromBusinessInput(due);
+    if (!dueAt) return toast("Pick when it's due.", "error");
     setBusy(true);
     try {
       const { reminder } = await api.post<{ reminder: ReminderDTO }>("/api/reminders", {
         title: title.trim(),
         notes: notes.trim(),
-        dueAt: new Date(due).toISOString(),
+        dueAt: dueAt.toISOString(),
         leadId,
         accountId,
       });
@@ -84,21 +122,10 @@ export function ReminderModal({
         <Field label="What's the reminder?" required>
           <Input autoFocus placeholder="Follow up on proposal" value={title} onChange={(e) => setTitle(e.target.value)} />
         </Field>
-        <Field label="When" required>
-          <Input type="datetime-local" value={due} onChange={(e) => setDue(e.target.value)} />
-          <div className="mt-2 flex flex-wrap gap-1.5">
-            {PRESETS.map((p) => (
-              <button
-                key={p.label}
-                type="button"
-                onClick={() => setDue(toLocalInput(p.at()))}
-                className="rounded-full border border-line-strong bg-paper px-2.5 py-1 text-[12px] font-semibold text-muted transition-all hover:border-violet-300 hover:text-violet-600"
-              >
-                {p.label}
-              </button>
-            ))}
-          </div>
-        </Field>
+        <div>
+          <WhenField marked value={due} onChange={setDue} />
+          <DuePresets onPick={setDue} className="mt-2" />
+        </div>
         <Field label="Notes" hint="optional">
           <Textarea placeholder="Anything to remember…" value={notes} onChange={(e) => setNotes(e.target.value)} />
         </Field>

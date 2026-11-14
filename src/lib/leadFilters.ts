@@ -1,19 +1,46 @@
-// Pure helpers behind the Leads owner filter. Kept free of React/Next so the
-// derivation, filtering, and URL round-trip can be unit-tested in isolation.
+// Pure helpers behind the Leads page: owner filter, `?stage=` param and the
+// pipeline roll-ups. Kept free of React/Next so the derivation, filtering and
+// URL round-trip can be unit-tested in isolation.
+import { LEAD_STAGES, PIPELINE_STAGES, isOpenLeadStage, type LeadStage, type PipelineStage } from "./constants";
 import type { LeadDTO } from "./types";
+
+/**
+ * The one order of cards within a lane: `order` ascending, then oldest first,
+ * then id. `LANE_SORT` is the Mongo sort the API reads lanes with;
+ * `byLaneOrder` is the same comparison for the board. Ids are ObjectId hex, so
+ * comparing them as strings matches Mongo's `_id` order.
+ */
+export const LANE_SORT = { order: 1, createdAt: 1, _id: 1 } as const;
+
+export function byLaneOrder(a: Pick<LeadDTO, "id" | "order" | "createdAt">, b: Pick<LeadDTO, "id" | "order" | "createdAt">): number {
+  return a.order - b.order || +new Date(a.createdAt) - +new Date(b.createdAt) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+}
+
+/** Where a card sits in the lane the user sees: the ids directly above and below it, which the stage API places it between. */
+export function laneNeighbours(lane: Pick<LeadDTO, "id">[], id: string): { beforeId?: string; afterId?: string } {
+  const at = lane.findIndex((l) => l.id === id);
+  if (at < 0) return {};
+  return { beforeId: lane[at - 1]?.id, afterId: lane[at + 1]?.id };
+}
 
 export interface OwnerOption {
   id: string;
   name: string;
-  /** How many of the supplied leads this person owns — a Jira-style count. */
+  /** How many of the supplied rows this person owns — a Jira-style count. */
   count: number;
 }
 
+/** Any owned record: a lead, an account. */
+interface Owned {
+  ownerId: string;
+  ownerName?: string;
+}
+
 /**
- * The pool of people you can filter by: everyone who owns one of `leads`, with
- * their lead counts, sorted by name. Leads without an owner are skipped.
+ * The pool of people you can filter by: everyone who owns one of `rows`, with
+ * their counts, sorted by name. Rows without an owner are skipped.
  */
-export function deriveOwners(leads: LeadDTO[]): OwnerOption[] {
+export function deriveOwners(leads: Owned[]): OwnerOption[] {
   const byId = new Map<string, OwnerOption>();
   for (const l of leads) {
     if (!l.ownerId || !l.ownerName?.trim()) continue;
@@ -24,8 +51,8 @@ export function deriveOwners(leads: LeadDTO[]): OwnerOption[] {
   return [...byId.values()].sort((a, b) => a.name.localeCompare(b.name));
 }
 
-/** Narrow `leads` to those owned by one of `ownerIds`. No selection → everything. */
-export function filterLeadsByOwners(leads: LeadDTO[], ownerIds: string[]): LeadDTO[] {
+/** Narrow `rows` to those owned by one of `ownerIds`. No selection → everything. */
+export function filterByOwners<T extends Owned>(leads: T[], ownerIds: string[]): T[] {
   if (ownerIds.length === 0) return leads;
   const set = new Set(ownerIds);
   return leads.filter((l) => set.has(l.ownerId));
@@ -49,4 +76,55 @@ export function parseOwnerParam(raw: string | null | undefined): string[] {
 /** Serialize selected owner ids back to the `?owner=` param value. */
 export function serializeOwnerParam(ownerIds: string[]): string {
   return ownerIds.join(",");
+}
+
+/** Parse a `?stage=` param into a known stage, or null when absent or unknown. */
+export function parseStageParam(raw: string | null | undefined): LeadStage | null {
+  const stage = raw?.trim().toLowerCase();
+  return stage && (LEAD_STAGES as readonly string[]).includes(stage) ? (stage as LeadStage) : null;
+}
+
+export interface LeadSummary {
+  /** Open leads: New through Proposal (`OPEN_LEAD_STAGES`), the sidebar's and Today's count. */
+  open: number;
+  /** Estimated value of the open leads. */
+  openValue: number;
+  won: number;
+  parked: number;
+  lost: number;
+}
+
+/** One-pass roll-up for the page's summary line and the Lost view count. */
+export function summarizeLeads(leads: LeadDTO[]): LeadSummary {
+  const sum: LeadSummary = { open: 0, openValue: 0, won: 0, parked: 0, lost: 0 };
+  for (const l of leads) {
+    if (isOpenLeadStage(l.stage)) {
+      sum.open += 1;
+      sum.openValue += l.estValue > 0 ? l.estValue : 0;
+    } else sum[l.stage] += 1;
+  }
+  return sum;
+}
+
+export interface StageTotal {
+  count: number;
+  value: number;
+  /** This stage's share of the whole pipeline's value, 0..1. */
+  share: number;
+}
+
+/** Count, value and share of pipeline value for each of the five funnel stages. */
+export function stageTotals(leads: LeadDTO[]): Record<PipelineStage, StageTotal> {
+  const totals = Object.fromEntries(PIPELINE_STAGES.map((s) => [s, { count: 0, value: 0, share: 0 }])) as Record<PipelineStage, StageTotal>;
+  let pipeline = 0;
+  for (const l of leads) {
+    const t = totals[l.stage as PipelineStage];
+    if (!t) continue;
+    const value = l.estValue > 0 ? l.estValue : 0;
+    t.count += 1;
+    t.value += value;
+    pipeline += value;
+  }
+  if (pipeline > 0) for (const s of PIPELINE_STAGES) totals[s].share = totals[s].value / pipeline;
+  return totals;
 }

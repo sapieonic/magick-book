@@ -3,8 +3,12 @@ import { connectDB } from "@/lib/db";
 import { Account, Invoice, Expense, type IAccount, type IInvoice, type IExpense } from "@/lib/models";
 import { requireUser } from "@/lib/auth/server";
 import { accountScope } from "@/lib/rbac";
+import { buildCollectedByMonth } from "@/lib/money-charts";
+import { buildOutstandingAging, rollupMoney } from "@/lib/receivables";
+import type { MoneySummary } from "@/lib/types";
 
-// GET /api/money — workspace-wide invoices + expenses across visible accounts.
+// GET /api/money — invoices + expenses across visible accounts, with the
+// totals, outstanding aging and collected-by-month series derived from them.
 export const GET = route(async () => {
   const user = await requireUser();
   await connectDB();
@@ -14,19 +18,21 @@ export const GET = route(async () => {
   const accIds = accounts.map((a) => a._id);
   const nameMap = new Map(accounts.map((a) => [String(a._id), a.name]));
 
-  const [invoices, expenses] = await Promise.all([
+  const [invoiceDocs, expenseDocs] = await Promise.all([
     Invoice.find({ accountId: { $in: accIds }, deletedAt: null }).sort({ issuedAt: -1 }).lean<IInvoice[]>(),
     Expense.find({ accountId: { $in: accIds }, deletedAt: null }).sort({ date: -1 }).lean<IExpense[]>(),
   ]);
+  const invoices = invoiceDocs.map((i) => serializeInvoice(i, nameMap.get(String(i.accountId))));
+  const expenses = expenseDocs.map((e) => serializeExpense(e, nameMap.get(String(e.accountId))));
 
-  const billed = invoices.filter((i) => i.status !== "draft").reduce((s, i) => s + i.amount, 0);
-  const paid = invoices.filter((i) => i.status === "paid").reduce((s, i) => s + i.amount, 0);
-  const outstanding = invoices.filter((i) => i.status === "sent" || i.status === "overdue").reduce((s, i) => s + i.amount, 0);
-  const totalExpenses = expenses.reduce((s, e) => s + e.amount, 0);
-
-  return ok({
-    invoices: invoices.map((i) => serializeInvoice(i, nameMap.get(String(i.accountId)))),
-    expenses: expenses.map((e) => serializeExpense(e, nameMap.get(String(e.accountId)))),
-    totals: { billed, paid, outstanding, expenses: totalExpenses, margin: billed > 0 ? Math.max(0, (billed - totalExpenses) / billed) : 0 },
-  });
+  const now = new Date();
+  const body: MoneySummary = {
+    asOf: now.toISOString(),
+    invoices,
+    expenses,
+    totals: rollupMoney(invoices, expenses, now),
+    aging: buildOutstandingAging(invoices, now),
+    collected: buildCollectedByMonth(invoices, now),
+  };
+  return ok(body);
 });

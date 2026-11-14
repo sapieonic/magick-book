@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ArrowRight } from "lucide-react";
 import { Modal } from "@/components/ui/Overlay";
 import { Button } from "@/components/ui/Button";
@@ -59,7 +59,7 @@ export function ConvertModal({
         ownerId,
         plan: plan || undefined,
       });
-      toast(`${account.name} is now an active account 🎉`, "success");
+      toast(`${account.name} is now an active account.`, "success");
       onConverted(account);
     } catch (err) {
       toast(err instanceof Error ? err.message : "Could not convert", "error");
@@ -68,18 +68,17 @@ export function ConvertModal({
   }
 
   return (
-    <Modal open={open} onClose={onClose} title="Convert to active account 🎉" subtitle={`${lead.name.split(" ")[0]}'s a win! We'll carry everything over so nothing's re-typed.`}>
-      <div className="rounded-[var(--radius-md)] border border-dashed border-violet-300 bg-violet-50/70 p-4 text-[13px] leading-relaxed text-violet-900">
-        <p>
-          Lead contact <b>{lead.name}</b> → set as <b>primary contact</b>
-        </p>
-        <p className="mt-1.5">
-          Company <b>{lead.company || lead.name}</b> → becomes the <b>account</b>
-        </p>
-        <p className="mt-1.5">
-          Lifecycle &amp; history → <b>kept on the account</b>
-        </p>
-      </div>
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="Convert to account"
+      subtitle="Everything carries over, so nothing is typed twice."
+    >
+      <ul className="rounded-card bg-sunk px-4 py-1 text-[13px] text-ink-2">
+        <CarryRow from={<>Contact <b className="font-medium text-ink-1">{lead.name}</b></>} to="Primary contact" />
+        <CarryRow from={<>Company <b className="font-medium text-ink-1">{lead.company || lead.name}</b></>} to="The account" />
+        <CarryRow from="Activity and history" to="Kept on the account" />
+      </ul>
 
       <div className="mt-5 space-y-4">
         <Field label="Account name" error={errors.accountName}>
@@ -122,12 +121,23 @@ export function ConvertModal({
 
       <div className="mt-6 flex gap-3">
         <Button variant="primary" onClick={convert} loading={busy}>
-          Create account <ArrowRight className="size-4" />
+          Create account <ArrowRight className="size-4" strokeWidth={1.5} aria-hidden />
         </Button>
         <Button variant="ghost" onClick={onClose}>
           Cancel
         </Button>
       </div>
     </Modal>
+  );
+}
+
+function CarryRow({ from, to }: { from: ReactNode; to: string }) {
+  return (
+    <li className="flex flex-wrap items-baseline gap-x-2 border-b border-line py-2 last:border-b-0">
+      <span>{from}</span>
+      <span aria-hidden>→</span>
+      <span className="sr-only">becomes</span>
+      <span className="text-ink-1">{to}</span>
+    </li>
   );
 }

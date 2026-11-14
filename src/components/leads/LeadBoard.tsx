@@ -1,72 +1,93 @@
 "use client";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type Ref, type RefObject } from "react";
 import {
   DndContext,
   DragOverlay,
-  PointerSensor,
+  MouseSensor,
+  TouchSensor,
   useSensor,
   useSensors,
-  closestCorners,
+  closestCenter,
+  getFirstCollision,
+  pointerWithin,
+  rectIntersection,
   useDroppable,
+  type CollisionDetection,
   type DragStartEvent,
   type DragEndEvent,
   type DragOverEvent,
+  type UniqueIdentifier,
 } from "@dnd-kit/core";
-import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
-import { CSS } from "@dnd-kit/utilities";
-import { Plus, Ban, ChevronRight, ChevronsLeft } from "lucide-react";
-import { LeadCard } from "./LeadCard";
-import { Modal } from "@/components/ui/Overlay";
-import { Button } from "@/components/ui/Button";
-import { Textarea, Field } from "@/components/ui/Field";
+import { SortableContext, arrayMove, rectSortingStrategy } from "@dnd-kit/sortable";
+import { ChevronDown } from "lucide-react";
+import { CollapsedLane, SortableItem, StageLane, WeightRule, type CardKeyHandler } from "./BoardLane";
+import { LeadCard, LeadRow } from "./LeadCard";
+import { LostLeadModal } from "./LostLeadModal";
+import { PHONE_QUERY, useMediaQuery } from "@/lib/useMediaQuery";
+import { KbdHint } from "@/components/ui/Misc";
+import { Money } from "@/components/ui/Money";
+import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { useToast } from "@/components/ui/Toast";
 import { api } from "@/lib/client";
 import {
   BOARD_STAGES,
+  PIPELINE_STAGES,
   STAGE_META,
   isCollapsibleStage,
   type BoardStage,
+  type LeadStage,
+  type PipelineStage,
 } from "@/lib/constants";
+import { byLaneOrder, laneNeighbours, stageTotals, type StageTotal } from "@/lib/leadFilters";
+import { stageStep } from "@/components/ui/stage";
 import { cn } from "@/lib/utils";
 import type { LeadDTO } from "@/lib/types";
 
-type Board = Record<string, LeadDTO[]>;
+type Board = Record<BoardStage, LeadDTO[]>;
 
 const COLLAPSE_KEY = "mb.leads.board.collapsed";
 const DEFAULT_COLLAPSED = ["parked"] as const;
+const DROP_PARKED = "drop:parked";
+const DROP_LOST = "drop:lost";
+
+/** Card shortcuts: 1–5 move along the funnel, P parks. (L, for lost, opens the reason dialog.) */
+const KEY_STAGES: Record<string, BoardStage> = { "1": "new", "2": "contacted", "3": "qualified", "4": "proposal", "5": "won", p: "parked" };
 
 function buildBoard(leads: LeadDTO[]): Board {
-  const board: Board = {};
-  for (const s of BOARD_STAGES) board[s] = [];
-  for (const l of leads) {
-    // Lost leads (and any non-board stage) aren't shown on the board.
-    if (!(BOARD_STAGES as readonly string[]).includes(l.stage)) continue;
-    board[l.stage].push(l);
-  }
-  for (const s of BOARD_STAGES) board[s].sort((a, b) => a.order - b.order || +new Date(a.createdAt) - +new Date(b.createdAt));
+  const board = Object.fromEntries(BOARD_STAGES.map((s) => [s, [] as LeadDTO[]])) as Board;
+  for (const l of leads) board[l.stage as BoardStage]?.push(l);
+  for (const s of BOARD_STAGES) board[s].sort(byLaneOrder);
   return board;
 }
 
+/** The board with one card taken out, wherever it was. */
+function without(board: Board, id: string): Board {
+  return Object.fromEntries(BOARD_STAGES.map((s) => [s, board[s].filter((l) => l.id !== id)])) as Board;
+}
+
 function readCollapsed(): Set<string> {
-  if (typeof window === "undefined") return new Set(DEFAULT_COLLAPSED);
   try {
     const raw = localStorage.getItem(COLLAPSE_KEY);
-    if (!raw) return new Set(DEFAULT_COLLAPSED);
-    const parsed = JSON.parse(raw);
+    const parsed: unknown = raw ? JSON.parse(raw) : null;
     if (!Array.isArray(parsed)) return new Set(DEFAULT_COLLAPSED);
-    return new Set(parsed.filter((s: unknown) => typeof s === "string" && isCollapsibleStage(s)));
+    return new Set(parsed.filter((s): s is string => typeof s === "string" && isCollapsibleStage(s)));
   } catch {
     return new Set(DEFAULT_COLLAPSED);
   }
 }
 
-function useCollapsedColumns() {
+/**
+ * Which collapsible lanes (Won, Parked) are folded away, remembered per browser.
+ * A lane named by `?stage=` opens for this visit without changing the stored choice.
+ */
+function useCollapsedColumns(open?: string | null) {
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set(DEFAULT_COLLAPSED));
 
   useEffect(() => {
-    setCollapsed(readCollapsed());
-  }, []);
+    const stored = readCollapsed();
+    if (open) stored.delete(open);
+    setCollapsed(stored);
+  }, [open]);
 
   function toggle(stage: string) {
     if (!isCollapsibleStage(stage)) return;
@@ -77,7 +98,7 @@ function useCollapsedColumns() {
       try {
         localStorage.setItem(COLLAPSE_KEY, JSON.stringify([...next]));
       } catch {
-        /* ignore quota / private mode */
+        /* storage unavailable: keep the in-memory state */
       }
       return next;
     });
@@ -86,366 +107,565 @@ function useCollapsedColumns() {
   return { collapsed, toggle };
 }
 
-export function LeadBoard({ leads, onAdd, onChanged }: { leads: LeadDTO[]; onAdd: (stage: BoardStage) => void; onChanged: () => void }) {
-  const router = useRouter();
+/**
+ * The pipeline board. Five funnel lanes (equal columns from 1280px, ~280px
+ * scroll-snap lanes on tablets, one stage at a time on phones), a Parked/Lost
+ * shelf that doubles as a drop target, and the Parked holding lane. Cards move
+ * by drag and drop or, when focused, by keyboard (1–5, P, L). Every move goes
+ * through `api`, whose change event reloads the page's leads, so the board
+ * takes no refresh callback of its own.
+ */
+export function LeadBoard({
+  leads,
+  lostCount = 0,
+  focusStage,
+  onAdd,
+  onShowLost,
+}: {
+  leads: LeadDTO[];
+  lostCount?: number;
+  /** From `?stage=`: highlighted, scrolled into view, and opened if it was collapsed. */
+  focusStage?: LeadStage | null;
+  onAdd: (stage: BoardStage) => void;
+  onShowLost?: () => void;
+}) {
   const { toast } = useToast();
+  const hintId = useId();
+  const isPhone = useMediaQuery(PHONE_QUERY);
   const [board, setBoard] = useState<Board>(() => buildBoard(leads));
   const [activeId, setActiveId] = useState<string | null>(null);
   const [lostLead, setLostLead] = useState<LeadDTO | null>(null);
-  const { collapsed, toggle } = useCollapsedColumns();
-  // The card's original column, captured at drag start. `onDragOver` shuffles the
-  // board mid-drag, so by `onDragEnd` we can no longer recover the source from state.
-  const homeStageRef = useRef<string | null>(null);
+  const [phoneStage, setPhoneStage] = useState<PipelineStage>(() =>
+    focusStage && (PIPELINE_STAGES as readonly string[]).includes(focusStage) ? (focusStage as PipelineStage) : "new",
+  );
+  const { collapsed, toggle } = useCollapsedColumns(focusStage);
+  // The card's original column, captured at drag start: `onDragOver` shuffles the
+  // board mid-drag, so by `onDragEnd` the source can't be recovered from state.
+  const homeStageRef = useRef<BoardStage | null>(null);
+  const boardRef = useRef<HTMLDivElement>(null);
+  const shelfRef = useRef<HTMLDivElement>(null);
+  // Multi-container drag state (dnd-kit's pattern): the last target the pointer
+  // resolved to, and whether the card has just jumped lanes. Right after a jump
+  // the lanes re-measure, and resolving afresh would bounce the card back.
+  const lastOverId = useRef<UniqueIdentifier | null>(null);
+  const recentlyMovedToNewContainer = useRef(false);
 
-  useEffect(() => setBoard(buildBoard(leads)), [leads]);
+  // Server data replaces the board, except mid-drag: every mutation anywhere
+  // reloads the leads, and rebuilding then would yank the card from the pointer.
+  // The drop (or cancel) rebuilds from the latest leads.
+  useEffect(() => {
+    if (!homeStageRef.current) setBoard(buildBoard(leads));
+  }, [leads]);
 
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => {
+      recentlyMovedToNewContainer.current = false;
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [board]);
+
+  // Bring a `?stage=` lane into view once it has rendered (tablet scroller, parked lane below the fold).
+  const scrolledTo = useRef<string | null>(null);
+  useEffect(() => {
+    if (!focusStage || scrolledTo.current === focusStage) return;
+    const lane = boardRef.current?.parentElement?.querySelector<HTMLElement>(`[data-testid="col-${focusStage}"]`);
+    if (!lane) return;
+    scrolledTo.current = focusStage;
+    lane.scrollIntoView?.({ behavior: "smooth", block: "nearest", inline: "start" });
+  });
+
+  // Mouse drags after a small nudge; touch needs a press and hold, so a swipe still scrolls the lanes.
+  const sensors = useSensors(
+    useSensor(MouseSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 5 } }),
+  );
   const activeLead = useMemo(() => leads.find((l) => l.id === activeId) ?? null, [activeId, leads]);
+  const totals = useMemo(() => stageTotals(Object.values(board).flat()), [board]);
 
-  function findStage(id: string): string | null {
-    if (id.startsWith("col:")) return id.slice(4);
-    for (const s of BOARD_STAGES) if (board[s].some((l) => l.id === id)) return s;
-    return null;
-  }
+  /**
+   * The Parked/Lost shelf under the pointer, else the pointer's lane, else
+   * whatever the card overlaps, else the last target. Over a lane with cards,
+   * the nearest card wins so the drop lands between cards rather than at the end.
+   */
+  const collisionDetection: CollisionDetection = useCallback(
+    (args) => {
+      // The shelf sticks to the viewport while dragging, so hit-test its live
+      // position: dnd-kit's cached rects assume targets scroll with the page.
+      const at = args.pointerCoordinates;
+      const shelf =
+        at &&
+        [...(shelfRef.current?.querySelectorAll<HTMLElement>("[data-shelf]") ?? [])].find((el) => {
+          const r = el.getBoundingClientRect();
+          return at.x >= r.left && at.x <= r.right && at.y >= r.top && at.y <= r.bottom;
+        });
+      if (shelf) return [{ id: shelf.dataset.shelf! }];
 
-  function onDragStart(e: DragStartEvent) {
-    const id = String(e.active.id);
-    setActiveId(id);
-    // Snapshot the source column now — `onDragOver` mutates the board before drop.
-    homeStageRef.current = findStage(id);
-  }
-
-  async function onDragEnd(e: DragEndEvent) {
-    const { active, over } = e;
-    setActiveId(null);
-    const fromStage = homeStageRef.current;
-    homeStageRef.current = null;
-
-    // Dropped nowhere — undo any mid-drag shuffling `onDragOver` applied.
-    if (!over || !fromStage) {
-      setBoard(buildBoard(leads));
-      return;
-    }
-
-    // Dropping onto the "lost" zone opens the reason modal instead of moving.
-    if (findStage(String(over.id)) === "lost") {
-      const lead = leads.find((l) => l.id === active.id);
-      setBoard(buildBoard(leads)); // revert any cross-column shuffle from onDragOver
-      if (lead) setLostLead(lead);
-      return;
-    }
-
-    // The card's current column — `onDragOver` may have already moved it cross-lane.
-    const toStage = findStage(String(active.id));
-    if (!toStage) return;
-    const lead = board[toStage].find((l) => l.id === active.id);
-    if (!lead) return;
-
-    // Compute insert index within target column.
-    const overId = String(over.id);
-    const targetList = board[toStage].filter((l) => l.id !== active.id);
-    let index = targetList.length;
-    if (!overId.startsWith("col:")) {
-      const oi = targetList.findIndex((l) => l.id === overId);
-      if (oi >= 0) index = oi;
-    }
-
-    // No-op: dropped back in its home column at the same position.
-    const currentIndex = board[toStage].findIndex((l) => l.id === active.id);
-    if (fromStage === toStage && currentIndex === index) {
-      setBoard(buildBoard(leads));
-      return;
-    }
-
-    // Optimistic update.
-    const dest = [...targetList];
-    dest.splice(index, 0, { ...lead, stage: toStage as LeadDTO["stage"], order: index });
-    const next: Board = { ...board, [toStage]: dest.map((l, i) => ({ ...l, order: i })) };
-    setBoard(next);
-
-    try {
-      await api.patch(`/api/leads/${lead.id}/stage`, { stage: toStage, order: index });
-      if (fromStage !== toStage) {
-        toast(`${lead.name} → ${STAGE_META[toStage as BoardStage].label}`, "success");
-        onChanged();
+      const pointer = pointerWithin(args);
+      let overId = getFirstCollision(pointer.length > 0 ? pointer : rectIntersection(args), "id");
+      if (overId != null) {
+        const lane = String(overId).startsWith("col:") ? board[String(overId).slice(4) as BoardStage] : null;
+        if (lane?.length) {
+          const cards = new Set<UniqueIdentifier>(lane.map((l) => l.id));
+          overId = closestCenter({ ...args, droppableContainers: args.droppableContainers.filter((c) => cards.has(c.id)) })[0]?.id ?? overId;
+        }
+        lastOverId.current = overId;
+        return [{ id: overId }];
       }
+      if (recentlyMovedToNewContainer.current) lastOverId.current = activeId;
+      return lastOverId.current != null ? [{ id: lastOverId.current }] : [];
+    },
+    [activeId, board],
+  );
+
+  function stageIn(b: Board, id: string): BoardStage | "lost" | null {
+    if (id === DROP_PARKED) return "parked";
+    if (id === DROP_LOST) return "lost";
+    if (id.startsWith("col:")) return id.slice(4) as BoardStage;
+    return BOARD_STAGES.find((s) => b[s].some((l) => l.id === id)) ?? null;
+  }
+  const findStage = (id: string) => stageIn(board, id);
+
+  // Optimistic edits until the reload lands: a new card takes its lane slot, a lost one leaves the board.
+  const show = (lead: LeadDTO) => setBoard((prev) => ({ ...prev, [lead.stage]: [...(prev[lead.stage as BoardStage] ?? []), lead].sort(byLaneOrder) }));
+  const hide = (id: string) => setBoard((prev) => without(prev, id));
+
+  /** Move a lead to the top of another lane (keyboard, shelf and "Move here"). */
+  async function move(lead: LeadDTO, to: BoardStage) {
+    if (lead.stage === to && board[to].some((l) => l.id === lead.id)) return;
+    // Where focus goes if the card lands out of sight (a collapsed lane): the
+    // card that took its place, else the one above it, else the Parked shelf.
+    const from = board[lead.stage as BoardStage] ?? [];
+    const at = from.findIndex((l) => l.id === lead.id);
+    const neighbour = from[at + 1] ?? from[at - 1];
+    setBoard((prev) => {
+      const next = without(prev, lead.id);
+      return { ...next, [to]: [{ ...lead, stage: to }, ...next[to]] };
+    });
+    requestAnimationFrame(() => {
+      const card = (id: string) => document.querySelector<HTMLElement>(`[data-lead-id="${id}"] a`);
+      const target = card(lead.id) ?? (neighbour && card(neighbour.id)) ?? shelfRef.current?.querySelector<HTMLElement>(`[data-shelf="${DROP_PARKED}"]`);
+      target?.focus();
+    });
+    try {
+      // Top of the lane: above the first card the user sees there.
+      await api.patch(`/api/leads/${lead.id}/stage`, { stage: to, afterId: board[to].find((l) => l.id !== lead.id)?.id });
+      toast(`${lead.name} moved to ${STAGE_META[to].label}.`, "success");
     } catch (err) {
       toast(err instanceof Error ? err.message : "Couldn't move lead", "error");
       setBoard(buildBoard(leads));
     }
   }
 
+  const onCardKey: CardKeyHandler = (lead: LeadDTO, e: KeyboardEvent<HTMLElement>) => {
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    const key = e.key.toLowerCase();
+    if (key === "l") {
+      e.preventDefault();
+      setLostLead(lead);
+      return;
+    }
+    const to = KEY_STAGES[key];
+    if (!to) return;
+    e.preventDefault();
+    move(lead, to);
+  };
+
+  function onDragStart(e: DragStartEvent) {
+    const id = String(e.active.id);
+    setActiveId(id);
+    homeStageRef.current = findStage(id) as BoardStage | null;
+  }
+
+  /** Drag ended without a drop (Escape, or the pointer left the window): put everything back. */
+  function onDragCancel() {
+    setActiveId(null);
+    homeStageRef.current = null;
+    lastOverId.current = null;
+    setBoard(buildBoard(leads));
+  }
+
+  /** Mid-drag, carry the card into the lane under it so the lane opens a gap. Same lane: nothing to do. */
   function onDragOver(e: DragOverEvent) {
     const { active, over } = e;
     if (!over) return;
-    const activeId = String(active.id);
+    const activeKey = String(active.id);
     const overId = String(over.id);
+    if (overId.startsWith("drop:")) return; // shelf targets act on drop, not while hovering
 
-    const fromStage = findStage(activeId);
+    const fromStage = findStage(activeKey);
     const toStage = findStage(overId);
+    if (!fromStage || !toStage || fromStage === toStage || fromStage === "lost" || toStage === "lost") return;
 
-    if (!fromStage || !toStage || fromStage === toStage || toStage === "lost") return;
-
+    // Below the hovered card's midline goes after it.
+    const translated = active.rect.current.translated;
+    const below = !!translated && translated.top > over.rect.top + over.rect.height / 2;
+    recentlyMovedToNewContainer.current = true;
     setBoard((prev) => {
-      const lead = prev[fromStage].find((l) => l.id === activeId);
-      if (!lead) return prev;
-
-      const targetList = prev[toStage].filter((l) => l.id !== activeId);
-      let index = targetList.length;
-      if (!overId.startsWith("col:")) {
-        const oi = targetList.findIndex((l) => l.id === overId);
-        if (oi >= 0) index = oi;
-      }
-
-      const next = { ...prev };
-      next[fromStage] = prev[fromStage].filter((l) => l.id !== activeId);
-      const dest = [...targetList];
-      dest.splice(index, 0, { ...lead, stage: toStage as LeadDTO["stage"] });
-      next[toStage] = dest;
-      return next;
+      const from = stageIn(prev, activeKey);
+      const lead = from && from !== "lost" ? prev[from].find((l) => l.id === activeKey) : undefined;
+      if (!from || from === "lost" || from === toStage || !lead) return prev;
+      const dest = [...prev[toStage]];
+      const oi = dest.findIndex((l) => l.id === overId);
+      dest.splice(oi >= 0 ? oi + (below ? 1 : 0) : dest.length, 0, { ...lead, stage: toStage });
+      return { ...prev, [from]: prev[from].filter((l) => l.id !== activeKey), [toStage]: dest };
     });
   }
 
+  async function onDragEnd(e: DragEndEvent) {
+    const { active, over } = e;
+    setActiveId(null);
+    lastOverId.current = null;
+    const fromStage = homeStageRef.current;
+    homeStageRef.current = null;
+    const lead = leads.find((l) => l.id === active.id);
+
+    // Dropped nowhere: undo any mid-drag shuffling `onDragOver` applied.
+    if (!over || !fromStage || !lead) {
+      setBoard(buildBoard(leads));
+      return;
+    }
+
+    const overId = String(over.id);
+    if (overId === DROP_LOST) {
+      setBoard(buildBoard(leads));
+      setLostLead(lead);
+      return;
+    }
+    if (overId === DROP_PARKED) {
+      setBoard(buildBoard(leads));
+      if (fromStage !== "parked") move(lead, "parked");
+      return;
+    }
+
+    // The card's current lane and slot: `onDragOver` may already have carried it
+    // cross-lane. Dropped on another card in that lane takes that card's slot;
+    // dropped on itself or the lane keeps the slot it has.
+    const toStage = findStage(String(active.id)) as BoardStage | null;
+    if (!toStage) return;
+    const list = board[toStage];
+    const from = list.findIndex((l) => l.id === active.id);
+    const overIndex = list.findIndex((l) => l.id === overId);
+    const index = overIndex >= 0 ? overIndex : from;
+
+    // No-op: dropped back in its home lane at the same position.
+    if (fromStage === toStage && index === from) {
+      setBoard(buildBoard(leads));
+      return;
+    }
+
+    const dest = arrayMove(list, from, index);
+    setBoard({ ...board, [toStage]: dest });
+
+    try {
+      // The cards it now sits between, as the user sees the lane: the server places it relative to them.
+      await api.patch(`/api/leads/${lead.id}/stage`, { stage: toStage, ...laneNeighbours(dest, lead.id) });
+      if (fromStage !== toStage) toast(`${lead.name} moved to ${STAGE_META[toStage].label}.`, "success");
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Couldn't move lead", "error");
+      setBoard(buildBoard(leads));
+    }
+  }
+
+  const laneProps = (stage: PipelineStage, i: number) => ({
+    stage,
+    leads: board[stage],
+    total: totals[stage],
+    previous: i > 0 ? { stage: PIPELINE_STAGES[i - 1], leads: board[PIPELINE_STAGES[i - 1]] } : undefined,
+    activeId,
+    hintId,
+    focused: stage === focusStage,
+    onKey: onCardKey,
+    onMove: move,
+    onMoreFields: () => onAdd(stage),
+    onCreated: show,
+  });
+
+  const columns = PIPELINE_STAGES.map((s) => (collapsed.has(s) ? "56px" : "minmax(0,1fr)")).join(" ");
+  const parkedOpen = !collapsed.has("parked");
+
   return (
     <>
-      <DndContext sensors={sensors} collisionDetection={closestCorners} onDragStart={onDragStart} onDragOver={onDragOver} onDragEnd={onDragEnd}>
-        <div className="flex gap-4 overflow-x-auto px-6 pb-6 lg:px-8">
-          {BOARD_STAGES.map((stage) => (
-            <Column
-              key={stage}
-              stage={stage}
-              leads={board[stage] ?? []}
-              onAdd={() => onAdd(stage)}
-              onOpen={(id) => router.push(`/leads/${id}`)}
-              onDropLost={stage === "won" ? setLostLead : undefined}
-              activeId={activeId}
-              collapsed={collapsed.has(stage)}
-              onToggleCollapse={isCollapsibleStage(stage) ? () => toggle(stage) : undefined}
-            />
-          ))}
-        </div>
-        <DragOverlay>{activeLead ? <div className="w-[268px]"><LeadCard lead={activeLead} dragging /></div> : null}</DragOverlay>
+      <DndContext
+        sensors={sensors}
+        collisionDetection={collisionDetection}
+        onDragStart={onDragStart}
+        onDragOver={onDragOver}
+        onDragEnd={onDragEnd}
+        onDragCancel={onDragCancel}
+      >
+        <p id={hintId} className="sr-only">
+          Press 1 to 5 to move this lead to that stage, P to park it, or L to mark it lost.
+        </p>
+
+        {isPhone ? (
+          <div className="flex flex-col gap-2">
+            <div className="overflow-x-auto">
+              <SegmentedControl
+                aria-label="Stage"
+                size="sm"
+                className="min-w-full"
+                options={PIPELINE_STAGES.map((s) => ({ value: s, label: STAGE_META[s].label }))}
+                value={phoneStage}
+                onChange={setPhoneStage}
+              />
+            </div>
+            <StageLane key={phoneStage} {...laneProps(phoneStage, PIPELINE_STAGES.indexOf(phoneStage))} dnd={false} />
+          </div>
+        ) : (
+          <>
+            <StageJump boardRef={boardRef} totals={totals} watch={columns} />
+            <div
+              ref={boardRef}
+              style={{ "--board-cols": columns } as CSSProperties}
+              className="flex min-h-[420px] snap-x snap-mandatory gap-3 overflow-x-auto max-xl:h-[calc(100dvh-320px)] max-xl:min-h-[520px] xl:grid xl:snap-none xl:overflow-visible xl:[grid-template-columns:var(--board-cols)]"
+            >
+              {PIPELINE_STAGES.map((stage, i) =>
+                collapsed.has(stage) ? (
+                  <CollapsedLane key={stage} stage={stage} count={board[stage].length} onExpand={() => toggle(stage)} className="w-14 shrink-0 xl:w-auto" />
+                ) : (
+                  <StageLane
+                    key={stage}
+                    {...laneProps(stage, i)}
+                    dnd
+                    onCollapse={isCollapsibleStage(stage) ? () => toggle(stage) : undefined}
+                    className="w-[280px] shrink-0 snap-start max-xl:overflow-y-auto xl:w-auto"
+                  />
+                ),
+              )}
+            </div>
+          </>
+        )}
+
+        <DropShelf
+          ref={shelfRef}
+          dragging={activeId != null}
+          parkedCount={board.parked.length}
+          parkedOpen={parkedOpen}
+          lostCount={lostCount}
+          onToggleParked={() => toggle("parked")}
+          onShowLost={onShowLost}
+        />
+
+        {parkedOpen && <ParkedLane leads={board.parked} activeId={activeId} hintId={hintId} focused={focusStage === "parked"} onKey={onCardKey} onCollapse={() => toggle("parked")} />}
+
+        <DragOverlay>
+          {activeLead && (
+            <div className="w-[260px]">
+              {activeLead.stage === "won" ? (
+                <div className="glass-card rounded-card px-3 shadow-pop [&>*]:border-b-0">
+                  <LeadRow lead={activeLead} dragging />
+                </div>
+              ) : (
+                <LeadCard lead={activeLead} dragging />
+              )}
+            </div>
+          )}
+        </DragOverlay>
       </DndContext>
 
-      <LostModal lead={lostLead} onClose={() => setLostLead(null)} onDone={onChanged} />
+      <LostLeadModal lead={lostLead} onClose={() => setLostLead(null)} onDone={() => lostLead && hide(lostLead.id)} />
     </>
   );
 }
 
-function Column({
-  stage,
-  leads,
-  onAdd,
-  onOpen,
-  onDropLost,
-  activeId,
-  collapsed,
-  onToggleCollapse,
-}: {
-  stage: BoardStage;
-  leads: LeadDTO[];
-  onAdd: () => void;
-  onOpen: (id: string) => void;
-  onDropLost?: (lead: LeadDTO) => void;
-  activeId: string | null;
-  collapsed: boolean;
-  onToggleCollapse?: () => void;
-}) {
-  const meta = STAGE_META[stage];
-  const { setNodeRef, isOver } = useDroppable({ id: `col:${stage}` });
-  const lostZone = useDroppable({ id: "col:lost" });
-  const holding = stage === "parked";
+const listFormat = new Intl.ListFormat("en", { type: "conjunction" });
 
-  if (collapsed) {
-    return (
-      <div
-        ref={setNodeRef}
-        data-testid={`col-${stage}`}
-        data-collapsed="true"
-        className={cn(
-          "group/col relative flex min-h-[220px] w-[52px] shrink-0 flex-col items-center overflow-hidden rounded-[var(--radius-xl)] border backdrop-blur-xl transition-colors",
-          holding ? "ml-2 border-dashed" : "",
-          isOver
-            ? "border-violet-400 bg-violet-50/70 ring-2 ring-violet-300/60 dark:bg-violet-900/40 dark:ring-violet-500/40"
-            : "border-line bg-paper shadow-[var(--shadow-card)] dark:border-white/10 dark:bg-paper",
-        )}
-      >
-        <div className="absolute top-0 left-0 right-0 h-1" style={{ background: meta.dot, boxShadow: `0 0 12px ${meta.dot}` }} />
-        <button
-          type="button"
-          onClick={onToggleCollapse}
-          aria-expanded={false}
-          aria-label={`Expand ${meta.label}`}
-          className="mt-3 rounded-full p-1 text-muted transition-colors hover:bg-violet-100 hover:text-violet-700 dark:hover:bg-violet-900/50 dark:hover:text-violet-300"
-        >
-          <ChevronRight className="size-4" />
-        </button>
-        <div className="flex flex-1 items-center justify-center py-2">
-          <span
-            className="[writing-mode:vertical-rl] rotate-180 text-[12px] font-bold uppercase tracking-[0.18em]"
-            style={{ color: meta.dot }}
-          >
-            {meta.label}
-          </span>
-        </div>
-        <span className="mb-3 rounded-full bg-canvas px-1.5 py-0.5 text-[11px] font-bold tnum text-ink-soft shadow-inner dark:bg-canvas">
-          {leads.length}
-        </span>
-      </div>
+/**
+ * Tablet only (720 to 1279px): the five stages as jump tabs above the lane
+ * strip, marking the lanes in view. Tapping one scrolls its lane into view.
+ * `watch` changes when lanes collapse or expand, so the observer re-attaches.
+ */
+function StageJump({ boardRef, totals, watch }: { boardRef: RefObject<HTMLDivElement | null>; totals: Record<PipelineStage, StageTotal>; watch: string }) {
+  const [inView, setInView] = useState<PipelineStage[]>([]);
+  const lane = (stage: PipelineStage) => boardRef.current?.querySelector<HTMLElement>(`[data-testid="col-${stage}"]`);
+
+  useEffect(() => {
+    const root = boardRef.current;
+    if (!root || typeof IntersectionObserver === "undefined") return;
+    const shown = new Set<PipelineStage>();
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const e of entries) {
+          const stage = (e.target as HTMLElement).dataset.testid!.slice(4) as PipelineStage;
+          if (e.isIntersecting) shown.add(stage);
+          else shown.delete(stage);
+        }
+        setInView(PIPELINE_STAGES.filter((s) => shown.has(s)));
+      },
+      { root, threshold: 0.6 },
     );
-  }
+    for (const s of PIPELINE_STAGES) {
+      const el = root.querySelector(`[data-testid="col-${s}"]`);
+      if (el) observer.observe(el);
+    }
+    return () => observer.disconnect();
+  }, [boardRef, watch]);
 
   return (
-    <div
-      data-testid={`col-${stage}`}
-      data-collapsed="false"
+    <nav aria-label="Stages" className="-mb-1 xl:hidden">
+      <div className="grid grid-cols-5 gap-1">
+        {PIPELINE_STAGES.map((stage) => {
+          const current = inView.includes(stage);
+          return (
+            <button
+              key={stage}
+              type="button"
+              aria-current={current || undefined}
+              onClick={() => lane(stage)?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "start" })}
+              className={cn("rounded-card px-2.5 pb-2.5 pt-2 text-left transition-colors hover:bg-hover", current ? "bg-sunk text-ink-1" : "text-ink-2")}
+            >
+              <span className="flex justify-between gap-1 text-[14px]">
+                <span className={cn("truncate", current ? "font-semibold" : "font-medium")}>
+                  <span className="font-normal text-ink-3">{stageStep(stage)}</span>&nbsp; {STAGE_META[stage].label}
+                </span>
+                <span className="tnum text-ink-3">{totals[stage].count}</span>
+              </span>
+              <Money value={totals[stage].value} compact className={cn("figure block text-[18px]", stage === "won" && "text-paid")} />
+              <WeightRule stage={stage} share={totals[stage].share} />
+            </button>
+          );
+        })}
+      </div>
+      {inView.length > 0 && (
+        <p className="px-2.5 pt-2 text-[12px] text-ink-3">
+          Showing {listFormat.format(inView.map((s) => STAGE_META[s].label))}. Swipe sideways, or tap a stage to jump to it.
+        </p>
+      )}
+    </nav>
+  );
+}
+
+/** A dashed shelf target that is also a button (Parked toggles its lane; Lost opens the Lost view). */
+function ShelfTarget({
+  id,
+  label,
+  count,
+  onClick,
+  expanded,
+}: {
+  id: string;
+  label: string;
+  count: number;
+  onClick?: () => void;
+  expanded?: boolean;
+}) {
+  const { setNodeRef, isOver } = useDroppable({ id });
+  return (
+    <button
+      ref={setNodeRef}
+      type="button"
+      data-shelf={id}
+      onClick={onClick}
+      aria-expanded={expanded}
       className={cn(
-        "relative flex w-[296px] shrink-0 flex-col overflow-hidden rounded-[var(--radius-xl)] border backdrop-blur-xl",
-        holding
-          ? "ml-2 border-dashed border-line-strong bg-canvas/60 dark:border-white/15 dark:bg-paper/80"
-          : "border-line bg-paper/80 shadow-[var(--shadow-card)] dark:border-white/10 dark:bg-paper",
+        "flex h-9 items-center gap-2 rounded-control border border-dashed border-line-strong px-3.5 text-[13px] text-ink-2 transition-colors hover:bg-hover",
+        isOver && "border-solid border-accent bg-accent-tint text-accent",
       )}
     >
-      {/* Top glowing accent line */}
-      <div className="absolute top-0 left-0 right-0 h-1" style={{ background: meta.dot, boxShadow: `0 0 14px ${meta.dot}` }} />
-
-      <div className="mb-1 flex items-center justify-between px-3 pt-4 pb-1">
-        <div className="flex items-center gap-2">
-          <h3 className="text-[13px] font-bold tracking-wide uppercase" style={{ color: meta.dot }}>{meta.label}</h3>
-          <span className="rounded-full bg-canvas px-2 py-0.5 text-[11.5px] font-bold tnum text-ink-soft shadow-inner dark:bg-canvas">
-            {leads.length}
-          </span>
-        </div>
-        <div className="flex items-center gap-0.5">
-          {onToggleCollapse && (
-            <button
-              type="button"
-              onClick={onToggleCollapse}
-              aria-expanded={true}
-              aria-label={`Collapse ${meta.label}`}
-              className="rounded-full p-1.5 text-faint transition-colors hover:bg-violet-100 hover:text-violet-700 dark:hover:bg-violet-900/50 dark:hover:text-violet-300"
-            >
-              <ChevronsLeft className="size-4" />
-            </button>
-          )}
-          <button onClick={onAdd} className="rounded-full p-1.5 text-faint transition-colors hover:bg-violet-100 hover:text-violet-700 dark:hover:bg-violet-900/50 dark:hover:text-violet-300" aria-label={`Add to ${meta.label}`}>
-            <Plus className="size-4" />
-          </button>
-        </div>
-      </div>
-
-      <div
-        ref={setNodeRef}
-        className={cn(
-          "flex min-h-[150px] flex-1 flex-col gap-3 p-3 transition-colors",
-          isOver ? "bg-violet-50/50 ring-inset ring-2 ring-violet-200 dark:bg-violet-900/20 dark:ring-violet-700/50" : "",
-        )}
-      >
-        <SortableContext items={leads.map((l) => l.id)} strategy={verticalListSortingStrategy}>
-          {leads.map((lead) => (
-            <SortableCard key={lead.id} lead={lead} onOpen={() => onOpen(lead.id)} hidden={activeId === lead.id} />
-          ))}
-        </SortableContext>
-
-        <button
-          onClick={onAdd}
-          className="flex items-center justify-center gap-1.5 rounded-[var(--radius-md)] border border-dashed border-line-strong py-2.5 text-[12.5px] font-medium text-faint transition-colors hover:border-violet-400 hover:text-violet-600"
-        >
-          <Plus className="size-3.5" /> add lead
-        </button>
-
-        {/* Won column doubles as the "mark lost" drop target, per the wireframe. */}
-        {stage === "won" && onDropLost && (
-          <div
-            ref={lostZone.setNodeRef}
-            className={cn(
-              "mt-1 flex items-center justify-center gap-1.5 rounded-[var(--radius-md)] border border-dashed py-2.5 text-[12px] font-semibold transition-colors",
-              lostZone.isOver ? "border-danger bg-danger-bg text-danger" : "border-line-strong text-faint",
-            )}
-          >
-            <Ban className="size-3.5" /> Lost · drop &amp; tag reason
-          </div>
-        )}
-      </div>
-    </div>
+      {label} <span className="tnum font-semibold text-ink-1">{count}</span>
+      {expanded != null && <ChevronDown className={cn("size-4 transition-transform", expanded && "rotate-180")} strokeWidth={1.5} aria-hidden />}
+    </button>
   );
 }
 
-function SortableCard({ lead, onOpen, hidden }: { lead: LeadDTO; onOpen: () => void; hidden: boolean }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: lead.id });
+/** Parked and Lost, below the board. While a card is dragged it sticks to the bottom of the view. */
+function DropShelf({
+  ref,
+  dragging,
+  parkedCount,
+  parkedOpen,
+  lostCount,
+  onToggleParked,
+  onShowLost,
+}: {
+  ref: Ref<HTMLDivElement>;
+  dragging: boolean;
+  parkedCount: number;
+  parkedOpen: boolean;
+  lostCount: number;
+  onToggleParked: () => void;
+  onShowLost?: () => void;
+}) {
   return (
     <div
-      ref={setNodeRef}
-      style={{ transform: CSS.Transform.toString(transform), transition, opacity: hidden || isDragging ? 0.35 : 1 }}
-      {...attributes}
-      {...listeners}
-      onClick={onOpen}
-      className="cursor-grab active:cursor-grabbing"
+      ref={ref}
+      role="group"
+      aria-label="Parked and lost"
+      className={cn(
+        "glass flex flex-wrap items-center gap-x-4 gap-y-2.5 rounded-panel px-4 py-3",
+        dragging && "sticky bottom-3 z-20 animate-rise shadow-pop",
+      )}
     >
-      <LeadCard lead={lead} />
+      <ShelfTarget id={DROP_PARKED} label="Parked" count={parkedCount} onClick={onToggleParked} expanded={parkedOpen} />
+      <ShelfTarget id={DROP_LOST} label="Lost" count={lostCount} onClick={onShowLost} />
+      <span className="text-[13px] text-ink-3 max-md:hidden">
+        {dragging ? "Drop the card on Parked or Lost." : "Drag a card here to park it or mark it lost."}
+      </span>
+      <span className="flex-1" />
+      <span className="text-[12px] text-ink-3 max-md:hidden">
+        Keys: <KbdHint>1</KbdHint>–<KbdHint>5</KbdHint> move stage · <KbdHint>L</KbdHint> lost · <KbdHint>P</KbdHint> park ·{" "}
+        <KbdHint>Enter</KbdHint> open
+      </span>
     </div>
   );
 }
 
-const QUICK_REASONS = ["Price", "Competitor", "No response", "Bad timing", "Not a fit"] as const;
-
-function LostModal({ lead, onClose, onDone }: { lead: LeadDTO | null; onClose: () => void; onDone: () => void }) {
-  const { toast } = useToast();
-  const [reason, setReason] = useState("");
-  const [busy, setBusy] = useState(false);
-
-  useEffect(() => setReason(""), [lead]);
-
-  async function submit(overrideReason?: string) {
-    if (!lead) return;
-    const finalReason = (overrideReason ?? reason).trim();
-    setBusy(true);
-    try {
-      await api.patch(`/api/leads/${lead.id}/stage`, { stage: "lost", lostReason: finalReason });
-      toast(`${lead.name} marked lost.`, "info");
-      onDone();
-      onClose();
-    } catch (err) {
-      toast(err instanceof Error ? err.message : "Couldn't update", "error");
-    } finally {
-      setBusy(false);
-    }
-  }
-
+/** The holding lane: parked leads sit outside the funnel and its totals until picked back up. */
+function ParkedLane({
+  leads,
+  activeId,
+  hintId,
+  focused,
+  onKey,
+  onCollapse,
+}: {
+  leads: LeadDTO[];
+  activeId: string | null;
+  hintId: string;
+  focused: boolean;
+  onKey: CardKeyHandler;
+  onCollapse: () => void;
+}) {
+  const headingId = useId();
+  const { setNodeRef, isOver } = useDroppable({ id: "col:parked" });
+  const value = leads.reduce((sum, l) => sum + Math.max(0, l.estValue), 0);
   return (
-    <Modal open={!!lead} onClose={onClose} title="Mark as lost" subtitle={`What happened with ${lead?.name ?? "this lead"}?`} size="sm">
-      <Field label="Reason" hint="tap a common reason or write your own">
-        <div className="mb-2.5 flex flex-wrap gap-1.5">
-          {QUICK_REASONS.map((r) => {
-            const active = reason.trim().toLowerCase() === r.toLowerCase();
-            return (
-              <button
-                key={r}
-                type="button"
-                disabled={busy}
-                onClick={() => submit(r)}
-                className={cn(
-                  "rounded-full border px-3 py-1 text-[12.5px] font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-55",
-                  active
-                    ? "border-danger/40 bg-danger-bg text-danger"
-                    : "border-line-strong text-ink-soft hover:border-danger/40 hover:bg-danger-bg hover:text-danger",
-                )}
-              >
-                {r}
-              </button>
-            );
-          })}
-        </div>
-        <Textarea autoFocus placeholder="Other reason — budget, went with competitor…" value={reason} onChange={(e) => setReason(e.target.value)} />
-      </Field>
-      <div className="mt-5 flex gap-3">
-        <Button variant="danger" onClick={() => submit()} loading={busy}>
-          Mark lost
-        </Button>
-        <Button variant="ghost" onClick={onClose} disabled={busy}>
-          Cancel
-        </Button>
+    <section
+      aria-labelledby={headingId}
+      data-testid="col-parked"
+      data-collapsed="false"
+      className={cn("glass-lane rounded-panel p-2.5", focused && "outline-2 outline-offset-2 outline-accent")}
+    >
+      <div className="flex items-baseline justify-between gap-2 px-1.5 pb-2.5 pt-1.5">
+        <h2 id={headingId} className="text-[14px] font-semibold">
+          Parked <span className="tnum font-normal text-ink-3">{leads.length}</span>
+        </h2>
+        <span className="flex items-center gap-2">
+          <Money value={value} compact className="figure text-[16px] text-ink-2" />
+          <button
+            type="button"
+            onClick={onCollapse}
+            aria-expanded
+            aria-label="Collapse Parked"
+            className="grid size-7 place-items-center rounded-control text-ink-3 transition-colors hover:bg-hover hover:text-ink-1"
+          >
+            <ChevronDown className="size-4 rotate-180" strokeWidth={1.5} aria-hidden />
+          </button>
+        </span>
       </div>
-    </Modal>
+      <div
+        ref={setNodeRef}
+        className={cn("grid min-h-16 grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-2 rounded-card transition-colors", isOver && "bg-hover")}
+      >
+        <SortableContext items={leads.map((l) => l.id)} strategy={rectSortingStrategy}>
+          {leads.map((lead) => (
+            <SortableItem key={lead.id} lead={lead} faded={activeId === lead.id} onKey={onKey}>
+              <LeadCard lead={lead} describedBy={hintId} />
+            </SortableItem>
+          ))}
+        </SortableContext>
+        {leads.length === 0 && <p className="col-span-full self-center px-1.5 text-[13px] text-ink-3">Nothing parked. Park a lead to set it aside without losing it.</p>}
+      </div>
+    </section>
   );
 }

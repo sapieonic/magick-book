@@ -2,66 +2,61 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 
 export type ThemePref = "light" | "dark" | "system";
-export type ResolvedTheme = "light" | "dark";
 
-export const THEME_STORAGE_KEY = "mb-theme";
+const THEME_STORAGE_KEY = "mb-theme";
+const DARK_QUERY = "(prefers-color-scheme: dark)";
 
 /**
  * Inline script (no-flash). Runs before paint in <head> to set
  * `data-theme` on <html> from the stored preference (or the OS setting),
  * so the first frame already matches and there's no light→dark flash.
  */
-export const themeInitScript = `(function(){try{var p=localStorage.getItem('${THEME_STORAGE_KEY}');var m=window.matchMedia('(prefers-color-scheme: dark)').matches;var r=(p==='dark'||((!p||p==='system')&&m))?'dark':'light';document.documentElement.dataset.theme=r;}catch(e){}})();`;
+export const themeInitScript = `(function(){try{var p=localStorage.getItem('${THEME_STORAGE_KEY}');var m=window.matchMedia('${DARK_QUERY}').matches;var r=(p==='dark'||((!p||p==='system')&&m))?'dark':'light';document.documentElement.dataset.theme=r;}catch(e){}})();`;
 
 interface ThemeCtx {
   /** User's saved choice: light, dark, or follow system. */
   pref: ThemePref;
-  /** The theme actually applied right now. */
-  resolved: ResolvedTheme;
   setPref: (p: ThemePref) => void;
 }
 
-const Ctx = createContext<ThemeCtx>({ pref: "system", resolved: "light", setPref: () => {} });
+const Ctx = createContext<ThemeCtx>({ pref: "system", setPref: () => {} });
 
 export function useTheme() {
   return useContext(Ctx);
 }
 
-function systemTheme(): ResolvedTheme {
-  if (typeof window === "undefined") return "light";
-  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+/** The saved preference; "system" on the server or when storage is unavailable. */
+function storedPref(): ThemePref {
+  if (typeof window === "undefined") return "system";
+  try {
+    const p = localStorage.getItem(THEME_STORAGE_KEY);
+    return p === "light" || p === "dark" ? p : "system";
+  } catch {
+    return "system";
+  }
 }
 
-function resolve(pref: ThemePref): ResolvedTheme {
-  return pref === "system" ? systemTheme() : pref;
+/** Set the theme on <html> and point the browser chrome (`theme-color`) at the matching ground. */
+function applyTheme(theme: "light" | "dark") {
+  const root = document.documentElement;
+  root.dataset.theme = theme;
+  const ground = getComputedStyle(root).getPropertyValue("--color-ground").trim();
+  if (!ground) return;
+  document.querySelectorAll('meta[name="theme-color"]').forEach((m) => m.setAttribute("content", ground));
 }
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [pref, setPrefState] = useState<ThemePref>("system");
-  const [resolved, setResolved] = useState<ResolvedTheme>("light");
-
-  // Hydrate from storage / the value the init script already applied.
-  useEffect(() => {
-    const stored = (localStorage.getItem(THEME_STORAGE_KEY) as ThemePref | null) ?? "system";
-    setPrefState(stored);
-    setResolved(resolve(stored));
-  }, []);
+  // Lazy, so the first effect applies the saved choice rather than the OS one.
+  const [pref, setPrefState] = useState<ThemePref>(storedPref);
 
   // Apply to <html> and keep in sync with the OS when on "system".
   useEffect(() => {
-    const r = resolve(pref);
-    setResolved(r);
-    document.documentElement.dataset.theme = r;
-
+    const mq = window.matchMedia(DARK_QUERY);
+    const apply = () => applyTheme(pref === "system" ? (mq.matches ? "dark" : "light") : pref);
+    apply();
     if (pref !== "system") return;
-    const mq = window.matchMedia("(prefers-color-scheme: dark)");
-    const onChange = () => {
-      const next = mq.matches ? "dark" : "light";
-      setResolved(next);
-      document.documentElement.dataset.theme = next;
-    };
-    mq.addEventListener("change", onChange);
-    return () => mq.removeEventListener("change", onChange);
+    mq.addEventListener("change", apply);
+    return () => mq.removeEventListener("change", apply);
   }, [pref]);
 
   const setPref = useCallback((p: ThemePref) => {
@@ -73,5 +68,5 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  return <Ctx.Provider value={{ pref, resolved, setPref }}>{children}</Ctx.Provider>;
+  return <Ctx.Provider value={{ pref, setPref }}>{children}</Ctx.Provider>;
 }

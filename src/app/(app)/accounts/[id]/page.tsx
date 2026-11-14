@@ -1,639 +1,273 @@
 "use client";
-import { use, useState, useMemo, useRef } from "react";
-import Link from "next/link";
-import { useRouter } from "next/navigation";
-import {
-  Building2,
-  ChevronRight,
-  Plus,
-  Mail,
-  Phone,
-  ArrowRight,
-  Receipt,
-  Wallet,
-  Eye,
-  Upload,
-  Pencil,
-  FileText,
-  Download,
-  Trash2,
-  Archive,
-  BellRing,
-} from "lucide-react";
-import { PageHeader } from "@/components/layout/Sidebar";
+import { use, useState } from "react";
+import { Archive } from "lucide-react";
+import { Page, PageSplit } from "@/components/layout/Page";
+import { PageHeader } from "@/components/layout/PageHeader";
 import { ActivityTimeline } from "@/components/ActivityTimeline";
 import { AuditTimeline } from "@/components/AuditTimeline";
-import { AddContactModal, EditContactModal, NewInvoiceModal, LogExpenseModal, UploadDocumentModal, uploadInvoiceFile } from "@/components/accounts/AccountModals";
-import { ReminderModal } from "@/components/reminders/ReminderModal";
 import { NoteComposer } from "@/components/activity/NoteComposer";
-import { Avatar } from "@/components/ui/Avatar";
-import { Badge } from "@/components/ui/Badge";
+import { ReminderModal } from "@/components/reminders/ReminderModal";
+import { AccountHeader, StatementBar } from "@/components/accounts/AccountHeader";
+import { ContactModal, ExpenseModal, NewInvoiceModal, UploadDocumentModal } from "@/components/accounts/AccountModals";
+import { DocumentsRailPanel, PrimaryContactPanel, RecentActivityPanel, RemindersPanel } from "@/components/accounts/AccountRail";
+import { ContactsSection, DocumentsSection, ExpensesSection, InvoicesSection } from "@/components/accounts/AccountSections";
+import { StatementTable } from "@/components/accounts/StatementTable";
 import { Button } from "@/components/ui/Button";
-import { Card, PageLoader, ErrorState, EmptyState } from "@/components/ui/Misc";
-import { useToast } from "@/components/ui/Toast";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
+import { ErrorState, RowsSkeleton, Skeleton } from "@/components/ui/Misc";
+import { Panel } from "@/components/ui/Panel";
+import { Tabs } from "@/components/ui/Tabs";
+import { useToast } from "@/components/ui/Toast";
 import { api, useApi } from "@/lib/client";
-import { ACCOUNT_STATUS_META, INVOICE_STATUS_META, DOCUMENT_KIND_META } from "@/lib/constants";
-import { formatINR, formatINRCompact, formatBytes, cn } from "@/lib/utils";
-import { format } from "date-fns";
-import type { AccountDTO, AccountFinance, ContactDTO, InvoiceDTO, ExpenseDTO, ActivityDTO, DocumentDTO, AuditLogDTO } from "@/lib/types";
+import { shortDate } from "@/lib/dates";
+import type { AccountDTO, AccountFinance, ActivityDTO, AuditLogDTO, ContactDTO, DocumentDTO, ExpenseDTO, InvoiceDTO, ReminderDTO } from "@/lib/types";
 
 type Tab = "overview" | "contacts" | "documents" | "invoices" | "expenses" | "activity" | "history";
-const TABS: Tab[] = ["overview", "contacts", "documents", "invoices", "expenses", "activity", "history"];
+
+/** Which modal is open; contact and expense carry the record being edited, if any. */
+type Dialog =
+  | { kind: "contact"; contact?: ContactDTO }
+  | { kind: "expense"; expense?: ExpenseDTO }
+  | { kind: "invoice" }
+  | { kind: "document" }
+  | null;
 
 export default function AccountDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  const router = useRouter();
   const { toast } = useToast();
   const confirm = useConfirm();
   const [tab, setTab] = useState<Tab>("overview");
-  const [addContact, setAddContact] = useState(false);
-  const [editContact, setEditContact] = useState<ContactDTO | null>(null);
-  const [newInvoice, setNewInvoice] = useState(false);
-  const [logExpense, setLogExpense] = useState(false);
-  const [uploadDoc, setUploadDoc] = useState(false);
-  const [reminderOpen, setReminderOpen] = useState(false);
-  const [remindTitle, setRemindTitle] = useState("");
-  const [archiving, setArchiving] = useState(false);
+  const [dialog, setDialog] = useState<Dialog>(null);
+  const [reminder, setReminder] = useState<{ title: string } | null>(null);
 
-  const acc = useApi<{ account: AccountDTO; finance: AccountFinance }>(`/api/accounts/${id}`);
-  const contacts = useApi<{ contacts: ContactDTO[] }>(`/api/accounts/${id}/contacts`);
-  const documents = useApi<{ documents: DocumentDTO[] }>(`/api/accounts/${id}/documents`);
-  const invoices = useApi<{ invoices: InvoiceDTO[] }>(`/api/accounts/${id}/invoices`);
-  const expenses = useApi<{ expenses: ExpenseDTO[] }>(`/api/accounts/${id}/expenses`);
-  const activity = useApi<{ activities: ActivityDTO[] }>(`/api/accounts/${id}/activity`);
-  const history = useApi<{ entries: AuditLogDTO[] }>(`/api/accounts/${id}/audit`);
+  const base = `/api/accounts/${id}`;
+  const acc = useApi<{ account: AccountDTO; finance: AccountFinance }>(base);
+  const contacts = useApi<{ contacts: ContactDTO[] }>(`${base}/contacts`);
+  const documents = useApi<{ documents: DocumentDTO[] }>(`${base}/documents`);
+  const invoices = useApi<{ invoices: InvoiceDTO[] }>(`${base}/invoices`);
+  const expenses = useApi<{ expenses: ExpenseDTO[] }>(`${base}/expenses`);
+  const activity = useApi<{ activities: ActivityDTO[] }>(`${base}/activity`);
+  const history = useApi<{ entries: AuditLogDTO[] }>(`${base}/audit`);
+  const reminders = useApi<{ reminders: ReminderDTO[] }>(`/api/reminders?accountId=${id}&open=1`);
 
-  async function refreshMoney() {
-    await Promise.all([acc.refresh(), invoices.refresh(), expenses.refresh(), activity.refresh(), history.refresh()]);
+  const reload = (...sources: { refresh: () => Promise<void> }[]) => Promise.all(sources.map((s) => s.refresh())).then(() => undefined);
+  const onContactsChanged = () => reload(contacts, acc, history);
+  const onDocumentsChanged = () => reload(documents, history);
+  const onMoneyChanged = () => reload(acc, invoices, expenses, activity, history);
+
+  if (acc.error && !acc.data) {
+    return (
+      <Page>
+        <PageHeader title="Account" breadcrumb={[{ label: "Accounts", href: "/accounts" }]} />
+        <Panel>
+          <ErrorState message={acc.error} onRetry={acc.refresh} />
+        </Panel>
+      </Page>
+    );
   }
+  if (!acc.data) return <LoadingAccount />;
 
-  async function archiveAccount() {
-    if (!(await confirm({
-      title: `Archive ${account.name}?`,
-      description: "The account will be hidden from your lists. Its contacts, invoices, expenses and documents stay put and reappear if you restore it later from the Archived view.",
-      confirmLabel: "Archive account",
-      tone: "danger",
-    }))) return;
-    setArchiving(true);
+  const { account, finance } = acc.data;
+  const archived = Boolean(account.deletedAt);
+  const contactList = contacts.data?.contacts ?? [];
+  const documentList = documents.data?.documents ?? [];
+  const invoiceList = invoices.data?.invoices ?? [];
+  const expenseList = expenses.data?.expenses ?? [];
+  const activityList = activity.data?.activities ?? [];
+  const primary = contactList.find((c) => c.isPrimary) ?? account.primaryContact;
+
+  async function setArchived(next: boolean) {
+    if (next) {
+      const ok = await confirm({
+        title: `Archive ${account.name}?`,
+        description: "It leaves your lists. Contacts, invoices, expenses and documents stay with it and come back if you restore it.",
+        confirmLabel: "Archive account",
+        tone: "danger",
+      });
+      if (!ok) return;
+    }
     try {
-      await api.delete(`/api/accounts/${id}`);
-      toast("Account archived.", "info");
-      router.push("/accounts");
+      if (next) await api.delete(base);
+      else await api.patch(base, { action: "restore" });
+      toast(next ? `${account.name} archived.` : `${account.name} restored.`, next ? "info" : "success");
+      await reload(acc, contacts, documents, invoices, expenses, activity, history, reminders);
     } catch (e) {
-      toast(e instanceof Error ? e.message : "Could not archive", "error");
-      setArchiving(false);
+      toast(e instanceof Error ? e.message : "Something went wrong", "error");
     }
   }
 
-  if (acc.loading) return <PageLoader label="Loading account…" />;
-  if (acc.error || !acc.data) return <div className="p-8"><ErrorState message={acc.error ?? "Account not found"} onRetry={acc.refresh} /></div>;
-
-  const account = acc.data.account;
-  const finance = acc.data.finance;
-  const meta = ACCOUNT_STATUS_META[account.status];
+  // An archived account is read-only: every add, edit and invoice action is
+  // left out (a missing handler hides its control) until it is restored.
+  const show = (d: Dialog) => () => setDialog(d);
+  const add = (d: Dialog) => (archived ? undefined : show(d));
+  const remind = (title = "") => setReminder({ title });
+  const edit = <T,>(make: (record: T) => Dialog) => (archived ? undefined : (record: T) => setDialog(make(record)));
 
   return (
-    <>
-      <PageHeader>
-        <nav className="flex min-w-0 items-center gap-1.5 text-[13px] text-muted">
-          <Link href="/accounts" className="hover:text-ink">Accounts</Link>
-          <ChevronRight className="size-3.5 text-faint" />
-          <span className="truncate font-display text-[20px] font-bold tracking-tight text-ink">{account.name}</span>
-          <Badge tint={meta.tint} className="ml-1">{meta.label}</Badge>
-        </nav>
-        <div className="ml-auto flex items-center gap-2">
-          <Button variant="ghost" onClick={archiveAccount} loading={archiving} aria-label="Archive account">
-            <Archive className="size-4" /> <span className="hidden sm:inline">Archive</span>
-          </Button>
-          <Button variant="secondary" onClick={() => { setRemindTitle(""); setReminderOpen(true); }} aria-label="Set reminder">
-            <BellRing className="size-4" /> <span className="hidden sm:inline">Remind</span>
-          </Button>
-          <Button variant="primary" onClick={() => setAddContact(true)}>
-            <Plus className="size-4" /> Add contact
-          </Button>
-        </div>
-      </PageHeader>
+    <Page>
+      <PageHeader title={account.name} breadcrumb={[{ label: "Accounts", href: "/accounts" }]} />
 
-      {/* Tabs */}
-      <div className="sticky top-[68px] z-10 border-b border-line bg-canvas/85 px-4 backdrop-blur-md sm:px-6 lg:px-8">
-        <div className="flex gap-1 overflow-x-auto">
-          {TABS.map((t) => (
-            <button
-              key={t}
-              onClick={() => setTab(t)}
-              className={cn(
-                "relative px-3.5 py-3 text-[13.5px] font-semibold capitalize transition-colors",
-                tab === t ? "text-violet-700" : "text-muted hover:text-ink",
-              )}
-            >
-              {t}
-              {tab === t && <span className="absolute inset-x-2 -bottom-px h-0.5 rounded-full bg-violet-500" />}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div className="px-6 py-6 lg:px-8">
-        <div className="mx-auto max-w-[1100px]">
-          {tab === "overview" && (
-            <Overview account={account} finance={finance} contacts={contacts.data?.contacts ?? []} invoices={invoices.data?.invoices ?? []} expenses={expenses.data?.expenses ?? []} onSeeInvoices={() => setTab("invoices")} onSeeExpenses={() => setTab("expenses")} />
-          )}
-          {tab === "contacts" && <Contacts contacts={contacts.data?.contacts ?? []} loading={contacts.loading} onAdd={() => setAddContact(true)} onEdit={setEditContact} />}
-          {tab === "documents" && <Documents accountId={id} documents={documents.data?.documents ?? []} loading={documents.loading} onUpload={() => setUploadDoc(true)} onChanged={() => { documents.refresh(); acc.refresh(); history.refresh(); }} />}
-          {tab === "invoices" && <Invoices invoices={invoices.data?.invoices ?? []} finance={finance} loading={invoices.loading} onNew={() => setNewInvoice(true)} onChanged={refreshMoney} />}
-          {tab === "expenses" && <Expenses expenses={expenses.data?.expenses ?? []} finance={finance} loading={expenses.loading} onNew={() => setLogExpense(true)} />}
-          {tab === "activity" && (activity.loading ? <PageLoader /> : (
-            <Card className="p-6">
-              <NoteComposer
-                postUrl={`/api/accounts/${id}/activity`}
-                onAdded={() => { activity.refresh(); acc.refresh(); }}
-                onRemind={(t) => { setRemindTitle(t); setReminderOpen(true); }}
-              />
-              <ActivityTimeline activities={activity.data?.activities ?? []} />
-            </Card>
-          ))}
-          {tab === "history" && (history.loading ? <PageLoader /> : <Card className="p-6"><AuditTimeline entries={history.data?.entries ?? []} showEntity /></Card>)}
-        </div>
-      </div>
-
-      <AddContactModal accountId={id} open={addContact} onClose={() => setAddContact(false)} onAdded={() => { contacts.refresh(); acc.refresh(); history.refresh(); }} />
-      <EditContactModal
-        accountId={id}
-        contact={editContact}
-        onClose={() => setEditContact(null)}
-        onSaved={() => { contacts.refresh(); acc.refresh(); history.refresh(); }}
-        onDeleted={() => { contacts.refresh(); acc.refresh(); history.refresh(); }}
+      <AccountHeader
+        account={account}
+        actions={
+          archived ? (
+            <Button variant="primary" onClick={() => setArchived(false)}>
+              Restore account
+            </Button>
+          ) : (
+            <>
+              <Button onClick={() => remind()}>Remind</Button>
+              <Button onClick={show({ kind: "contact" })}>Add contact</Button>
+              <Button variant="primary" onClick={show({ kind: "invoice" })}>
+                New invoice
+              </Button>
+            </>
+          )
+        }
+        menu={
+          archived
+            ? []
+            : [
+                { label: "Log expense", onSelect: show({ kind: "expense" }) },
+                { label: "Upload document", onSelect: show({ kind: "document" }) },
+                { label: "Archive account", onSelect: () => setArchived(true), danger: true },
+              ]
+        }
       />
-      <UploadDocumentModal accountId={id} open={uploadDoc} onClose={() => setUploadDoc(false)} onUploaded={() => { documents.refresh(); acc.refresh(); history.refresh(); }} />
-      <NewInvoiceModal accountId={id} open={newInvoice} onClose={() => setNewInvoice(false)} onCreated={refreshMoney} />
-      <LogExpenseModal accountId={id} open={logExpense} onClose={() => setLogExpense(false)} onCreated={refreshMoney} />
+
+      {archived && (
+        <Panel aria-label="Archived" className="flex items-start gap-3 text-ink-2">
+          <Archive className="mt-0.5 size-4 shrink-0 text-ink-3" strokeWidth={1.5} aria-hidden />
+          <p>
+            <span className="font-medium text-ink-1">Archived on {shortDate(account.deletedAt!)}.</span> Everything here is read-only. Restore the account to
+            add, edit or mark anything paid again.
+          </p>
+        </Panel>
+      )}
+
+      <StatementBar finance={finance} invoices={invoiceList} expenses={expenseList} onAddExpense={add({ kind: "expense" })} />
+
+      <div className="glass rounded-panel px-4 pt-3.5 md:px-6">
+        <Tabs<Tab>
+          aria-label="Account sections"
+          value={tab}
+          onChange={setTab}
+          className="border-b-0"
+          tabs={[
+            { key: "overview", label: "Overview" },
+            { key: "contacts", label: "Contacts", count: contacts.data ? contactList.length : undefined },
+            { key: "documents", label: "Documents", count: documents.data ? documentList.length : undefined },
+            { key: "invoices", label: "Invoices", count: invoices.data ? invoiceList.length : undefined },
+            { key: "expenses", label: "Expenses", count: expenses.data ? expenseList.length : undefined },
+            { key: "activity", label: "Activity" },
+            { key: "history", label: "History" },
+          ]}
+        />
+      </div>
+
+      {tab === "overview" && (
+        <PageSplit
+          railLabel="Account context"
+          rail={
+            <>
+              <PrimaryContactPanel contact={primary} onAll={() => setTab("contacts")} onAdd={add({ kind: "contact" })} />
+              <DocumentsRailPanel accountId={id} documents={documentList} onUpload={add({ kind: "document" })} />
+              <RemindersPanel reminders={reminders.data?.reminders ?? []} onAdd={archived ? undefined : () => remind()} />
+              <RecentActivityPanel activities={activityList} onAll={() => setTab("activity")} />
+            </>
+          }
+        >
+          <StatementTable
+            accountName={account.name}
+            invoices={invoiceList}
+            expenses={expenseList}
+            loading={invoices.loading || expenses.loading}
+            readOnly={archived}
+            onChanged={onMoneyChanged}
+            onNewInvoice={add({ kind: "invoice" })}
+          />
+        </PageSplit>
+      )}
+      {tab === "contacts" && (
+        <ContactsSection
+          contacts={contactList}
+          loading={contacts.loading}
+          onAdd={add({ kind: "contact" })}
+          onEdit={edit((contact: ContactDTO) => ({ kind: "contact", contact }))}
+        />
+      )}
+      {tab === "documents" && (
+        <DocumentsSection
+          accountId={id}
+          documents={documentList}
+          loading={documents.loading}
+          readOnly={archived}
+          onUpload={show({ kind: "document" })}
+          onChanged={onDocumentsChanged}
+        />
+      )}
+      {tab === "invoices" && (
+        <InvoicesSection
+          invoices={invoiceList}
+          finance={finance}
+          loading={invoices.loading}
+          readOnly={archived}
+          onNew={show({ kind: "invoice" })}
+          onChanged={onMoneyChanged}
+        />
+      )}
+      {tab === "expenses" && (
+        <ExpensesSection
+          expenses={expenseList}
+          finance={finance}
+          loading={expenses.loading}
+          onNew={add({ kind: "expense" })}
+          onEdit={edit((expense: ExpenseDTO) => ({ kind: "expense", expense }))}
+        />
+      )}
+      {tab === "activity" && (
+        <Panel title="Activity">
+          {!archived && <NoteComposer postUrl={`${base}/activity`} onAdded={() => reload(activity, acc)} onRemind={remind} />}
+          {activity.data ? <ActivityTimeline activities={activityList} /> : <RowsSkeleton />}
+        </Panel>
+      )}
+      {tab === "history" && (
+        <Panel title="History" meta="every change to this account and its records">
+          {history.data ? <AuditTimeline entries={history.data.entries} showEntity /> : <RowsSkeleton />}
+        </Panel>
+      )}
+
+      {dialog?.kind === "contact" && <ContactModal accountId={id} contact={dialog.contact} onClose={() => setDialog(null)} onChanged={onContactsChanged} />}
+      {dialog?.kind === "expense" && <ExpenseModal accountId={id} expense={dialog.expense} onClose={() => setDialog(null)} onChanged={onMoneyChanged} />}
+      {dialog?.kind === "invoice" && <NewInvoiceModal accountId={id} onClose={() => setDialog(null)} onCreated={onMoneyChanged} />}
+      {dialog?.kind === "document" && <UploadDocumentModal accountId={id} onClose={() => setDialog(null)} onUploaded={onDocumentsChanged} />}
       <ReminderModal
-        open={reminderOpen}
+        open={reminder !== null}
         accountId={id}
         entityName={account.name}
-        initialTitle={remindTitle}
-        onClose={() => setReminderOpen(false)}
-        onCreated={() => { activity.refresh(); acc.refresh(); }}
+        initialTitle={reminder?.title ?? ""}
+        onClose={() => setReminder(null)}
+        onCreated={() => reload(reminders, activity, acc)}
       />
-    </>
+    </Page>
   );
 }
 
-/* ---------------------------------------------------------------- Overview */
-
-function Overview({ account, finance, contacts, invoices, expenses, onSeeInvoices, onSeeExpenses }: {
-  account: AccountDTO; finance: AccountFinance; contacts: ContactDTO[]; invoices: InvoiceDTO[]; expenses: ExpenseDTO[]; onSeeInvoices: () => void; onSeeExpenses: () => void;
-}) {
-  const others = contacts.filter((c) => !c.isPrimary);
+function LoadingAccount() {
   return (
-    <div className="grid gap-5 lg:grid-cols-[320px_1fr]">
-      {/* Left column */}
-      <div className="space-y-5">
-        <Card className="p-5">
-          <div className="flex items-center gap-3">
-            <span className="flex size-11 items-center justify-center rounded-[var(--radius-md)] bg-violet-50 text-violet-600"><Building2 className="size-5" /></span>
-            <div className="min-w-0">
-              <h2 className="truncate font-display text-[18px] font-bold text-ink">{account.name}</h2>
-              {account.domain && <p className="truncate text-[12px] text-faint">{account.domain}</p>}
-            </div>
-          </div>
-          <div className="my-4 border-t border-dashed border-line" />
-          <dl className="space-y-2 text-[12.5px]">
-            {account.industry && <Meta label="Industry" value={account.industry} />}
-            <Meta label="Customer since" value={account.customerSince ? format(new Date(account.customerSince), "MMM yyyy") : "—"} />
-            <Meta label="Owner" value={account.ownerName} />
-            {account.plan && <Meta label="Plan" value={account.plan} />}
-            <Meta label="Value" value={<span className="font-mono font-semibold text-ink tnum">{account.value > 0 ? `${formatINR(account.value)} / mo` : "—"}</span>} />
-          </dl>
-        </Card>
-
-        {account.primaryContact && (
-          <Card className="p-5">
-            <p className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-faint">Primary contact</p>
-            <div className="flex items-center gap-3">
-              <Avatar name={account.primaryContact.name} size={40} />
-              <div>
-                <p className="text-[14px] font-semibold text-ink">{account.primaryContact.name}</p>
-                {account.primaryContact.title && <p className="text-[12px] text-muted">{account.primaryContact.title}</p>}
-              </div>
-            </div>
-          </Card>
-        )}
-
-        {others.length > 0 && (
-          <Card className="p-5">
-            <p className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-faint">Other contacts · {others.length}</p>
-            <ul className="space-y-2.5">
-              {others.map((c) => (
-                <li key={c.id} className="flex items-center gap-2.5">
-                  <Avatar name={c.name} size={28} />
-                  <span className="text-[13px] font-medium text-ink">{c.name}</span>
-                  {c.title && <span className="text-[12px] text-faint">· {c.title}</span>}
-                </li>
-              ))}
-            </ul>
-          </Card>
-        )}
-      </div>
-
-      {/* Right column */}
-      <div className="space-y-5">
-        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-          <Kpi label="Billed" value={finance.billed} />
-          <Kpi label="Paid" value={finance.paid} tone="success" />
-          <Kpi label="Outstanding" value={finance.outstanding} tone="danger" />
-          <Kpi label="Expenses" value={finance.expenses} />
-        </div>
-
-        <Card className="p-5">
-          <div className="flex items-center justify-between">
-            <h3 className="font-display text-[15px] font-bold text-ink">Recent invoices</h3>
-            <button onClick={onSeeInvoices} className="inline-flex items-center gap-1 text-[12.5px] font-semibold text-violet-600 hover:underline">see all <ArrowRight className="size-3.5" /></button>
-          </div>
-          {invoices.length === 0 ? (
-            <p className="py-4 text-[13px] text-muted">No invoices yet.</p>
-          ) : (
-            <ul className="mt-3 divide-y divide-line">
-              {invoices.slice(0, 3).map((inv) => (
-                <li key={inv.id} className="flex items-center gap-3 py-2.5">
-                  <span className="font-mono text-[13px] font-semibold text-ink">#{inv.number}</span>
-                  <span className="text-[12.5px] text-faint">{format(new Date(inv.issuedAt), "MMM dd")}</span>
-                  <span className="ml-auto font-mono text-[13px] text-ink-soft tnum">{formatINRCompact(inv.amount)}</span>
-                  <Badge tint={INVOICE_STATUS_META[inv.status].tint}>{INVOICE_STATUS_META[inv.status].label}</Badge>
-                </li>
-              ))}
-            </ul>
-          )}
-        </Card>
-
-        <Card className="p-5">
-          <div className="flex items-center justify-between">
-            <h3 className="font-display text-[15px] font-bold text-ink">Recent expenses</h3>
-            <button onClick={onSeeExpenses} className="inline-flex items-center gap-1 text-[12.5px] font-semibold text-violet-600 hover:underline">see all <ArrowRight className="size-3.5" /></button>
-          </div>
-          {expenses.length === 0 ? (
-            <p className="py-4 text-[13px] text-muted">No expenses yet.</p>
-          ) : (
-            <ul className="mt-3 divide-y divide-line">
-              {expenses.slice(0, 3).map((e) => (
-                <li key={e.id} className="flex items-center gap-3 py-2.5">
-                  <span className="text-[13px] text-ink">{e.vendor || e.category}</span>
-                  <Badge tone="neutral">{e.category}</Badge>
-                  <span className="ml-auto font-mono text-[13px] text-ink-soft tnum">{formatINRCompact(e.amount)}</span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </Card>
-      </div>
-    </div>
-  );
-}
-
-function Meta({ label, value }: { label: string; value: React.ReactNode }) {
-  return (
-    <div className="flex items-center justify-between gap-3">
-      <dt className="text-muted">{label}</dt>
-      <dd className="truncate text-ink-soft">{value}</dd>
-    </div>
-  );
-}
-
-function Kpi({ label, value, tone }: { label: string; value: number; tone?: "success" | "danger" }) {
-  const color = tone === "success" ? "text-success" : tone === "danger" ? "text-danger" : "text-ink";
-  return (
-    <Card className="p-4">
-      <p className={cn("font-display text-[24px] font-extrabold leading-none tnum", color)}>{formatINRCompact(value)}</p>
-      <p className="mt-1.5 text-[12px] text-muted">{label}</p>
-    </Card>
-  );
-}
-
-/* ---------------------------------------------------------------- Contacts */
-
-function Contacts({ contacts, loading, onAdd, onEdit }: { contacts: ContactDTO[]; loading: boolean; onAdd: () => void; onEdit: (c: ContactDTO) => void }) {
-  if (loading) return <PageLoader />;
-  if (contacts.length === 0) return <EmptyState icon={<Mail className="size-6" />} title="No contacts" description="Add the people you work with at this account." action={<Button variant="primary" onClick={onAdd}><Plus className="size-4" /> Add contact</Button>} />;
-  return (
-    <div className="grid gap-3 sm:grid-cols-2">
-      {contacts.map((c) => (
-        <Card key={c.id} className="p-4">
-          <div className="flex items-center gap-3">
-            <Avatar name={c.name} size={42} />
-            <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <p className="truncate text-[14px] font-semibold text-ink">{c.name}</p>
-                {c.isPrimary && <Badge tone="violet">Primary</Badge>}
-              </div>
-              {c.title && <p className="text-[12px] text-muted">{c.title}</p>}
-            </div>
-            <button
-              onClick={() => onEdit(c)}
-              className="ml-auto inline-flex items-center gap-1.5 rounded-[var(--radius-sm)] px-2.5 py-1.5 text-[12.5px] font-semibold text-muted transition-colors hover:bg-violet-50 hover:text-violet-700"
-              aria-label={`Edit ${c.name}`}
-            >
-              <Pencil className="size-3.5" /> Edit
-            </button>
-          </div>
-          {(c.email || c.phone) && (
-            <div className="mt-3 space-y-1 text-[12.5px] text-ink-soft">
-              {c.email && <p className="flex items-center gap-2"><Mail className="size-3.5 text-faint" /> {c.email}</p>}
-              {c.phone && <p className="flex items-center gap-2"><Phone className="size-3.5 text-faint" /> {c.phone}</p>}
-            </div>
-          )}
-        </Card>
-      ))}
-    </div>
-  );
-}
-
-/* --------------------------------------------------------------- Documents */
-
-function Documents({ accountId, documents, loading, onUpload, onChanged }: { accountId: string; documents: DocumentDTO[]; loading: boolean; onUpload: () => void; onChanged: () => void }) {
-  const { toast } = useToast();
-  const confirm = useConfirm();
-  const [busyId, setBusyId] = useState<string | null>(null);
-
-  function view(docId: string) {
-    window.open(`/api/accounts/${accountId}/documents/${docId}`, "_blank", "noopener");
-  }
-
-  async function remove(doc: DocumentDTO) {
-    if (!(await confirm({
-      title: `Archive "${doc.title}"?`,
-      description: "The document will be removed from this account but can be restored from the Archived view.",
-      confirmLabel: "Archive document",
-      tone: "danger",
-    }))) return;
-    setBusyId(doc.id);
-    try {
-      await api.delete(`/api/accounts/${accountId}/documents/${doc.id}`);
-      toast(`${doc.title} archived.`, "info");
-      onChanged();
-    } catch (e) {
-      toast(e instanceof Error ? e.message : "Could not archive", "error");
-    } finally {
-      setBusyId(null);
-    }
-  }
-
-  if (loading) return <PageLoader />;
-  return (
-    <div>
-      <div className="mb-4 flex items-center">
-        <p className="text-[13px] text-muted">Proposals & signed agreements for this account.</p>
-        <Button variant="primary" className="ml-auto" onClick={onUpload}><Upload className="size-4" /> Upload</Button>
-      </div>
-      {documents.length === 0 ? (
-        <EmptyState icon={<FileText className="size-6" />} title="No documents" description="Upload a proposal or signed agreement to keep it on file." action={<Button variant="primary" onClick={onUpload}><Upload className="size-4" /> Upload document</Button>} />
-      ) : (
-        <div className="grid gap-3 sm:grid-cols-2">
-          {documents.map((d) => {
-            const meta = DOCUMENT_KIND_META[d.kind];
-            return (
-              <Card key={d.id} className="flex items-center gap-3 p-4">
-                <div className="flex size-10 shrink-0 items-center justify-center rounded-[var(--radius-md)] bg-canvas text-muted"><FileText className="size-5" /></div>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <p className="truncate text-[14px] font-semibold text-ink">{d.title}</p>
-                    <Badge tint={meta.tint}>{meta.label}</Badge>
-                  </div>
-                  <p className="truncate text-[12px] text-muted">
-                    {d.fileName} · {formatBytes(d.fileSize)}{d.uploadedByName ? ` · ${d.uploadedByName}` : ""}
-                  </p>
-                </div>
-                <div className="flex shrink-0 items-center gap-1">
-                  <button onClick={() => view(d.id)} className="rounded-md p-2 text-muted transition-colors hover:bg-violet-50 hover:text-violet-700" aria-label={`Open ${d.title}`}><Download className="size-4" /></button>
-                  <button onClick={() => remove(d)} disabled={busyId === d.id} className="rounded-md p-2 text-muted transition-colors hover:bg-danger-bg hover:text-danger disabled:opacity-50" aria-label={`Archive ${d.title}`}><Trash2 className="size-4" /></button>
-                </div>
-              </Card>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-}
-
-/* ---------------------------------------------------------------- Invoices */
-
-function removeCopy(inv: InvoiceDTO): string {
-  const amount = formatINR(inv.amount);
-  if (inv.status === "paid") {
-    return `${amount} will drop off billed and paid totals. This invoice is marked paid. The invoice number is kept and won't be reused.`;
-  }
-  if (inv.status === "draft") {
-    return `${amount} is a draft and is not in billed totals. It will be removed from this account. The invoice number is kept and won't be reused.`;
-  }
-  return `${amount} will drop off billed and outstanding totals. The invoice number is kept and won't be reused.`;
-}
-
-function Invoices({ invoices, finance, loading, onNew, onChanged }: { invoices: InvoiceDTO[]; finance: AccountFinance; loading: boolean; onNew: () => void; onChanged: () => void | Promise<void> }) {
-  const { toast } = useToast();
-  const confirm = useConfirm();
-  const [busyId, setBusyId] = useState<string | null>(null);
-  const fileInput = useRef<HTMLInputElement>(null);
-  const uploadTarget = useRef<string | null>(null);
-
-  async function act(inv: InvoiceDTO, action: "remind" | "paid") {
-    setBusyId(inv.id);
-    try {
-      if (action === "remind") {
-        await api.patch(`/api/invoices/${inv.id}`, { action: "remind" });
-        toast(`Reminder sent for #${inv.number}.`, "success");
-      } else {
-        await api.patch(`/api/invoices/${inv.id}`, { status: "paid" });
-        toast(`#${inv.number} marked paid.`, "success");
-        await onChanged();
-      }
-    } catch (e) {
-      toast(e instanceof Error ? e.message : "Failed", "error");
-    } finally {
-      setBusyId(null);
-    }
-  }
-
-  function pickFile(invId: string) {
-    uploadTarget.current = invId;
-    fileInput.current?.click();
-  }
-
-  async function onFile(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    const invId = uploadTarget.current;
-    e.target.value = ""; // allow re-picking the same file later
-    if (!file || !invId) return;
-    setBusyId(invId);
-    try {
-      await uploadInvoiceFile(invId, file);
-      toast("Invoice file stored.", "success");
-      await onChanged();
-    } catch (err) {
-      toast(err instanceof Error ? err.message : "Upload failed", "error");
-    } finally {
-      setBusyId(null);
-    }
-  }
-
-  function viewDoc(invId: string) {
-    window.open(`/api/invoices/${invId}/document`, "_blank", "noopener");
-  }
-
-  async function remove(inv: InvoiceDTO) {
-    if (!(await confirm({
-      title: `Remove invoice #${inv.number}?`,
-      description: removeCopy(inv),
-      confirmLabel: "Remove invoice",
-      tone: "danger",
-    }))) return;
-    setBusyId(inv.id);
-    try {
-      await api.delete(`/api/invoices/${inv.id}`);
-      toast(`Invoice #${inv.number} removed.`, "info");
-      await onChanged();
-    } catch (e) {
-      toast(e instanceof Error ? e.message : "Could not remove", "error");
-    } finally {
-      setBusyId(null);
-    }
-  }
-
-  return (
-    <div>
-      <div className="mb-4 flex flex-wrap items-center gap-2">
-        <Chip label="Billed" value={finance.billed} />
-        <Chip label="Paid" value={finance.paid} tone="success" />
-        <Chip label="Outstanding" value={finance.outstanding} tone="danger" />
-        <Button variant="primary" className="ml-auto" onClick={onNew}><Plus className="size-4" /> New invoice</Button>
-      </div>
-      {loading ? <PageLoader /> : invoices.length === 0 ? (
-        <EmptyState icon={<Receipt className="size-6" />} title="No invoices" description="Bill this account to start tracking revenue." action={<Button variant="primary" onClick={onNew}><Plus className="size-4" /> New invoice</Button>} />
-      ) : (
-        <Card className="overflow-hidden">
-          <input ref={fileInput} type="file" accept="application/pdf,image/png,image/jpeg" className="hidden" onChange={onFile} />
-          <div className="overflow-x-auto">
-          <table className="w-full min-w-[760px]">
-            <thead>
-              <tr className="border-b border-line bg-canvas/60 text-left text-[11.5px] font-semibold uppercase tracking-wide text-muted">
-                <th className="px-5 py-3">Invoice</th>
-                <th className="px-5 py-3">Issued</th>
-                <th className="px-5 py-3 text-right">Amount</th>
-                <th className="px-5 py-3">Due</th>
-                <th className="px-5 py-3">Status</th>
-                <th className="px-5 py-3">Document</th>
-                <th className="px-5 py-3 text-right">Action</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-line">
-              {invoices.map((inv) => (
-                <tr key={inv.id} className="text-[13px]">
-                  <td className="px-5 py-3.5 font-mono font-semibold text-ink">#{inv.number}</td>
-                  <td className="px-5 py-3.5 text-muted">{format(new Date(inv.issuedAt), "MMM dd, yyyy")}</td>
-                  <td className="px-5 py-3.5 text-right font-mono font-semibold text-ink tnum">{formatINR(inv.amount)}</td>
-                  <td className="px-5 py-3.5 text-muted">{inv.dueAt ? format(new Date(inv.dueAt), "MMM dd") : "—"}</td>
-                  <td className="px-5 py-3.5"><Badge tint={INVOICE_STATUS_META[inv.status].tint}>{INVOICE_STATUS_META[inv.status].label}</Badge></td>
-                  <td className="px-5 py-3.5">
-                    {inv.hasFile ? (
-                      <div className="flex items-center gap-2.5">
-                        <button onClick={() => viewDoc(inv.id)} className="inline-flex items-center gap-1.5 text-[12.5px] font-semibold text-violet-600 hover:underline">
-                          <Eye className="size-3.5" /> View
-                        </button>
-                        <button disabled={busyId === inv.id} onClick={() => pickFile(inv.id)} className="text-[12px] text-faint hover:text-ink disabled:opacity-50" title="Replace file">replace</button>
-                      </div>
-                    ) : (
-                      <button disabled={busyId === inv.id} onClick={() => pickFile(inv.id)} className="inline-flex items-center gap-1.5 text-[12.5px] font-semibold text-violet-600 hover:underline disabled:opacity-50">
-                        <Upload className="size-3.5" /> Upload
-                      </button>
-                    )}
-                  </td>
-                  <td className="px-5 py-3.5 text-right">
-                    <div className="inline-flex items-center justify-end gap-2">
-                      {inv.status === "overdue" ? (
-                        <button disabled={busyId === inv.id} onClick={() => act(inv, "remind")} className="text-[12.5px] font-semibold text-violet-600 hover:underline disabled:opacity-50">remind</button>
-                      ) : inv.status === "sent" ? (
-                        <button disabled={busyId === inv.id} onClick={() => act(inv, "paid")} className="text-[12.5px] font-semibold text-violet-600 hover:underline disabled:opacity-50">mark paid</button>
-                      ) : null}
-                      <button
-                        disabled={busyId === inv.id}
-                        onClick={() => remove(inv)}
-                        className="rounded-md p-1.5 text-muted transition-colors hover:bg-danger-bg hover:text-danger disabled:opacity-50"
-                        aria-label={`Remove invoice #${inv.number}`}
-                      >
-                        <Trash2 className="size-4" />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          </div>
-        </Card>
-      )}
-    </div>
-  );
-}
-
-/* ---------------------------------------------------------------- Expenses */
-
-function Expenses({ expenses, finance, loading, onNew }: { expenses: ExpenseDTO[]; finance: AccountFinance; loading: boolean; onNew: () => void }) {
-  const thisMonth = useMemo(() => {
-    const m = new Date().getMonth();
-    const y = new Date().getFullYear();
-    return expenses.filter((e) => { const d = new Date(e.date); return d.getMonth() === m && d.getFullYear() === y; }).reduce((s, e) => s + e.amount, 0);
-  }, [expenses]);
-
-  return (
-    <div>
-      <div className="mb-4 flex flex-wrap items-center gap-2">
-        <Chip label="This month" value={thisMonth} />
-        <span className="inline-flex items-center gap-1.5 rounded-full border border-violet-200 bg-violet-50 px-3 py-1.5 text-[12.5px] font-semibold text-violet-700">
-          Margin <span className="tnum">{Math.round(finance.margin * 100)}%</span>
-        </span>
-        <Button variant="primary" className="ml-auto" onClick={onNew}><Plus className="size-4" /> Log expense</Button>
-      </div>
-      {loading ? <PageLoader /> : expenses.length === 0 ? (
-        <EmptyState icon={<Wallet className="size-6" />} title="No expenses" description="Log costs to see true margin on this account." action={<Button variant="primary" onClick={onNew}><Plus className="size-4" /> Log expense</Button>} />
-      ) : (
-        <Card className="overflow-hidden">
-          <div className="overflow-x-auto">
-          <table className="w-full min-w-[620px]">
-            <thead>
-              <tr className="border-b border-line bg-canvas/60 text-left text-[11.5px] font-semibold uppercase tracking-wide text-muted">
-                <th className="px-5 py-3">Date</th>
-                <th className="px-5 py-3">Category</th>
-                <th className="px-5 py-3">Vendor / note</th>
-                <th className="px-5 py-3 text-right">Amount</th>
-                <th className="px-5 py-3 text-center">Billable</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-line">
-              {expenses.map((e) => (
-                <tr key={e.id} className="text-[13px]">
-                  <td className="px-5 py-3.5 text-muted">{format(new Date(e.date), "MMM dd")}</td>
-                  <td className="px-5 py-3.5"><Badge tone="neutral">{e.category}</Badge></td>
-                  <td className="px-5 py-3.5 text-ink-soft">{e.vendor || "—"}</td>
-                  <td className="px-5 py-3.5 text-right font-mono font-semibold text-ink tnum">{formatINR(e.amount)}</td>
-                  <td className="px-5 py-3.5 text-center">
-                    {e.billable ? <Badge tone="success">Yes</Badge> : <Badge tone="neutral">No</Badge>}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          </div>
-        </Card>
-      )}
-    </div>
-  );
-}
-
-function Chip({ label, value, tone }: { label: string; value: number; tone?: "success" | "danger" }) {
-  const color = tone === "success" ? "text-success" : tone === "danger" ? "text-danger" : "text-ink-soft";
-  return (
-    <span className="inline-flex items-center gap-1.5 rounded-full border border-line bg-paper px-3 py-1.5 text-[12.5px] font-medium text-muted shadow-[var(--shadow-card)]">
-      {label} <span className={cn("font-mono font-semibold tnum", color)}>{formatINRCompact(value)}</span>
-    </span>
+    <Page>
+      <PageHeader title="Account" breadcrumb={[{ label: "Accounts", href: "/accounts" }]} />
+      <Panel aria-label="Loading account">
+        <Skeleton className="h-8 w-72 max-w-full" />
+        <Skeleton className="mt-3 h-4 w-96 max-w-full" />
+      </Panel>
+      <Panel>
+        <Skeleton className="h-10 w-48" />
+        <Skeleton className="mt-3 h-3 w-full" />
+      </Panel>
+      <Panel>
+        <RowsSkeleton label="Loading account" />
+      </Panel>
+    </Page>
   );
 }

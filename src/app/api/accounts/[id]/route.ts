@@ -3,24 +3,26 @@ import { ok, fail, route, serializeAccount, HttpError } from "@/lib/api";
 import { connectDB } from "@/lib/db";
 import { Account, Contact, type IAccount, type IContact } from "@/lib/models";
 import { requireUser } from "@/lib/auth/server";
-import { accountScope, canEditOwned } from "@/lib/rbac";
-import { accountFinance, ownerNameMap, audit, diffChanges } from "@/lib/services";
+import { canEditOwned } from "@/lib/rbac";
+import { accountFinance, ownerNameMap, audit, diffChanges, loadAccount } from "@/lib/services";
 import { ACCOUNT_STATUSES } from "@/lib/constants";
 
 type Ctx = { params: Promise<{ id: string }> };
 
-async function load(scope: Record<string, unknown>, id: string) {
-  const acc = await Account.findOne({ _id: id, ...scope }).lean<IAccount>();
-  if (!acc) throw new HttpError("Account not found", 404);
-  return acc;
+/** Re-read an account after a write, named for its owner (not the editor, who may be an admin). */
+async function freshAccount(id: IAccount["_id"]) {
+  const acc = (await Account.findById(id).lean<IAccount>())!;
+  const names = await ownerNameMap([acc.ownerId]);
+  return serializeAccount(acc, { ownerName: names.get(String(acc.ownerId)) ?? "" });
 }
 
-// GET /api/accounts/:id — account + finance summary.
+// GET /api/accounts/:id — account + finance summary. An archived account still
+// resolves (with `deletedAt` set) so its page can offer Restore.
 export const GET = route(async (_req: NextRequest, ctx: Ctx) => {
   const user = await requireUser();
   await connectDB();
   const { id } = await ctx.params;
-  const acc = await load(accountScope(user), id);
+  const acc = await loadAccount(user, id, "read");
 
   const [finance, primary, contactCount, names] = await Promise.all([
     accountFinance(acc._id),
@@ -46,17 +48,17 @@ export const PATCH = route(async (req: NextRequest, ctx: Ctx) => {
   const { id } = await ctx.params;
   const b = await req.json().catch(() => ({}));
 
-  // Restore path loads from the ARCHIVED scope (the live scope hides it).
+  // Restore resolves archived accounts too, and only acts on one that is archived.
   if (b.action === "restore") {
-    const acc = await load(accountScope(user, { archived: true }), id);
+    const acc = await loadAccount(user, id, "read");
+    if (!acc.deletedAt) throw new HttpError("Account not found", 404);
     if (!canEditOwned(user, acc.ownerId)) return fail("You can only restore your own accounts.", 403);
     await Account.updateOne({ _id: acc._id }, { $unset: { deletedAt: "", deletedBy: "" } });
     await audit({ entity: "account", entityId: acc._id, entityLabel: acc.name, action: "restore", actor: user, accountId: acc._id });
-    const fresh = await Account.findById(acc._id).lean<IAccount>();
-    return ok({ account: serializeAccount(fresh!, { ownerName: user.name }) });
+    return ok({ account: await freshAccount(acc._id) });
   }
 
-  const acc = await load(accountScope(user), id);
+  const acc = await loadAccount(user, id, "write");
   if (!canEditOwned(user, acc.ownerId)) return fail("You can only edit your own accounts.", 403);
 
   const patch: Record<string, unknown> = {};
@@ -71,17 +73,16 @@ export const PATCH = route(async (req: NextRequest, ctx: Ctx) => {
 
   await Account.updateOne({ _id: acc._id }, patch);
   await audit({ entity: "account", entityId: acc._id, entityLabel: (patch.name as string) ?? acc.name, action: "update", actor: user, changes, accountId: acc._id });
-  const fresh = await Account.findById(acc._id).lean<IAccount>();
-  return ok({ account: serializeAccount(fresh!, { ownerName: user.name }) });
+  return ok({ account: await freshAccount(acc._id) });
 });
 
-// DELETE /api/accounts/:id — soft-delete (archive). Children stay put but become
-// unreachable through the archived account, and reappear on restore.
+// DELETE /api/accounts/:id — soft-delete (archive). Children stay put: readable
+// through the archived account, editable again once it is restored.
 export const DELETE = route(async (_req: NextRequest, ctx: Ctx) => {
   const user = await requireUser();
   await connectDB();
   const { id } = await ctx.params;
-  const acc = await load(accountScope(user), id);
+  const acc = await loadAccount(user, id, "write");
   if (!canEditOwned(user, acc.ownerId)) return fail("You can only delete your own accounts.", 403);
   await Account.updateOne({ _id: acc._id }, { deletedAt: new Date(), deletedBy: user._id });
   await audit({ entity: "account", entityId: acc._id, entityLabel: acc.name, action: "delete", actor: user, accountId: acc._id });

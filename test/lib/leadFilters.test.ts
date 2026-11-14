@@ -1,9 +1,14 @@
 import { describe, it, expect } from "vitest";
 import {
+  byLaneOrder,
   deriveOwners,
-  filterLeadsByOwners,
+  laneNeighbours,
+  filterByOwners,
   parseOwnerParam,
+  parseStageParam,
   serializeOwnerParam,
+  stageTotals,
+  summarizeLeads,
 } from "@/lib/leadFilters";
 import type { LeadDTO } from "@/lib/types";
 
@@ -19,6 +24,7 @@ function lead(over: Partial<LeadDTO>): LeadDTO {
     email: "",
     source: "Website",
     stage: "new",
+    category: "unclassified",
     estValue: 0,
     notes: "",
     tags: [],
@@ -116,7 +122,7 @@ describe("deriveOwners", () => {
   });
 });
 
-describe("filterLeadsByOwners", () => {
+describe("filterByOwners", () => {
   const leads = [
     lead({ id: "1", ownerId: "a" }),
     lead({ id: "2", ownerId: "b" }),
@@ -125,44 +131,44 @@ describe("filterLeadsByOwners", () => {
   ];
 
   it("returns the same array reference when no owners are selected", () => {
-    expect(filterLeadsByOwners(leads, [])).toBe(leads);
+    expect(filterByOwners(leads, [])).toBe(leads);
   });
 
   it("keeps only leads owned by a single selected owner", () => {
-    expect(filterLeadsByOwners(leads, ["b"]).map((l) => l.id)).toEqual(["2"]);
+    expect(filterByOwners(leads, ["b"]).map((l) => l.id)).toEqual(["2"]);
   });
 
   it("keeps every lead of a single owner", () => {
-    expect(filterLeadsByOwners(leads, ["a"]).map((l) => l.id)).toEqual(["1", "4"]);
+    expect(filterByOwners(leads, ["a"]).map((l) => l.id)).toEqual(["1", "4"]);
   });
 
   it("keeps leads owned by any of several selected owners (OR within owners)", () => {
-    expect(filterLeadsByOwners(leads, ["a", "c"]).map((l) => l.id)).toEqual(["1", "3", "4"]);
+    expect(filterByOwners(leads, ["a", "c"]).map((l) => l.id)).toEqual(["1", "3", "4"]);
   });
 
   it("preserves the original ordering of the leads", () => {
-    expect(filterLeadsByOwners(leads, ["c", "a"]).map((l) => l.id)).toEqual(["1", "3", "4"]);
+    expect(filterByOwners(leads, ["c", "a"]).map((l) => l.id)).toEqual(["1", "3", "4"]);
   });
 
   it("returns nothing for an owner id that matches no lead", () => {
-    expect(filterLeadsByOwners(leads, ["ghost"])).toEqual([]);
+    expect(filterByOwners(leads, ["ghost"])).toEqual([]);
   });
 
   it("ignores unknown ids mixed with a matching one", () => {
-    expect(filterLeadsByOwners(leads, ["ghost", "b"]).map((l) => l.id)).toEqual(["2"]);
+    expect(filterByOwners(leads, ["ghost", "b"]).map((l) => l.id)).toEqual(["2"]);
   });
 
   it("tolerates duplicate ids in the selection", () => {
-    expect(filterLeadsByOwners(leads, ["a", "a"]).map((l) => l.id)).toEqual(["1", "4"]);
+    expect(filterByOwners(leads, ["a", "a"]).map((l) => l.id)).toEqual(["1", "4"]);
   });
 
   it("returns an empty array for empty leads", () => {
-    expect(filterLeadsByOwners([], ["a"])).toEqual([]);
+    expect(filterByOwners([], ["a"])).toEqual([]);
   });
 
   it("does not mutate the input array", () => {
     const snapshot = leads.map((l) => l.id);
-    filterLeadsByOwners(leads, ["a"]);
+    filterByOwners(leads, ["a"]);
     expect(leads.map((l) => l.id)).toEqual(snapshot);
   });
 });
@@ -224,5 +230,91 @@ describe("serializeOwnerParam", () => {
 
   it("round-trips a single-id selection through parse", () => {
     expect(parseOwnerParam(serializeOwnerParam(["only"]))).toEqual(["only"]);
+  });
+});
+
+describe("parseStageParam", () => {
+  it("accepts every known stage, case-insensitively", () => {
+    expect(parseStageParam("qualified")).toBe("qualified");
+    expect(parseStageParam(" Won ")).toBe("won");
+    expect(parseStageParam("parked")).toBe("parked");
+    expect(parseStageParam("lost")).toBe("lost");
+  });
+
+  it("returns null for a missing or unknown stage", () => {
+    expect(parseStageParam(null)).toBeNull();
+    expect(parseStageParam(undefined)).toBeNull();
+    expect(parseStageParam("")).toBeNull();
+    expect(parseStageParam("closed")).toBeNull();
+  });
+});
+
+describe("summarizeLeads", () => {
+  it("rolls up open value and counts in one pass", () => {
+    const sum = summarizeLeads([
+      lead({ stage: "new", estValue: 10_000 }),
+      lead({ stage: "proposal", estValue: 40_000 }),
+      lead({ stage: "won", estValue: 100_000 }),
+      lead({ stage: "parked", estValue: 70_000 }),
+      lead({ stage: "lost", estValue: 90_000 }),
+      lead({ stage: "lost", estValue: 0 }),
+    ]);
+    // Open means New through Proposal: won, parked and lost are counted apart.
+    expect(sum).toEqual({ open: 2, openValue: 50_000, won: 1, parked: 1, lost: 2 });
+  });
+
+  it("ignores negative values in the open total", () => {
+    expect(summarizeLeads([lead({ estValue: -500 }), lead({ estValue: 500 })]).openValue).toBe(500);
+  });
+
+  it("is all zeros for no leads", () => {
+    expect(summarizeLeads([])).toEqual({ open: 0, openValue: 0, won: 0, parked: 0, lost: 0 });
+  });
+});
+
+describe("stageTotals", () => {
+  it("counts, sums and shares value per funnel stage", () => {
+    const totals = stageTotals([
+      lead({ stage: "new", estValue: 25_000 }),
+      lead({ stage: "new", estValue: 0 }),
+      lead({ stage: "qualified", estValue: 75_000 }),
+      lead({ stage: "parked", estValue: 1_000_000 }),
+      lead({ stage: "lost", estValue: 1_000_000 }),
+    ]);
+    expect(totals.new).toEqual({ count: 2, value: 25_000, share: 0.25 });
+    expect(totals.qualified).toEqual({ count: 1, value: 75_000, share: 0.75 });
+    expect(totals.proposal).toEqual({ count: 0, value: 0, share: 0 });
+    expect(Object.keys(totals)).toEqual(["new", "contacted", "qualified", "proposal", "won"]);
+  });
+
+  it("leaves every share at zero when nothing has a value", () => {
+    const totals = stageTotals([lead({ stage: "won", estValue: 0 })]);
+    expect(totals.won).toEqual({ count: 1, value: 0, share: 0 });
+  });
+});
+
+describe("byLaneOrder", () => {
+  it("sorts by order, then oldest first, then id, so ties at order 0 read in creation order", () => {
+    const rows = [
+      lead({ id: "c", order: 0, createdAt: "2026-03-01T00:00:00.000Z" }),
+      lead({ id: "e", order: 0, createdAt: "2026-01-01T00:00:00.000Z" }),
+      lead({ id: "a", order: 0, createdAt: "2026-01-01T00:00:00.000Z" }),
+      lead({ id: "f", order: 512.5, createdAt: "2025-01-01T00:00:00.000Z" }),
+      lead({ id: "z", order: -1024, createdAt: "2026-12-01T00:00:00.000Z" }),
+    ];
+    expect(rows.sort(byLaneOrder).map((l) => l.id)).toEqual(["z", "a", "e", "c", "f"]);
+  });
+});
+
+describe("laneNeighbours", () => {
+  const lane = [lead({ id: "a" }), lead({ id: "b" }), lead({ id: "c" })];
+  it("names the cards directly above and below", () => {
+    expect(laneNeighbours(lane, "b")).toEqual({ beforeId: "a", afterId: "c" });
+  });
+  it("leaves out the missing side at either end, and both for a card that isn't there", () => {
+    expect(laneNeighbours(lane, "a")).toEqual({ beforeId: undefined, afterId: "b" });
+    expect(laneNeighbours(lane, "c")).toEqual({ beforeId: "b", afterId: undefined });
+    expect(laneNeighbours([lead({ id: "solo" })], "solo")).toEqual({ beforeId: undefined, afterId: undefined });
+    expect(laneNeighbours(lane, "x")).toEqual({});
   });
 });

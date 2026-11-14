@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { describe, it, expect, afterEach, vi } from "vitest";
 
 // The slack module reads env at import time, so each test sets env then imports
 // a fresh copy via vi.resetModules() + dynamic import.

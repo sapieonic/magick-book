@@ -69,8 +69,6 @@ export class HttpError extends Error {
 const iso = (d?: Date | null) => (d ? new Date(d).toISOString() : null);
 const id = (v: unknown) => (v ? String(v) : "");
 
-type OwnerLike = { _id: unknown; name?: string } | null | undefined;
-
 export function serializeLead(l: ILead, ownerName = "", commentCount = 0): LeadDTO {
   return {
     id: id(l._id),
@@ -174,7 +172,10 @@ export function serializeActivity(a: IActivity, actorName = ""): ActivityDTO {
   };
 }
 
-export function serializeMember(u: IUser, opts: { invitedByName?: string | null; isYou?: boolean }): MemberDTO {
+export function serializeMember(
+  u: IUser,
+  opts: { invitedByName?: string | null; isYou?: boolean; isOwner?: boolean },
+): MemberDTO {
   return {
     id: id(u._id),
     name: u.name,
@@ -183,6 +184,7 @@ export function serializeMember(u: IUser, opts: { invitedByName?: string | null;
     status: u.status as MemberStatus,
     invitedByName: opts.invitedByName ?? null,
     isYou: !!opts.isYou,
+    isOwner: !!opts.isOwner,
   };
 }
 
@@ -242,5 +244,3 @@ export function serializeReminderSetting(s: IReminderSetting | null): ReminderSe
   };
 }
 
-export { iso, id };
-export type { OwnerLike };

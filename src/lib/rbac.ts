@@ -16,15 +16,17 @@ export function isAdmin(user: IUser): boolean {
 
 /**
  * Soft-delete filter fragment. By default queries see only LIVE records
- * (deletedAt null/absent); pass `{ archived: true }` for the trash view.
+ * (deletedAt null/absent); pass `{ archived: true }` for the trash view, or
+ * `{ archived: "any" }` to match both.
  */
 function deletedFilter(opts?: ScopeOpts): Record<string, unknown> {
+  if (opts?.archived === "any") return {};
   return { deletedAt: opts?.archived ? { $ne: null } : null };
 }
 
 export interface ScopeOpts {
-  /** When true, return ARCHIVED (soft-deleted) records instead of live ones. */
-  archived?: boolean;
+  /** `true`: ARCHIVED (soft-deleted) records instead of live ones. `"any"`: live and archived. */
+  archived?: boolean | "any";
 }
 
 /** Base filter for leads visible to this user. */

@@ -16,7 +16,8 @@ let mem: MongoMemoryServer | null = null;
 export async function startTestDB(): Promise<void> {
   // Guard: make absolutely sure we never connect to a non-memory server.
   delete process.env.SEED_ON_BOOT;
-  mem = await MongoMemoryServer.create({ instance: { dbName: "magickbook" } });
+  // A generous launch timeout: many suites start their own mongod in parallel.
+  mem = await MongoMemoryServer.create({ instance: { dbName: "magickbook", launchTimeout: 60_000 } });
   process.env.MONGODB_URI = mem.getUri("magickbook");
 }
 

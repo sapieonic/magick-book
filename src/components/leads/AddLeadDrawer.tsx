@@ -2,7 +2,8 @@
 import { useRef, useState } from "react";
 import { Drawer } from "@/components/ui/Overlay";
 import { Button } from "@/components/ui/Button";
-import { Input, Textarea, Select, Field } from "@/components/ui/Field";
+import { AmountInput, Input, Textarea, Select, Field } from "@/components/ui/Field";
+import { parseAmount } from "@/lib/utils";
 import { useToast } from "@/components/ui/Toast";
 import { api, useApi } from "@/lib/client";
 import {
@@ -111,7 +112,7 @@ export function AddLeadDrawer({
 
     setErrors({});
     setBusy(true);
-    const payload = { ...form, estValue: Number(String(form.estValue).replace(/[^\d.]/g, "")) || 0 };
+    const payload = { ...form, estValue: parseAmount(form.estValue) };
     try {
       if (isEdit) {
         const { lead: updated } = await api.patch<{ lead: LeadDTO }>(`/api/leads/${lead!.id}`, payload);
@@ -140,7 +141,7 @@ export function AddLeadDrawer({
       open={open}
       onClose={onClose}
       title={isEdit ? "Edit lead" : "Add a lead"}
-      subtitle={isEdit ? "Update the details and save." : "Only ★ fields are required. Add the rest whenever you like."}
+      subtitle={isEdit ? "Update the details and save." : "Only starred fields are required. Add the rest whenever you like."}
     >
       <form
         onSubmit={(e) => {
@@ -195,10 +196,7 @@ export function AddLeadDrawer({
         </Field>
 
         <Field label="Est. value" hint="optional" error={errors.estValue}>
-          <div className="relative">
-            <span className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 font-mono text-[14px] text-muted">₹</span>
-            <Input ref={estValueRef} aria-invalid={!!errors.estValue} className="pl-7 tnum font-mono" inputMode="numeric" placeholder="1,20,000" value={form.estValue} onChange={(e) => set("estValue", e.target.value)} />
-          </div>
+          <AmountInput ref={estValueRef} placeholder="1,20,000" value={form.estValue} onChange={(e) => set("estValue", e.target.value)} />
         </Field>
 
         <Field label="Notes">
@@ -210,7 +208,7 @@ export function AddLeadDrawer({
             {isEdit ? "Save changes" : "Save lead"}
           </Button>
           {!isEdit && (
-            <Button type="button" variant="dashed" loading={busy} onClick={() => save(true)}>
+            <Button type="button" variant="secondary" loading={busy} onClick={() => save(true)}>
               Save & add another
             </Button>
           )}

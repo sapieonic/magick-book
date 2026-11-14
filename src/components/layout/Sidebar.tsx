@@ -1,137 +1,107 @@
 "use client";
-import { useState } from "react";
+import { type ReactNode } from "react";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
-import { LayoutGrid, Users, Building2, Wallet, Settings, LifeBuoy, LogOut, ChevronDown } from "lucide-react";
-import { Logo } from "@/components/ui/Misc";
-import { Avatar } from "@/components/ui/Avatar";
-import { ThemeToggle } from "@/components/theme/ThemeToggle";
+import { usePathname } from "next/navigation";
+import { formatMoney } from "@/components/ui/Money";
+import { cn, initials } from "@/lib/utils";
+import type { NavSummary } from "@/lib/types";
 import { useSession } from "./SessionContext";
-import { api } from "@/lib/client";
-import { cn } from "@/lib/utils";
+import { UserMenu } from "./UserMenu";
+import { NAV, SETTINGS_NAV, isActivePath, type NavItem } from "./nav";
 
-export const NAV = [
-  { href: "/dashboard", label: "Home", icon: LayoutGrid },
-  { href: "/leads", label: "Leads", icon: Users },
-  { href: "/accounts", label: "Accts", icon: Building2 },
-  { href: "/money", label: "Money", icon: Wallet },
-];
+/** Live figure shown beside a nav label, keyed by href. */
+function navBadges(summary: NavSummary | null): Record<string, { text: string; className?: string } | undefined> {
+  if (!summary) return {};
+  return {
+    "/leads": summary.openLeads ? { text: String(summary.openLeads) } : undefined,
+    "/accounts": summary.accounts ? { text: String(summary.accounts) } : undefined,
+    "/money": summary.moneyDue ? { text: `${formatMoney(summary.moneyDue, true)} due`, className: "text-due" } : undefined,
+  };
+}
 
-export function Sidebar() {
+/** Hover / focus label for the icon rail; hidden once the sidebar shows labels. */
+function RailTip({ children }: { children: ReactNode }) {
+  return (
+    <span
+      aria-hidden
+      className="pointer-events-none absolute left-full z-10 ml-3 hidden whitespace-nowrap rounded-bar bg-ink-1 px-2 py-1 text-[12px] font-medium text-on-ink group-hover:block group-focus-visible:block xl:!hidden"
+    >
+      {children}
+    </span>
+  );
+}
+
+function NavLink({ item, active, badge }: { item: NavItem; active: boolean; badge?: { text: string; className?: string } }) {
+  return (
+    <Link
+      href={item.href}
+      aria-current={active ? "page" : undefined}
+      aria-label={badge ? `${item.label}, ${badge.text}` : undefined}
+      className={cn(
+        "group relative flex items-center gap-2.5 rounded-control px-2 py-[7px] transition-colors max-xl:size-11 max-xl:justify-center max-xl:p-0",
+        active ? "bg-accent-tint font-semibold text-accent" : "font-medium text-ink-2 hover:bg-sunk",
+      )}
+    >
+      <item.icon className="size-5 shrink-0" strokeWidth={1.5} aria-hidden />
+      <span className="flex-1 max-xl:sr-only">{item.label}</span>
+      {badge && <span className={cn("tnum text-[12px] font-normal text-ink-3 max-xl:sr-only", badge.className)}>{badge.text}</span>}
+      <RailTip>
+        {item.label}
+        {badge && ` · ${badge.text}`}
+      </RailTip>
+    </Link>
+  );
+}
+
+/**
+ * Primary navigation: a 232px glass sidebar with labels and live counts from
+ * 1280px up, a 56px icon rail with tooltips on tablets. Hidden on phones, where
+ * `MobileTabBar` takes over.
+ */
+export function Sidebar({ summary }: { summary: NavSummary | null }) {
   const pathname = usePathname();
-  const router = useRouter();
   const user = useSession();
-  const [menuOpen, setMenuOpen] = useState(false);
-
-  const isActive = (href: string) => pathname === href || pathname.startsWith(href + "/");
-
-  async function logout() {
-    await api.post("/api/auth/logout");
-    router.replace("/login");
-    router.refresh();
-  }
+  const badges = navBadges(summary);
+  const items = user.role === "admin" ? [...NAV, SETTINGS_NAV] : NAV;
+  const workspace = user.workspaceName ?? "Workspace";
 
   return (
-    <aside className="sticky top-0 z-30 hidden h-screen w-[84px] shrink-0 flex-col items-center border-r border-line bg-paper/80 py-4 backdrop-blur-sm md:flex dark:border-white/10 dark:bg-paper">
-      <Link href="/dashboard" className="brand-gradient flex size-11 items-center justify-center rounded-[var(--radius-md)] shadow-[var(--shadow-violet)]">
-        <span className="font-display text-[22px] font-extrabold text-white">M</span>
+    <nav
+      aria-label="Primary"
+      className="glass sticky top-3 z-30 hidden h-[calc(100dvh-24px)] w-14 shrink-0 flex-col gap-0.5 rounded-shell px-[5px] py-4 md:flex xl:w-[232px] xl:px-3"
+    >
+      <Link
+        href="/dashboard"
+        aria-label="MagickBook home"
+        className="self-start rounded-control px-2.5 pb-3.5 pt-1 text-[17px] font-semibold tracking-[-0.01em] text-ink-1 max-xl:self-center"
+      >
+        M<span className="max-xl:hidden">agickBook</span>
       </Link>
 
-      <nav className="mt-6 flex flex-1 flex-col gap-1.5">
-        {NAV.map((item) => {
-          const active = isActive(item.href);
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={cn(
-                "group flex w-[64px] flex-col items-center gap-1 rounded-[var(--radius-md)] py-2.5 transition-all",
-                active ? "bg-violet-50 text-violet-700" : "text-muted hover:bg-canvas hover:text-ink",
-              )}
-            >
-              <item.icon className={cn("size-[21px] transition-transform group-hover:scale-110", active && "text-violet-600")} strokeWidth={active ? 2.3 : 2} />
-              <span className="text-[10.5px] font-semibold tracking-tight">{item.label}</span>
-            </Link>
-          );
-        })}
-
-        {user.role === "admin" && (
-          <Link
-            href="/settings/team"
-            className={cn(
-              "group mt-1 flex w-[64px] flex-col items-center gap-1 rounded-[var(--radius-md)] py-2.5 transition-all",
-              isActive("/settings") ? "bg-violet-50 text-violet-700" : "text-muted hover:bg-canvas hover:text-ink",
-            )}
-          >
-            <Settings className="size-[21px] transition-transform group-hover:scale-110" strokeWidth={2} />
-            <span className="text-[10.5px] font-semibold">Setup</span>
-          </Link>
-        )}
-      </nav>
-
-      <a
-        href="mailto:help@magickbook.app"
-        className="mb-2 flex w-[64px] flex-col items-center gap-1 rounded-[var(--radius-md)] py-2.5 text-muted transition-all hover:bg-canvas hover:text-ink"
-      >
-        <LifeBuoy className="size-[21px]" strokeWidth={2} />
-        <span className="text-[10.5px] font-semibold">Help</span>
-      </a>
-
-      {/* User chip + menu */}
-      <div className="relative">
-        <button
-          onClick={() => setMenuOpen((o) => !o)}
-          className="flex flex-col items-center gap-1 rounded-[var(--radius-md)] p-1.5 transition-colors hover:bg-canvas"
-        >
-          <Avatar name={user.name} size={34} />
-        </button>
-
-        {menuOpen && (
-          <>
-            <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
-            <div className="animate-scale-in absolute bottom-1 left-[72px] z-20 w-60 overflow-hidden rounded-[var(--radius-md)] border border-line bg-paper p-1.5 shadow-[var(--shadow-pop)]">
-              <div className="flex items-center gap-2.5 px-2.5 py-2">
-                <Avatar name={user.name} size={36} />
-                <div className="min-w-0">
-                  <p className="truncate text-[13px] font-semibold text-ink">{user.name}</p>
-                  <p className="truncate text-[11.5px] text-muted">{user.email}</p>
-                </div>
-              </div>
-              <div className="mx-2 my-1 flex items-center justify-between rounded-md bg-canvas px-2 py-1.5">
-                <span className="truncate text-[11.5px] text-ink-soft">{user.workspaceName ?? "Workspace"}</span>
-                <span className="rounded-full bg-violet-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-violet-700">{user.role}</span>
-              </div>
-              <div className="mx-2 mb-1 mt-1.5">
-                <p className="mb-1 px-0.5 text-[10.5px] font-semibold uppercase tracking-wide text-faint">Theme</p>
-                <ThemeToggle />
-              </div>
-              <button
-                onClick={logout}
-                className="mt-1 flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-[13px] font-medium text-ink-soft transition-colors hover:bg-danger-bg hover:text-danger"
-              >
-                <LogOut className="size-4" /> Sign out
-              </button>
-            </div>
-          </>
-        )}
+      <div className="mb-3.5 flex items-center gap-2.5 rounded-control border border-line-strong bg-control px-2 py-1.5 font-medium max-xl:hidden">
+        <span className="flex size-5 shrink-0 items-center justify-center rounded-bar bg-ink-1 text-[12px] font-semibold text-on-ink" aria-hidden>
+          {initials(workspace).charAt(0)}
+        </span>
+        <span className="truncate">{workspace}</span>
       </div>
-    </aside>
+
+      {items.map((item) => (
+        <NavLink key={item.href} item={item} active={isActivePath(pathname, item)} badge={badges[item.href]} />
+      ))}
+
+      {summary && summary.recentAccounts.length > 0 && (
+        <div className="mt-[22px] max-xl:hidden">
+          <h2 className="px-2 pb-1.5 text-[12px] font-medium text-ink-3">Recent accounts</h2>
+          {summary.recentAccounts.map((a) => (
+            <Link key={a.id} href={`/accounts/${a.id}`} className="block truncate rounded-control px-2 py-1.5 text-ink-2 transition-colors hover:bg-sunk">
+              {a.name}
+            </Link>
+          ))}
+        </div>
+      )}
+
+      <div className="flex-1" />
+      <UserMenu variant="sidebar" className="border-t border-line-strong pt-2" />
+    </nav>
   );
 }
-
-/** Shared page header used across the app screens. */
-export function PageHeader({
-  children,
-  className,
-}: {
-  children: React.ReactNode;
-  className?: string;
-}) {
-  return (
-    <header className={cn("sticky top-0 z-20 border-b border-line bg-canvas/85 backdrop-blur-md dark:border-white/10", className)}>
-      <div className="flex h-[68px] items-center gap-3 px-4 sm:gap-4 sm:px-6 lg:px-8">{children}</div>
-    </header>
-  );
-}
-
-export { ChevronDown };

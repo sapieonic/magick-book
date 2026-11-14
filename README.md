@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="public/logo.png" width="84" alt="MagickBook" />
+  <img src="src/app/icon.svg" width="84" alt="MagickBook" />
   <h1>MagickBook CRM</h1>
   <p><em>Your whole book of business, in one place.</em></p>
   <p>Leads → accounts → invoices &amp; expenses. A full-stack Next.js CRM.</p>
@@ -11,27 +11,45 @@ MagickBook is a lightweight account-management CRM: capture and qualify leads on
 drag-and-drop pipeline, convert wins into accounts (contacts + history carry over),
 then run each account — contacts, invoices and expenses — to see true margin.
 
-## ✨ Features
+## Features
 
-- **Auth** — Firebase Auth (Google, Microsoft, email/password) with a passwordless **demo mode** for local dev.
-- **Onboarding** — quick workspace setup.
-- **Dashboard** — KPIs, pipeline funnel, revenue this month, and a "needs attention" feed.
-- **Leads** — Kanban board with drag-between-stages + a table view, add-lead drawer, lead detail with an activity timeline, reach-out logging, mark-lost, and **convert to account**.
-- **Accounts** — filterable list (Active / At risk / Churned), and a detailed account view with Overview / Contacts / Invoices / Expenses / Activity tabs.
-- **Money** — workspace-wide invoices, expenses and margin.
-- **Team & roles (RBAC)** — Admins see everything; Standard users see only the records they added. Invite teammates with a role.
+- **Today** (`/dashboard`): a work queue of due reminders, stale follow-ups and overdue
+  invoices (oldest first); a pipeline ribbon and stage table; receivables aging, top
+  debtors and collections this month against last; reminders due later this week.
+- **Leads**: a drag-and-drop board and a table, with Lost and Archived views; an add-lead
+  drawer; lead detail with a stage track, activity timeline, reach-out logging, reminders,
+  mark-lost and **convert to account**.
+- **Accounts**: a filterable list (Active / At risk / Churned / Archived) and an account
+  page with Overview, Contacts, Documents, Invoices, Expenses, Activity and History tabs.
+  Documents holds proposals and agreements; History is the account's audit trail.
+- **Money**: billed, paid, outstanding and margin across visible accounts, outstanding
+  aging, collected by month, and the invoice and expense ledgers (with CSV export).
+- **Archive and restore**: deleting soft-deletes (archives). Archived leads and accounts
+  have their own views and restore in one click; an archived account stays readable.
+- **Audit log**: every create, edit, archive and restore is recorded with field-level
+  changes, per record (History) and workspace-wide (Settings, admins only).
+- **Reminders** with outbound webhooks, and **Slack** notifications on lead lifecycle events
+  (both below).
+- **Shell**: sidebar with live counts, a ⌘K command palette, a global "New" lead drawer,
+  and a light or dark theme (follows the OS until chosen).
+- **Team and roles (RBAC)**: admins see everything; standard users see only the records
+  they own. Admins invite teammates with a role.
+- **Business time zone**: "today", "this month" and "overdue" are India Standard Time
+  (Asia/Kolkata) on the server and in every browser, and every date is shown in IST.
 
-## 🧱 Stack
+## Stack
 
 | Layer | Choice |
 | --- | --- |
 | Framework | **Next.js 16** (App Router, Turbopack) + React 19 + TypeScript |
-| Styling | **Tailwind CSS v4** — clean modern SaaS; Bricolage Grotesque / Hanken Grotesk / JetBrains Mono |
+| Styling | **Tailwind CSS v4** (CSS-first tokens in `globals.css`, light and dark); IBM Plex Sans, Plex Sans Condensed and Plex Mono; `lucide-react` icons |
 | Database | **MongoDB** via Mongoose (MongoDB Atlas in prod; in-memory for local dev) |
 | Auth | **Firebase Auth** (client + Admin SDK), JWT session cookies via `jose` |
-| Drag & drop | `@dnd-kit` |
+| Files | **S3** (presigned URLs) for invoice files and account documents |
+| Drag and drop | `@dnd-kit` |
+| Tests | Vitest + Testing Library, hermetic in-memory MongoDB |
 
-## 🚀 Getting started
+## Getting started
 
 ```bash
 npm install
@@ -47,7 +65,7 @@ That's it. **With no configuration**, the app:
 
 > The demo login is passwordless and only active while Firebase isn't configured.
 
-## 🔌 Connecting real services
+## Connecting real services
 
 Copy the example env file and fill in what you need:
 
@@ -72,7 +90,7 @@ npm run seed:force    # wipes domain collections and reseeds
 
 ### Firebase Auth
 
-1. Create a Firebase project → enable **Google**, **Microsoft**, and **Email/Password** providers.
+1. Create a Firebase project → enable the **Google** and **Email/Password** providers.
 2. **Client** config (Project settings → Your apps → SDK setup):
    ```bash
    NEXT_PUBLIC_FIREBASE_API_KEY=...
@@ -87,8 +105,8 @@ npm run seed:force    # wipes domain collections and reseeds
    FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
    ```
 
-Once the client vars are present the login screen swaps demo mode for the real Google /
-Microsoft / email-password flows. Sign-in posts the Firebase ID token to
+Once the client vars are present the login screen swaps demo mode for real Google and
+email/password sign-in (the login screen offers no other provider). Sign-in posts the Firebase ID token to
 `/api/auth/session`, the server verifies it with the Admin SDK and mints a session cookie.
 
 Also set a strong session secret in any non-local environment:
@@ -110,10 +128,11 @@ It's enforced server-side on **Firebase sign-in**, **demo sign-in**, and **teamm
 a blocked user gets a clear "Only @magickvoice.com email addresses can sign in" message, and
 the login screen shows the allowed domain as a hint. Implemented in `src/lib/auth/whitelist.ts`.
 
-## 🧾 Invoice file storage (S3)
+## File storage (S3)
 
 Invoice **records** live in MongoDB; the generated invoice **document** (PDF, produced
-by an external system) is persisted in **S3**.
+by an external system) is persisted in **S3**, as are the proposals and agreements on an
+account's Documents tab (same bucket).
 
 1. Provision the bucket (CloudFormation via the **Serverless Framework v4**):
    ```bash
@@ -149,9 +168,10 @@ by an external system) is persisted in **S3**.
 **Flow:** attach a file in the *New invoice* modal (or the *Upload* action on an invoice
 row) → `POST /api/invoices/:id/document` streams it to S3 → `GET /api/invoices/:id/document`
 redirects to a presigned URL to view/download. Without `INVOICES_BUCKET` set, uploads are
-disabled gracefully (the rest of the app is unaffected). Implemented in `src/lib/s3.ts`.
+disabled gracefully with a 501 (the rest of the app is unaffected). Account documents
+follow the same pattern at `/api/accounts/:id/documents`. Implemented in `src/lib/s3.ts`.
 
-## ⏰ Reminders (webhook + cron)
+## Reminders (webhook + cron)
 
 Each user can set **reminders** — from **Settings → Reminders**, or from any **lead**
 or **account** page. When a reminder falls due, MagickBook **calls an outbound webhook**
@@ -194,15 +214,15 @@ in-memory demo.
   - **GitHub Actions** — a `schedule:` workflow (min ~5 min) that `curl`s the URL with the secret.
 - **Vercel Pro:** bump the `vercel.json` schedule to e.g. `*/5 * * * *`.
 
-## 💬 Slack notifications (lead lifecycle)
+## Slack notifications (lead lifecycle)
 
 MagickBook posts a message to a dedicated Slack channel whenever a lead's status
 shifts — so the team sees deals move in real time without watching the board:
 
-- **🎉 Converted** — a lead became an account (with deal value + the new account link).
-- **💔 Lost** — a lead was marked lost (with the reason).
-- **↗️ Lane move** — a lead changed pipeline stage (e.g. *Contacted → Qualified*).
-- **💬 Comment** — a note / call / email / WhatsApp / SMS was logged on a lead.
+- **Converted**: a lead became an account (with deal value + the new account link).
+- **Lost**: a lead was marked lost (with the reason).
+- **Lane move**: a lead changed pipeline stage (e.g. *Contacted → Qualified*).
+- **Comment**: a note / call / email / WhatsApp / SMS was logged on a lead.
 
 Set up an [**Incoming Webhook**](https://api.slack.com/messaging/webhooks) for the
 target channel, then configure:
@@ -222,41 +242,52 @@ reminders). Delivery is fire-and-forget with an 8s timeout and never throws, so 
 Slack outage can't break a CRM action. Without `SLACK_WEBHOOK_URL` the app behaves
 exactly as before. Implemented in `src/lib/slack.ts`.
 
-## 🗂️ Project structure
+## Project structure
 
 ```
 src/
   app/
-    login/                  # split-panel sign in / sign up
+    login/                  # sign in / sign up
     onboarding/             # workspace setup
-    (app)/                  # authenticated shell (sidebar) + pages
-      dashboard/ leads/ accounts/ money/ settings/team/
-    api/                    # route handlers (auth, leads, accounts, money, members…)
+    (app)/                  # authenticated shell + pages
+      dashboard/ leads/ accounts/ money/
+      settings/             # team, categories, reminders, audit
+    api/                    # route handlers (auth, leads, accounts, invoices, money,
+                            # dashboard, nav, reminders, members, audit, workspace)
   components/
-    ui/                     # Button, Field, Modal/Drawer, Badge, Avatar, Toast…
-    layout/                 # Sidebar, SessionContext
-    leads/  accounts/  settings/   ActivityTimeline
+    ui/                     # the kit: Button, Field, Badge, Panel, Table, Tabs, Popover, Overlay, Money…
+    layout/                 # AppShell, Sidebar, TopBar, MobileTabBar, CommandPalette,
+                            # PageHeader, Page, SessionContext, ShellContext
+    theme/                  # ThemeProvider, ThemeToggle
+    dashboard/ leads/ accounts/ money/ invoices/ activity/ reminders/ settings/
+    ActivityTimeline.tsx AuditTimeline.tsx
   lib/
-    db.ts models.ts seed.ts services.ts rbac.ts
-    auth/                   # firebase-client, firebase-admin, session, server helpers
-    client.ts utils.ts constants.ts types.ts
-  proxy.ts                  # route protection (Next 16 middleware)
+    db.ts models.ts seed.ts services.ts rbac.ts api.ts types.ts constants.ts
+    dates.ts                # IST calendar maths and date formatting
+    receivables.ts money-charts.ts reminders.ts slack.ts s3.ts
+    auth/                   # firebase-client, firebase-admin, session, whitelist, server helpers
+    client.ts utils.ts
+  proxy.ts                  # route protection (Next 16's renamed middleware)
+test/                       # api/, lib/, components/ (Vitest)
 ```
 
-## 🔐 How auth & RBAC work
+## How auth and RBAC work
 
 - A signed **JWT session cookie** (`jose`, HS256) carries the user identity. `proxy.ts`
   guards every non-public route by verifying it on the edge.
 - `getCurrentUser()` resolves the cookie to a MongoDB user; new users go through onboarding.
 - Every list query is scoped by `src/lib/rbac.ts`: **admins** get the whole workspace,
-  **standard** users get `ownerId === self`. Account sub-resources (contacts, invoices,
-  expenses) inherit the parent account's visibility.
+  **standard** users get `ownerId === self`. Account sub-resources (contacts, documents,
+  invoices, expenses, activity) inherit the parent account's visibility. An archived
+  account's sub-resources stay readable but can't change until the account is restored.
+- Reminders are private to whoever created them, admins included.
 
-## 📜 Scripts
+## Scripts
 
 | Command | Description |
 | --- | --- |
 | `npm run dev` | Dev server (Turbopack) |
-| `npm run build` | Production build |
+| `npm run build` | Production build (also the typecheck) |
 | `npm run start` | Run the production build |
 | `npm run seed` / `seed:force` | Seed a real `MONGODB_URI` database |
+| `npm test` | Run the Vitest suite once (`test:watch`, `test:coverage`) |

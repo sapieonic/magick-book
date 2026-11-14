@@ -1,4 +1,5 @@
-import { absoluteTime, relativeTime } from "@/lib/utils";
+import { relativeTime } from "@/lib/utils";
+import { absoluteTime } from "@/lib/dates";
 
 /**
  * Renders short relative time ("2h ago") with the full absolute timestamp

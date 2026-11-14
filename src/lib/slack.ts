@@ -1,6 +1,7 @@
 import "server-only";
 import { formatINR } from "./utils";
 import { STAGE_META, type LeadStage } from "./constants";
+import { absoluteTime } from "./dates";
 
 /**
  * Slack Incoming-Webhook notifications for lead lifecycle events.
@@ -120,7 +121,7 @@ async function post(message: SlackMessage): Promise<void> {
 function actorContext(actorName: string): SlackBlock {
   return {
     type: "context",
-    elements: [{ type: "mrkdwn", text: `By ${esc(actorName) || "someone"} · ${new Date().toLocaleString("en-IN")}` }],
+    elements: [{ type: "mrkdwn", text: `By ${esc(actorName) || "someone"} · ${absoluteTime(new Date())} IST` }],
   };
 }
 

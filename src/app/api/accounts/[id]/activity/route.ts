@@ -1,19 +1,18 @@
 import { type NextRequest } from "next/server";
-import { ok, fail, route, serializeActivity, HttpError } from "@/lib/api";
+import { ok, fail, route, serializeActivity } from "@/lib/api";
 import { connectDB } from "@/lib/db";
-import { Account, Activity, type IAccount, type IActivity } from "@/lib/models";
+import { Account, Activity, type IActivity } from "@/lib/models";
 import { requireUser } from "@/lib/auth/server";
-import { accountScope } from "@/lib/rbac";
-import { ownerNameMap } from "@/lib/services";
+import { loadAccount, ownerNameMap } from "@/lib/services";
 
 type Ctx = { params: Promise<{ id: string }> };
 
+// GET /api/accounts/:id/activity — the account timeline (archived accounts too).
 export const GET = route(async (_req: NextRequest, ctx: Ctx) => {
   const user = await requireUser();
   await connectDB();
   const { id } = await ctx.params;
-  const acc = await Account.findOne({ _id: id, ...accountScope(user) }).lean<IAccount>();
-  if (!acc) throw new HttpError("Account not found", 404);
+  const acc = await loadAccount(user, id, "read");
 
   const activities = await Activity.find({ accountId: acc._id }).sort({ createdAt: -1 }).lean<IActivity[]>();
   const names = await ownerNameMap(activities.map((a) => a.actorId).filter(Boolean) as never[]);
@@ -25,8 +24,7 @@ export const POST = route(async (req: NextRequest, ctx: Ctx) => {
   const user = await requireUser();
   await connectDB();
   const { id } = await ctx.params;
-  const acc = await Account.findOne({ _id: id, ...accountScope(user) }).lean<IAccount>();
-  if (!acc) throw new HttpError("Account not found", 404);
+  const acc = await loadAccount(user, id, "write");
 
   const b = await req.json().catch(() => ({}));
   if (b.kind !== "note") return fail("Invalid activity kind");

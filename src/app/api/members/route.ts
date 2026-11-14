@@ -1,7 +1,7 @@
 import { type NextRequest } from "next/server";
 import { ok, fail, route, serializeMember } from "@/lib/api";
 import { connectDB } from "@/lib/db";
-import { User, type IUser } from "@/lib/models";
+import { User, Workspace, type IUser } from "@/lib/models";
 import { requireUser } from "@/lib/auth/server";
 import { isAdmin } from "@/lib/rbac";
 import { ROLES } from "@/lib/constants";
@@ -11,16 +11,20 @@ import { isEmailAllowed, notAllowedMessage } from "@/lib/auth/whitelist";
 export const GET = route(async () => {
   const user = await requireUser();
   await connectDB();
-  const members = await User.find({ workspaceId: user.workspaceId }).sort({ createdAt: 1 }).lean<IUser[]>();
+  const [members, ws] = await Promise.all([
+    User.find({ workspaceId: user.workspaceId }).sort({ createdAt: 1 }).lean<IUser[]>(),
+    Workspace.findById(user.workspaceId).select("ownerId").lean<{ ownerId?: unknown }>(),
+  ]);
   const names = new Map(members.map((m) => [String(m._id), m.name]));
+  const ownerId = ws?.ownerId ? String(ws.ownerId) : null;
   return ok({
     members: members.map((m) =>
       serializeMember(m, {
         invitedByName: m.invitedById ? names.get(String(m.invitedById)) ?? null : null,
         isYou: String(m._id) === String(user._id),
+        isOwner: String(m._id) === ownerId,
       }),
     ),
-    isAdmin: isAdmin(user),
   });
 });
 
