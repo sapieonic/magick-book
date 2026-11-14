@@ -7,6 +7,7 @@ import { canEditOwned } from "@/lib/rbac";
 import { audit, diffChanges, expenseFields, loadAccount, logActivity } from "@/lib/services";
 import { EXPENSE_CATEGORIES } from "@/lib/constants";
 import { formatINR } from "@/lib/utils";
+import { isoDay } from "@/lib/dates";
 
 type Ctx = { params: Promise<{ id: string; expenseId: string }> };
 
@@ -56,7 +57,10 @@ export const PATCH = route(async (req: NextRequest, ctx: Ctx) => {
   }
 
   const { acc, exp } = await loadOwned(user, id, expenseId);
-  const patch: Record<string, unknown> = expenseFields(b);
+  const fields = expenseFields(b);
+  // The date is a calendar day: the same IST day is no change, whatever instant an older row was stored at.
+  if (fields.date && isoDay(fields.date) === isoDay(exp.date)) delete fields.date;
+  const patch: Record<string, unknown> = fields;
   if (b.category !== undefined) {
     if (!EXPENSE_CATEGORIES.includes(b.category)) return fail("Unknown expense category");
     patch.category = b.category;

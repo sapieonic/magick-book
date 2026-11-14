@@ -6,11 +6,9 @@ import { leadScope, accountScope, reminderScope } from "@/lib/rbac";
 import { ownerNameMap } from "@/lib/services";
 import { DAY_MS, endOfBusinessDay, startOfBusinessMonth } from "@/lib/dates";
 import { agingDate, buildOutstandingAging, collections, isOutstanding, isOverdue, rankDebtors } from "@/lib/receivables";
-import { OPEN_REMINDER_STATUSES, PIPELINE_STAGES, type LeadStage } from "@/lib/constants";
+import { OPEN_REMINDER_STATUSES, PIPELINE_STAGES, isOpenLeadStage } from "@/lib/constants";
 import type { DashboardData, PipelineStageSummary, StageLeadRef, WorkItem, UpcomingReminder } from "@/lib/types";
 
-/** The working funnel: everything before won (parked and lost are off it). */
-const OPEN_STAGES: LeadStage[] = PIPELINE_STAGES.filter((s) => s !== "won");
 /** A qualified or proposal lead untouched for longer than this needs a follow-up. */
 const FOLLOW_UP_AFTER = 2 * DAY_MS;
 const UPCOMING_DAYS = 7;
@@ -55,7 +53,7 @@ export const GET = route(async () => {
   const leadById = new Map(leads.map((l) => [String(l._id), l]));
 
   // Headline counts — "open" is the working funnel (excludes won, parked holding, and lost).
-  const open = leads.filter((l) => OPEN_STAGES.includes(l.stage));
+  const open = leads.filter((l) => isOpenLeadStage(l.stage));
   const won = leads.filter((l) => l.stage === "won");
   const wonThisMonth = won.filter((l) => new Date(l.lastActivityAt) >= monthStart).length;
 

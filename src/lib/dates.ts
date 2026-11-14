@@ -63,6 +63,28 @@ export function isoDay(d: DateLike = Date.now()): string {
   return wall(d).toISOString().slice(0, 10);
 }
 
+/**
+ * "2026-11-15T09:00": an instant as IST wall-clock time, the value an
+ * `<input type="datetime-local">` holds. Every such field reads and writes IST,
+ * whatever the browser's own zone.
+ */
+export function toBusinessInput(d: DateLike): string {
+  return wall(d).toISOString().slice(0, 16);
+}
+
+/**
+ * A `datetime-local` value ("2026-11-15T09:00") read as IST wall-clock time,
+ * back to the instant. `null` when malformed or not a real date and time.
+ */
+export function fromBusinessInput(value: string): Date | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(value);
+  if (!m) return null;
+  const [y, mo, day, h, min] = m.slice(1).map(Number);
+  const at = fromWall(y, mo - 1, day, h, min);
+  // Date.UTC rolls 30 Feb or 24:00 into the next day: reject anything that doesn't read back the same.
+  return toBusinessInput(at) === value ? at : null;
+}
+
 const fmt = (opts: Intl.DateTimeFormatOptions) => new Intl.DateTimeFormat("en-IN", { timeZone: BUSINESS_TZ, ...opts });
 const SHORT = fmt({ day: "numeric", month: "short" });
 const SHORT_YEAR = fmt({ day: "numeric", month: "short", year: "numeric" });

@@ -55,15 +55,16 @@ function lead(over: Partial<LeadDTO>): LeadDTO {
 }
 
 function renderBoard(leads: LeadDTO[], props: Partial<React.ComponentProps<typeof LeadBoard>> = {}) {
-  const onChanged = vi.fn();
   const onShowLost = vi.fn();
   render(
     <ToastProvider>
-      <LeadBoard leads={leads} lostCount={4} onAdd={vi.fn()} onChanged={onChanged} onShowLost={onShowLost} {...props} />
+      <LeadBoard leads={leads} lostCount={4} onAdd={vi.fn()} onShowLost={onShowLost} {...props} />
     </ToastProvider>,
   );
-  return { onChanged, onShowLost };
+  return { onShowLost };
 }
+
+const laneNames = (stage: string) => within(screen.getByTestId(`col-${stage}`)).getAllByRole("link").map((a) => a.textContent);
 
 beforeEach(() => {
   localStorage.clear();
@@ -107,7 +108,7 @@ describe("LeadBoard lanes", () => {
 describe("LeadBoard empty stages", () => {
   it("suggests the previous stage's leads and moves one in", async () => {
     const user = userEvent.setup();
-    const { onChanged } = renderBoard([
+    renderBoard([
       lead({ id: "q1", name: "Naresh", stage: "qualified", estValue: 50000 }),
       lead({ id: "q2", name: "Ramkumar", stage: "qualified", estValue: 40000 }),
     ]);
@@ -116,8 +117,8 @@ describe("LeadBoard empty stages", () => {
     expect(within(proposal).getByText(/are waiting/)).toHaveTextContent("2 qualified leads worth ₹90k are waiting. Send a proposal to move them here.");
 
     await user.click(within(proposal).getByRole("button", { name: "Move Naresh to Proposal" }));
-    expect(patch).toHaveBeenCalledWith("/api/leads/q1/stage", { stage: "proposal", order: 0 });
-    await waitFor(() => expect(onChanged).toHaveBeenCalled());
+    // An empty lane: no neighbour to place against.
+    expect(patch).toHaveBeenCalledWith("/api/leads/q1/stage", { stage: "proposal" });
     expect(within(screen.getByTestId("col-proposal")).getByRole("link", { name: "Naresh" })).toBeInTheDocument();
   });
 });
@@ -125,16 +126,21 @@ describe("LeadBoard empty stages", () => {
 describe("LeadBoard keyboard moves", () => {
   it("moves a focused card with the number keys and opens the lost dialog with L", async () => {
     const user = userEvent.setup();
-    renderBoard([lead({ id: "n1", name: "Asha", stage: "new" })]);
+    renderBoard([lead({ id: "n1", name: "Asha", stage: "new" }), lead({ id: "q1", name: "Naresh", stage: "qualified" })]);
 
     screen.getByRole("link", { name: "Asha" }).focus();
     await user.keyboard("3");
-    expect(patch).toHaveBeenCalledWith("/api/leads/n1/stage", { stage: "qualified", order: 0 });
-    expect(within(screen.getByTestId("col-qualified")).getByRole("link", { name: "Asha" })).toBeInTheDocument();
+    // To the top of the lane: placed above the first card there.
+    expect(patch).toHaveBeenCalledWith("/api/leads/n1/stage", { stage: "qualified", afterId: "q1" });
+    expect(laneNames("qualified")).toEqual(["Asha", "Naresh"]);
 
     within(screen.getByTestId("col-qualified")).getByRole("link", { name: "Asha" }).focus();
     await user.keyboard("l");
-    expect(screen.getByRole("dialog", { name: "Mark as lost" })).toBeInTheDocument();
+    const dialog = screen.getByRole("dialog", { name: "Mark as lost" });
+    await user.click(within(dialog).getByRole("button", { name: "Price" }));
+    expect(patch).toHaveBeenLastCalledWith("/api/leads/n1/stage", { stage: "lost", lostReason: "Price" });
+    // Gone from the board straight away, before the page's reload lands.
+    await waitFor(() => expect(screen.queryByRole("link", { name: "Asha" })).not.toBeInTheDocument());
   });
 
   it("keeps focus on the board when P parks a card into the collapsed Parked lane", async () => {
@@ -143,7 +149,7 @@ describe("LeadBoard keyboard moves", () => {
 
     screen.getByRole("link", { name: "Asha" }).focus();
     await user.keyboard("p");
-    expect(patch).toHaveBeenCalledWith("/api/leads/n1/stage", { stage: "parked", order: 0 });
+    expect(patch).toHaveBeenCalledWith("/api/leads/n1/stage", { stage: "parked" });
     // Asha is out of sight in the folded lane: the card that took her place gets focus.
     await waitFor(() => expect(screen.getByRole("link", { name: "Bela" })).toHaveFocus());
 
@@ -219,7 +225,7 @@ describe("LeadBoard inline quick-add", () => {
   it("adds a lead straight into the column's stage", async () => {
     const user = userEvent.setup();
     post.mockResolvedValueOnce({ lead: lead({ id: "x", name: "Meera", stage: "contacted" }) });
-    const { onChanged } = renderBoard([lead({})]);
+    renderBoard([lead({ id: "c1", name: "Older", stage: "contacted", createdAt: "2026-01-01T00:00:00.000Z" })]);
     const contacted = screen.getByTestId("col-contacted");
 
     await user.click(within(contacted).getByRole("button", { name: "Add lead" }));
@@ -234,7 +240,8 @@ describe("LeadBoard inline quick-add", () => {
     await user.click(within(form).getByRole("button", { name: "Add" }));
 
     expect(post).toHaveBeenCalledWith("/api/leads", { name: "Meera", company: "", phone: "+91 98765 43210", estValue: 45000, stage: "contacted" });
-    await waitFor(() => expect(onChanged).toHaveBeenCalled());
+    // Shown at once in its lane slot (order 0, newest last), ahead of the page's reload.
+    await waitFor(() => expect(laneNames("contacted")).toEqual(["Older", "Meera"]));
   });
 });
 

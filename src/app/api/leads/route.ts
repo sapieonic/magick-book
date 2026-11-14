@@ -7,6 +7,7 @@ import { leadScope } from "@/lib/rbac";
 import { logActivity, ownerNameMap, audit } from "@/lib/services";
 import { LEAD_STAGES } from "@/lib/constants";
 import { resolveLeadCategory } from "@/lib/lead-categories";
+import { LANE_SORT } from "@/lib/leadFilters";
 import { Types } from "mongoose";
 
 // GET /api/leads — all leads visible to the user (board + table).
@@ -27,7 +28,7 @@ export const GET = route(async (req: NextRequest) => {
   }
   if (category) filter.category = category;
 
-  const leads = await Lead.find(filter).sort({ stage: 1, order: 1, createdAt: -1 }).lean<ILead[]>();
+  const leads = await Lead.find(filter).sort({ stage: 1, ...LANE_SORT }).lean<ILead[]>();
 
   // Comment ("note") counts per lead, in one indexed group query, for the board card badges.
   const noteCounts = await Activity.aggregate<{ _id: Types.ObjectId; count: number }>([

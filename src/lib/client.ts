@@ -31,29 +31,36 @@ export const api = {
   delete: <T>(url: string) => request<T>("DELETE", url),
 };
 
-/** Tiny data hook: fetch on mount, expose loading/error + refresh + optimistic set. */
+/**
+ * Tiny data hook: fetch on mount, expose loading/error + refresh + optimistic set.
+ * Only the latest request's response is applied: when refreshes overlap (rapid
+ * mutations, a changed URL), an older response that lands late is dropped.
+ */
 export function useApi<T>(url: string | null) {
   const [data, setData] = useState<T | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const urlRef = useRef(url);
   urlRef.current = url;
+  const latest = useRef(0);
 
   const refresh = useCallback(async () => {
     if (!urlRef.current) return;
+    const request = ++latest.current;
     try {
       setError(null);
       const d = await api.get<T>(urlRef.current);
-      setData(d);
+      if (request === latest.current) setData(d);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load");
+      if (request === latest.current) setError(e instanceof Error ? e.message : "Failed to load");
     } finally {
-      setLoading(false);
+      if (request === latest.current) setLoading(false);
     }
   }, []);
 
   useEffect(() => {
     if (!url) {
+      latest.current++; // nothing in flight may land once the URL is gone
       setLoading(false);
       return;
     }

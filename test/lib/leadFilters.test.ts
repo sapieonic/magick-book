@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
 import {
+  byLaneOrder,
   deriveOwners,
+  laneNeighbours,
   filterByOwners,
   parseOwnerParam,
   parseStageParam,
@@ -288,5 +290,31 @@ describe("stageTotals", () => {
   it("leaves every share at zero when nothing has a value", () => {
     const totals = stageTotals([lead({ stage: "won", estValue: 0 })]);
     expect(totals.won).toEqual({ count: 1, value: 0, share: 0 });
+  });
+});
+
+describe("byLaneOrder", () => {
+  it("sorts by order, then oldest first, then id, so ties at order 0 read in creation order", () => {
+    const rows = [
+      lead({ id: "c", order: 0, createdAt: "2026-03-01T00:00:00.000Z" }),
+      lead({ id: "e", order: 0, createdAt: "2026-01-01T00:00:00.000Z" }),
+      lead({ id: "a", order: 0, createdAt: "2026-01-01T00:00:00.000Z" }),
+      lead({ id: "f", order: 512.5, createdAt: "2025-01-01T00:00:00.000Z" }),
+      lead({ id: "z", order: -1024, createdAt: "2026-12-01T00:00:00.000Z" }),
+    ];
+    expect(rows.sort(byLaneOrder).map((l) => l.id)).toEqual(["z", "a", "e", "c", "f"]);
+  });
+});
+
+describe("laneNeighbours", () => {
+  const lane = [lead({ id: "a" }), lead({ id: "b" }), lead({ id: "c" })];
+  it("names the cards directly above and below", () => {
+    expect(laneNeighbours(lane, "b")).toEqual({ beforeId: "a", afterId: "c" });
+  });
+  it("leaves out the missing side at either end, and both for a card that isn't there", () => {
+    expect(laneNeighbours(lane, "a")).toEqual({ beforeId: undefined, afterId: "b" });
+    expect(laneNeighbours(lane, "c")).toEqual({ beforeId: "b", afterId: undefined });
+    expect(laneNeighbours([lead({ id: "solo" })], "solo")).toEqual({ beforeId: undefined, afterId: undefined });
+    expect(laneNeighbours(lane, "x")).toEqual({});
   });
 });

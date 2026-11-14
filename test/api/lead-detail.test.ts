@@ -23,6 +23,7 @@ let models: typeof import("@/lib/models");
 let leadIdRoute: typeof import("@/app/api/leads/[id]/route");
 let stageRoute: typeof import("@/app/api/leads/[id]/stage/route");
 let activitiesRoute: typeof import("@/app/api/leads/[id]/activities/route");
+let leadAuditRoute: typeof import("@/app/api/leads/[id]/audit/route");
 
 let workspaceId: Types.ObjectId;
 let admin: IUser;
@@ -35,6 +36,7 @@ beforeAll(async () => {
   leadIdRoute = await import("@/app/api/leads/[id]/route");
   stageRoute = await import("@/app/api/leads/[id]/stage/route");
   activitiesRoute = await import("@/app/api/leads/[id]/activities/route");
+  leadAuditRoute = await import("@/app/api/leads/[id]/audit/route");
   await connectDB();
 });
 afterAll(stopTestDB);
@@ -163,6 +165,49 @@ describe("GET /api/leads/:id archived + names", () => {
     const body = await res.json();
     expect(body.lead.company).toBe("Shivasakthi");
     expect(body.lead.ownerName).toBe("Stan");
+  });
+});
+
+describe("resolving a lead (live, archived, out of scope, malformed)", () => {
+  const call = (id: string, method: "GET" | "PATCH" | "DELETE", body?: unknown) => {
+    const req = jsonRequest(`/api/leads/${id}`, method, body);
+    return (method === "GET" ? leadIdRoute.GET : method === "PATCH" ? leadIdRoute.PATCH : leadIdRoute.DELETE)(req, ctx({ id }));
+  };
+  const history = (id: string) => leadAuditRoute.GET(jsonRequest(`/api/leads/${id}/audit`, "GET"), ctx({ id }));
+
+  it("404s a malformed id on every lead endpoint instead of a 500", async () => {
+    expect((await call("nope", "GET")).status).toBe(404);
+    expect((await call("nope", "PATCH", { name: "X" })).status).toBe(404);
+    expect((await call("nope", "PATCH", { action: "restore" })).status).toBe(404);
+    expect((await call("nope", "DELETE")).status).toBe(404);
+    expect((await history("nope")).status).toBe(404);
+  });
+
+  it("reads an archived lead's history but refuses edits until it is restored", async () => {
+    const lead = await makeLead(admin, { deletedAt: new Date(), deletedBy: admin._id });
+    const id = String(lead._id);
+    await models.AuditLog.create({ workspaceId, entity: "lead", entityId: lead._id, entityLabel: "Naresh", action: "delete", actorName: "Admin", leadId: lead._id });
+    const res = await history(id);
+    expect(res.status).toBe(200);
+    expect((await res.json()).entries).toHaveLength(1);
+    expect((await call(id, "PATCH", { name: "X" })).status).toBe(404);
+    expect((await call(id, "DELETE")).status).toBe(404);
+    expect((await call(id, "PATCH", { action: "restore" })).status).toBe(200);
+  });
+
+  it("only restores an archived lead", async () => {
+    const lead = await makeLead(admin);
+    expect((await call(String(lead._id), "PATCH", { action: "restore" })).status).toBe(404);
+  });
+
+  it("404s another member's lead and its history for a standard user, archived or not", async () => {
+    const live = await makeLead(admin);
+    const archived = await makeLead(admin, { deletedAt: new Date() });
+    session.user = standard;
+    for (const lead of [live, archived]) {
+      expect((await history(String(lead._id))).status).toBe(404);
+      expect((await call(String(lead._id), "PATCH", { action: "restore" })).status).toBe(404);
+    }
   });
 });
 

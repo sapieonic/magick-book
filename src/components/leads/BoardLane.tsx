@@ -171,7 +171,7 @@ export function StageLane({
   onMove: (lead: LeadDTO, stage: PipelineStage) => void;
   onCollapse?: () => void;
   onMoreFields: () => void;
-  onCreated: () => void;
+  onCreated: (lead: LeadDTO) => void;
   className?: string;
 }) {
   const headingId = useId();

@@ -75,10 +75,13 @@ function LeadsInner() {
   if (category.trim()) apiQs.set("category", category.trim());
   const url = `/api/leads${apiQs.size ? `?${apiQs.toString()}` : ""}`;
   const { data, loading, error, refresh } = useApi<{ leads: LeadDTO[] }>(url);
+  // Every mutation made through `api` (board moves, table archives, restores, the
+  // add drawer) reloads the leads here, once. Children take no refresh callback.
   useDataChanged(refresh);
   const leads = useMemo(() => data?.leads ?? [], [data]);
 
-  // Archived leads come from a separate query, fetched only while that view is open.
+  // Archived leads come from a separate query, fetched only while that view is open
+  // and not subscribed to changes, so a restore reloads it explicitly.
   const archivedApi = useApi<{ leads: LeadDTO[] }>(view === "archived" ? "/api/leads?archived=1" : null);
 
   const owners = useMemo(() => deriveOwners(leads), [leads]);
@@ -141,13 +144,7 @@ function LeadsInner() {
       return (
         <Panel title="Archived" meta={visibleArchived.length || undefined}>
           {visibleArchived.length > 0 ? (
-            <ArchivedLeads
-              leads={visibleArchived}
-              onChanged={() => {
-                archivedApi.refresh();
-                refresh();
-              }}
-            />
+            <ArchivedLeads leads={visibleArchived} onChanged={archivedApi.refresh} />
           ) : (
             <EmptyState
               icon={<Archive className="size-6" strokeWidth={1.5} aria-hidden />}
@@ -166,7 +163,7 @@ function LeadsInner() {
       return (
         <Panel title="Lost" meta={lostLeads.length || undefined}>
           {lostLeads.length > 0 ? (
-            <LeadTable key="lost" variant="lost" leads={lostLeads} onChanged={refresh} />
+            <LeadTable key="lost" variant="lost" leads={lostLeads} />
           ) : (
             <EmptyState
               icon={<Ban className="size-6" strokeWidth={1.5} aria-hidden />}
@@ -207,7 +204,6 @@ function LeadsInner() {
           lostCount={summary.lost}
           focusStage={stage}
           onAdd={openAdd}
-          onChanged={refresh}
           onShowLost={() => setView("lost")}
         />
       );
@@ -216,7 +212,7 @@ function LeadsInner() {
     return (
       <Panel title={stage ? STAGE_META[stage].label : "All leads"} meta={tableLeads.length}>
         {tableLeads.length > 0 ? (
-          <LeadTable key="active" leads={tableLeads} onChanged={refresh} />
+          <LeadTable key="active" leads={tableLeads} />
         ) : (
           <EmptyState title={`Nothing in ${STAGE_META[stage ?? "new"].label.toLowerCase()}`} description="Clear the stage filter to see every lead." />
         )}
@@ -297,7 +293,6 @@ function LeadsInner() {
         key={presetStage ?? "any"}
         open={adding}
         onClose={() => setAdding(false)}
-        onCreated={() => refresh()}
         defaultStage={presetStage}
       />
     </Page>

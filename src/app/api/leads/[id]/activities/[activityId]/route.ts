@@ -1,9 +1,9 @@
 import { type NextRequest } from "next/server";
 import { ok, fail, route, serializeActivity, HttpError } from "@/lib/api";
 import { connectDB } from "@/lib/db";
-import { Lead, Activity, type ILead, type IActivity } from "@/lib/models";
+import { Activity, type IActivity } from "@/lib/models";
 import { requireUser } from "@/lib/auth/server";
-import { leadScope } from "@/lib/rbac";
+import { loadLead } from "@/lib/services";
 
 type Ctx = { params: Promise<{ id: string; activityId: string }> };
 
@@ -13,8 +13,7 @@ export const PATCH = route(async (req: NextRequest, ctx: Ctx) => {
   await connectDB();
   const { id, activityId } = await ctx.params;
 
-  const lead = await Lead.findOne({ _id: id, ...leadScope(user) }).lean<ILead>();
-  if (!lead) throw new HttpError("Lead not found", 404);
+  const lead = await loadLead(user, id, "write");
 
   const activity = await Activity.findOne({ _id: activityId, leadId: lead._id }).lean<IActivity>();
   if (!activity) throw new HttpError("Note not found", 404);

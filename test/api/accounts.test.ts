@@ -3,6 +3,7 @@ import { Types } from "mongoose";
 import { startTestDB, stopTestDB, clearDB } from "../helpers/db";
 import { jsonRequest, ctx } from "../helpers/api";
 import type { IUser } from "@/lib/models";
+import { isoDay } from "@/lib/dates";
 
 const session: { user: IUser | null } = { user: null };
 vi.mock("@/lib/auth/server", async (importOriginal) => {
@@ -177,6 +178,28 @@ describe("PATCH /api/accounts/:id RBAC", () => {
     const { account } = await res.json();
     expect(account.status).toBe("churned");
     expect(account.value).toBe(5);
+  });
+});
+
+describe("PATCH /api/accounts/:id owner name", () => {
+  it("names the real owner when an admin edits or restores a member's account", async () => {
+    const acc = await makeAccount(standard);
+    const id = String(acc._id);
+    session.user = admin;
+    const edited = await accountIdRoute.PATCH(jsonRequest(`/api/accounts/${id}`, "PATCH", { plan: "Pro" }), ctx({ id }));
+    expect((await edited.json()).account).toMatchObject({ plan: "Pro", ownerName: "Stan" });
+
+    await accountIdRoute.DELETE(jsonRequest(`/api/accounts/${id}`, "DELETE"), ctx({ id }));
+    const restored = await accountIdRoute.PATCH(jsonRequest(`/api/accounts/${id}`, "PATCH", { action: "restore" }), ctx({ id }));
+    expect(restored.status).toBe(200);
+    expect((await restored.json()).account).toMatchObject({ deletedAt: null, ownerName: "Stan" });
+  });
+
+  it("only restores an archived account, and 404s a malformed id", async () => {
+    const acc = await makeAccount(admin);
+    const id = String(acc._id);
+    expect((await accountIdRoute.PATCH(jsonRequest(`/api/accounts/${id}`, "PATCH", { action: "restore" }), ctx({ id }))).status).toBe(404);
+    expect((await accountIdRoute.PATCH(jsonRequest("/api/accounts/nope", "PATCH", { action: "restore" }), ctx({ id: "nope" }))).status).toBe(404);
   });
 });
 
@@ -547,6 +570,74 @@ describe("expense item route", () => {
     session.user = standard;
     const res = await expenseIdRoute.DELETE(jsonRequest(`/api/accounts/${acc._id}/expenses/${exp._id}`, "DELETE"), ctx(params));
     expect(res.status).toBe(404);
+  });
+});
+
+describe("expense dates are calendar days", () => {
+  const url = (acc: { _id: unknown }, exp?: { _id: unknown }) => `/api/accounts/${acc._id}/expenses${exp ? `/${exp._id}` : ""}`;
+
+  /** What the edit modal sends on Save: every field, the date as its IST day. */
+  const modalBody = (e: { amount: number; category: string; vendor: string; billable: boolean; date: Date }) => ({
+    amount: e.amount, category: e.category, vendor: e.vendor, billable: e.billable, date: isoDay(e.date),
+  });
+
+  async function create(acc: { _id: unknown }, body: Record<string, unknown>) {
+    const res = await expensesRoute.POST(jsonRequest(url(acc), "POST", { amount: 800, category: "Travel", vendor: "Uber", ...body }), ctx({ id: String(acc._id) }));
+    expect(res.status).toBe(201);
+    const { expense } = await res.json();
+    return (await models.Expense.findById(expense.id).lean())!;
+  }
+
+  it("create stores a date-only value at UTC midnight of its IST day, and isoDay round-trips it", async () => {
+    const acc = await makeAccount(admin);
+    const given = await create(acc, { date: "2026-11-14" });
+    expect(given.date.toISOString()).toBe("2026-11-14T00:00:00.000Z");
+    expect(isoDay(given.date)).toBe("2026-11-14");
+    // A full timestamp is cut to its IST day: 20:00 UTC on the 13th is 01:30 IST on the 14th.
+    expect((await create(acc, { date: "2026-11-13T20:00:00.000Z" })).date.toISOString()).toBe("2026-11-14T00:00:00.000Z");
+    const today = await create(acc, {});
+    expect(today.date.toISOString()).toBe(`${isoDay()}T00:00:00.000Z`);
+  });
+
+  it.each([
+    ["created through the API", null],
+    ["stored with a time of day (older rows)", new Date("2026-11-14T18:00:00.000Z")], // 23:30 IST on the 14th
+  ])("Save with no changes writes nothing for an expense %s", async (_label, legacyDate) => {
+    const acc = await makeAccount(admin);
+    const exp = legacyDate
+      ? (await models.Expense.create({ workspaceId, accountId: acc._id, amount: 800, category: "Travel", vendor: "Uber", billable: false, date: legacyDate })).toObject()
+      : await create(acc, { billable: false });
+    const before = new Date("2026-01-01T00:00:00.000Z");
+    await models.Account.updateOne({ _id: acc._id }, { lastActivityAt: before });
+    await models.AuditLog.deleteMany({});
+    await models.Activity.deleteMany({});
+
+    const res = await expenseIdRoute.PATCH(jsonRequest(url(acc, exp), "PATCH", modalBody(exp)), ctx({ id: String(acc._id), expenseId: String(exp._id) }));
+    expect(res.status).toBe(200);
+    expect(await models.AuditLog.countDocuments({})).toBe(0);
+    expect(await models.Activity.countDocuments({})).toBe(0);
+    expect((await models.Account.findById(acc._id).lean())!.lastActivityAt).toEqual(before);
+    expect((await models.Expense.findById(exp._id).lean())!.date).toEqual(exp.date);
+  });
+
+  it("changing only the amount diffs only the amount", async () => {
+    const acc = await makeAccount(admin);
+    const exp = (await models.Expense.create({ workspaceId, accountId: acc._id, amount: 800, category: "Travel", vendor: "Uber", billable: false, date: new Date("2026-11-14T09:15:00.000Z") })).toObject();
+    const res = await expenseIdRoute.PATCH(jsonRequest(url(acc, exp), "PATCH", { ...modalBody(exp), amount: 950 }), ctx({ id: String(acc._id), expenseId: String(exp._id) }));
+    expect(res.status).toBe(200);
+    const entry = await models.AuditLog.findOne({ entity: "expense", action: "update" }).lean();
+    expect(entry!.changes).toEqual([{ field: "amount", from: 800, to: 950 }]);
+  });
+
+  it("records a real day change, stored as the new calendar day", async () => {
+    const acc = await makeAccount(admin);
+    const exp = await create(acc, { date: "2026-11-14" });
+    const res = await expenseIdRoute.PATCH(jsonRequest(url(acc, exp), "PATCH", { ...modalBody(exp), date: "2026-11-15" }), ctx({ id: String(acc._id), expenseId: String(exp._id) }));
+    expect(res.status).toBe(200);
+    expect((await res.json()).expense.date).toBe("2026-11-15T00:00:00.000Z");
+    const entry = await models.AuditLog.findOne({ entity: "expense", action: "update" }).lean();
+    expect(entry!.changes).toEqual([{ field: "date", from: "2026-11-14T00:00:00.000Z", to: "2026-11-15T00:00:00.000Z" }]);
+    expect(await models.Activity.countDocuments({ accountId: acc._id, title: "Travel expense edited" })).toBe(1);
   });
 });
 

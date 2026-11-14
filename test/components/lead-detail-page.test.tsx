@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ConfirmProvider } from "@/components/ui/ConfirmDialog";
 import type { LeadDetail, LeadDTO } from "@/lib/types";
@@ -31,7 +31,7 @@ vi.mock("@/lib/client", () => ({
 }));
 
 import LeadDetailPage from "@/app/(app)/leads/[id]/page";
-import { toLocalInput } from "@/components/reminders/ReminderModal";
+import { ZONES, useTimeZone } from "../helpers/timezones";
 import type { ReminderDTO } from "@/lib/types";
 
 const DAY = 86_400_000;
@@ -165,7 +165,7 @@ describe("Lead detail page", () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(new Date("2026-11-13T20:00:00+05:30"));
     await renderPage();
-    expect(screen.getByLabelText("When")).toHaveValue(toLocalInput(new Date("2026-11-14T09:00:00+05:30")));
+    expect(screen.getByLabelText(/^When/)).toHaveValue("2026-11-14T09:00");
   });
 
   it("cancels a reschedule without saving", async () => {
@@ -224,5 +224,50 @@ describe("Lead detail page", () => {
     await renderPage();
     expect(screen.getByRole("link", { name: "View account" })).toHaveAttribute("href", "/accounts/acc1");
     expect(screen.queryByRole("button", { name: "Convert to account" })).not.toBeInTheDocument();
+  });
+});
+
+// The "When" field holds IST wall-clock time, so a browser outside India fills,
+// prefills and submits the same instants as one in Bengaluru.
+describe.each(ZONES)("Next step times in IST (browser zone: %s)", (zone) => {
+  useTimeZone(zone);
+  const when = () => screen.getByLabelText(/^When/);
+
+  it("labels the field IST", async () => {
+    await renderPage();
+    expect(screen.getByText("IST", { selector: "abbr" })).toHaveAttribute("title", "India Standard Time");
+  });
+
+  it("fills 'Tomorrow 9am' with 9:00 on the IST tomorrow and saves 03:30Z", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-11-14T02:00:00+05:30")); // still the 13th in London and Los Angeles
+    const user = userEvent.setup();
+    await renderPage();
+    await user.type(screen.getByLabelText("What happens next"), "Call back");
+    await user.click(screen.getByRole("button", { name: "Tomorrow 9am" }));
+    expect(when()).toHaveValue("2026-11-15T09:00");
+    await user.click(screen.getByRole("button", { name: "Save next step" }));
+    expect(H.api.post).toHaveBeenCalledWith("/api/reminders", { title: "Call back", dueAt: "2026-11-15T03:30:00.000Z", leadId: "l1" });
+  });
+
+  it("submits a typed value as IST", async () => {
+    const user = userEvent.setup();
+    await renderPage();
+    await user.type(screen.getByLabelText("What happens next"), "Call back");
+    fireEvent.change(when(), { target: { value: "2026-11-15T09:00" } });
+    await user.click(screen.getByRole("button", { name: "Save next step" }));
+    expect(H.api.post).toHaveBeenCalledWith("/api/reminders", expect.objectContaining({ dueAt: "2026-11-15T03:30:00.000Z" }));
+  });
+
+  it("prefills a reschedule with the stored time in IST and shows it as IST", async () => {
+    H.detail = detail({}, { nextStep: step("2026-11-16T06:30:00.000Z") });
+    const user = userEvent.setup();
+    await renderPage();
+    expect(screen.getByText(/16 Nov 2026, 12:00\s?pm IST/i)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Reschedule" }));
+    expect(when()).toHaveValue("2026-11-16T12:00");
+    fireEvent.change(when(), { target: { value: "2026-11-17T09:30" } });
+    await user.click(screen.getByRole("button", { name: "Save next step" }));
+    expect(H.api.patch).toHaveBeenCalledWith("/api/reminders/r1", { action: "snooze", dueAt: "2026-11-17T04:00:00.000Z" });
   });
 });

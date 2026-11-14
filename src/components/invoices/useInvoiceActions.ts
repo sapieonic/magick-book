@@ -24,6 +24,8 @@ function removeCopy(inv: InvoiceDTO): string {
  *
  * - `markPaid(inv)` asks for confirmation (a financial change with no undo),
  *   then PATCHes `status: "paid"`, toasts and calls `onChanged`.
+ *   `onChanged` is for pages that don't reload on `useDataChanged`; a page
+ *   that does (Today) omits it, or every action would reload it twice.
  * - `remind(inv)` logs a payment reminder on the account (nothing is
  *   delivered) and toasts "Reminder logged for #N". No refresh.
  * - `remove(inv)` confirms, then soft-deletes the invoice.
@@ -34,7 +36,7 @@ function removeCopy(inv: InvoiceDTO): string {
  * `markPaid` and `remind` take only `{ id, number, amount }`, so a caller
  * holding a work-queue item rather than a full invoice can use them.
  */
-export function useInvoiceActions(onChanged: () => void | Promise<void>) {
+export function useInvoiceActions(onChanged?: () => void | Promise<void>) {
   const { toast } = useToast();
   const confirm = useConfirm();
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -45,7 +47,7 @@ export function useInvoiceActions(onChanged: () => void | Promise<void>) {
     setBusyId(id);
     try {
       toast(await work(), "success");
-      if (refresh) await onChanged();
+      if (refresh) await onChanged?.();
     } catch (e) {
       toast(e instanceof Error ? e.message : "Something went wrong", "error");
     } finally {

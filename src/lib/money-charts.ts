@@ -1,6 +1,6 @@
 import type { AgingKey, CollectedDTO, CollectedSeriesDTO, InvoiceDTO } from "./types";
 import { calendarDaysBetween, monthKey, startOfBusinessMonth } from "./dates";
-import { agingKey, daysPastDue, isOutstanding, paymentDate } from "./receivables";
+import { agingKey, collectedAt, daysPastDue, isOutstanding, paymentDate } from "./receivables";
 import { plural } from "./utils";
 
 /**
@@ -39,6 +39,8 @@ export function invoiceAge(inv: InvoiceDTO, now: Date): { text: string; late: bo
 /**
  * Paid amounts per IST calendar month for the last `months` months, stacked by the
  * `topN` accounts that paid most in the window plus an "Other accounts" series.
+ * A payment counts once it has landed (`collectedAt`), the same rule as Today's
+ * `collections()`, so the current month's bar matches Today's "collected".
  */
 export function buildCollectedByMonth(
   invoices: InvoiceDTO[],
@@ -52,7 +54,7 @@ export function buildCollectedByMonth(
 
   const accounts = new Map<string, { name: string; total: number; perMonth: number[] }>();
   for (const inv of invoices) {
-    const when = paymentDate(inv);
+    const when = collectedAt(inv, now);
     const m = when ? monthIndex.get(monthKey(when)) : undefined;
     if (m === undefined) continue;
     let acc = accounts.get(inv.accountId);

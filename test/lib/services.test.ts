@@ -89,6 +89,91 @@ describe("accountFinance", () => {
   });
 });
 
+describe("accountFinances aggregation matches rollupMoney", () => {
+  // Deterministic PRNG (mulberry32), so a failure reproduces.
+  function rng(seed: number) {
+    return () => {
+      seed = (seed + 0x6d2b79f5) | 0;
+      let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  // IST midnight, the instants either side of it, and plain days around it.
+  const nows = [
+    new Date("2026-11-14T18:30:00.000Z"), // exactly 00:00 IST on the 15th
+    new Date("2026-11-14T18:29:59.999Z"), // 23:59:59.999 IST on the 14th
+    new Date("2026-11-14T06:12:00.000Z"),
+    new Date("2026-03-31T19:00:00.000Z"),
+  ];
+
+  it.each(nows.map((now) => [now.toISOString(), now] as const))("now = %s", async (_label, now) => {
+    const { rollupMoney } = await import("@/lib/receivables");
+    const { businessDay, DAY_MS } = await import("@/lib/dates");
+    const { INVOICE_STATUSES } = await import("@/lib/constants");
+    const rand = rng(now.getTime() % 100_000);
+    const pick = <T,>(xs: readonly T[]) => xs[Math.floor(rand() * xs.length)];
+    const midnight = businessDay(now).getTime();
+    // Edges around today's and yesterday's IST midnight, plus random times ±90 days.
+    const edge = [midnight - 1, midnight, midnight + 1, midnight - DAY_MS - 1, midnight - DAY_MS, now.getTime(), now.getTime() + 1];
+    const when = () => new Date(rand() < 0.4 ? pick(edge) : now.getTime() + Math.round((rand() - 0.6) * 90 * DAY_MS));
+
+    const workspaceId = ws();
+    const accounts = Array.from({ length: 10 }, () => new Types.ObjectId());
+    const invoices = Array.from({ length: 400 }, (_, i) => {
+      const dueMode = rand();
+      return {
+        workspaceId,
+        accountId: pick(accounts.slice(0, 7)), // accounts 8 to 10: billed little, expenses only, nothing
+        number: i + 1,
+        amount: 1 + Math.floor(rand() * 100_000),
+        status: pick(INVOICE_STATUSES),
+        issuedAt: when(),
+        ...(dueMode < 0.25 ? {} : dueMode < 0.4 ? { dueAt: null } : { dueAt: when() }),
+        ...(rand() < 0.1 ? { deletedAt: when() } : {}),
+      };
+    });
+    invoices.push({ workspaceId, accountId: accounts[7], number: 999, amount: 100, status: "sent", issuedAt: when() });
+    const expenses = Array.from({ length: 80 }, () => ({
+      workspaceId,
+      accountId: pick(accounts.slice(2)),
+      amount: 1 + Math.floor(rand() * 150_000),
+      category: "Other",
+      ...(rand() < 0.1 ? { deletedAt: when() } : {}),
+    }));
+    await models.Invoice.insertMany(invoices);
+    await models.Expense.insertMany(expenses);
+
+    const fin = await services.accountFinances(accounts, now);
+    for (const acc of accounts) {
+      const mine = <T extends { accountId: Types.ObjectId; deletedAt?: Date }>(rows: T[]) =>
+        rows.filter((r) => r.accountId.equals(acc) && !r.deletedAt);
+      const { billed, paid, outstanding, overdue, expenses: spent, margin } = rollupMoney(mine(invoices), mine(expenses), now);
+      expect(fin.get(String(acc)) ?? services.NO_FINANCE).toEqual({ billed, paid, outstanding, overdue, expenses: spent, margin });
+    }
+    // The fixture really exercises overdue, negative margin and expense-only accounts.
+    const rows = [...fin.values()];
+    expect(rows.some((f) => f.overdue > 0 && f.overdue < f.outstanding)).toBe(true);
+    expect(rows.some((f) => f.margin < 0)).toBe(true);
+    expect(rows.some((f) => f.billed === 0 && f.expenses > 0 && f.margin === 0)).toBe(true);
+  });
+
+  it("an invoice due exactly at today's IST midnight is not overdue; one due a millisecond earlier is", async () => {
+    const now = new Date("2026-11-14T06:00:00.000Z"); // 11:30 IST
+    const workspaceId = ws();
+    const [onTime, late, marked, noDue] = [new Types.ObjectId(), new Types.ObjectId(), new Types.ObjectId(), new Types.ObjectId()];
+    await models.Invoice.create([
+      { workspaceId, accountId: onTime, number: 1, amount: 100, status: "sent", dueAt: new Date("2026-11-13T18:30:00.000Z") },
+      { workspaceId, accountId: late, number: 2, amount: 100, status: "sent", dueAt: new Date("2026-11-13T18:29:59.999Z") },
+      { workspaceId, accountId: marked, number: 3, amount: 100, status: "overdue", dueAt: new Date("2026-12-01T00:00:00.000Z") },
+      { workspaceId, accountId: noDue, number: 4, amount: 100, status: "sent", issuedAt: new Date("2026-11-13T18:29:59.999Z") },
+    ]);
+    const fin = await services.accountFinances([onTime, late, marked, noDue], now);
+    expect([onTime, late, marked, noDue].map((a) => fin.get(String(a))!.overdue)).toEqual([0, 100, 100, 100]);
+  });
+});
+
 describe("nextInvoiceNumber", () => {
   it("starts at 1001 for an empty workspace", async () => {
     expect(await services.nextInvoiceNumber(ws())).toBe(1001);

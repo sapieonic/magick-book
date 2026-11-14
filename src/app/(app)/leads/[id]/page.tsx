@@ -27,7 +27,7 @@ import { stageColor } from "@/components/ui/stage";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { useToast } from "@/components/ui/Toast";
 import { api, useApi } from "@/lib/client";
-import { STAGE_META, isActiveLeadStage, type BoardStage } from "@/lib/constants";
+import { STAGE_META, isOpenLeadStage, type BoardStage } from "@/lib/constants";
 import { plural } from "@/lib/utils";
 import { daysSince, shortDate } from "@/lib/dates";
 import type { AuditLogDTO, LeadDTO, LeadDetail } from "@/lib/types";
@@ -76,7 +76,7 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
   const converted = !!lead.convertedAccountId;
   const owns = me.role === "admin" || lead.ownerId === me.id;
   const canEdit = owns && !archived;
-  const open = !converted && isActiveLeadStage(lead.stage) && lead.stage !== "won";
+  const open = !converted && isOpenLeadStage(lead.stage);
   const idle = daysSince(lead.lastActivityAt || lead.createdAt);
   const kindCount = (kind: "note" | "call") => activities.filter((a) => a.kind === kind).length;
   const activityMeta = (["note", "call"] as const)

@@ -38,7 +38,7 @@ import {
   type LeadStage,
   type PipelineStage,
 } from "@/lib/constants";
-import { stageTotals, type StageTotal } from "@/lib/leadFilters";
+import { byLaneOrder, laneNeighbours, stageTotals, type StageTotal } from "@/lib/leadFilters";
 import { stageStep } from "@/components/ui/stage";
 import { cn } from "@/lib/utils";
 import type { LeadDTO } from "@/lib/types";
@@ -56,8 +56,13 @@ const KEY_STAGES: Record<string, BoardStage> = { "1": "new", "2": "contacted", "
 function buildBoard(leads: LeadDTO[]): Board {
   const board = Object.fromEntries(BOARD_STAGES.map((s) => [s, [] as LeadDTO[]])) as Board;
   for (const l of leads) board[l.stage as BoardStage]?.push(l);
-  for (const s of BOARD_STAGES) board[s].sort((a, b) => a.order - b.order || +new Date(a.createdAt) - +new Date(b.createdAt));
+  for (const s of BOARD_STAGES) board[s].sort(byLaneOrder);
   return board;
+}
+
+/** The board with one card taken out, wherever it was. */
+function without(board: Board, id: string): Board {
+  return Object.fromEntries(BOARD_STAGES.map((s) => [s, board[s].filter((l) => l.id !== id)])) as Board;
 }
 
 function readCollapsed(): Set<string> {
@@ -106,14 +111,15 @@ function useCollapsedColumns(open?: string | null) {
  * The pipeline board. Five funnel lanes (equal columns from 1280px, ~280px
  * scroll-snap lanes on tablets, one stage at a time on phones), a Parked/Lost
  * shelf that doubles as a drop target, and the Parked holding lane. Cards move
- * by drag and drop or, when focused, by keyboard (1–5, P, L).
+ * by drag and drop or, when focused, by keyboard (1–5, P, L). Every move goes
+ * through `api`, whose change event reloads the page's leads, so the board
+ * takes no refresh callback of its own.
  */
 export function LeadBoard({
   leads,
   lostCount = 0,
   focusStage,
   onAdd,
-  onChanged,
   onShowLost,
 }: {
   leads: LeadDTO[];
@@ -121,7 +127,6 @@ export function LeadBoard({
   /** From `?stage=`: highlighted, scrolled into view, and opened if it was collapsed. */
   focusStage?: LeadStage | null;
   onAdd: (stage: BoardStage) => void;
-  onChanged: () => void;
   onShowLost?: () => void;
 }) {
   const { toast } = useToast();
@@ -220,6 +225,10 @@ export function LeadBoard({
   }
   const findStage = (id: string) => stageIn(board, id);
 
+  // Optimistic edits until the reload lands: a new card takes its lane slot, a lost one leaves the board.
+  const show = (lead: LeadDTO) => setBoard((prev) => ({ ...prev, [lead.stage]: [...(prev[lead.stage as BoardStage] ?? []), lead].sort(byLaneOrder) }));
+  const hide = (id: string) => setBoard((prev) => without(prev, id));
+
   /** Move a lead to the top of another lane (keyboard, shelf and "Move here"). */
   async function move(lead: LeadDTO, to: BoardStage) {
     if (lead.stage === to && board[to].some((l) => l.id === lead.id)) return;
@@ -229,9 +238,8 @@ export function LeadBoard({
     const at = from.findIndex((l) => l.id === lead.id);
     const neighbour = from[at + 1] ?? from[at - 1];
     setBoard((prev) => {
-      const next = Object.fromEntries(BOARD_STAGES.map((s) => [s, prev[s].filter((l) => l.id !== lead.id)])) as Board;
-      next[to] = [{ ...lead, stage: to, order: 0 }, ...next[to]];
-      return next;
+      const next = without(prev, lead.id);
+      return { ...next, [to]: [{ ...lead, stage: to }, ...next[to]] };
     });
     requestAnimationFrame(() => {
       const card = (id: string) => document.querySelector<HTMLElement>(`[data-lead-id="${id}"] a`);
@@ -239,9 +247,9 @@ export function LeadBoard({
       target?.focus();
     });
     try {
-      await api.patch(`/api/leads/${lead.id}/stage`, { stage: to, order: 0 });
+      // Top of the lane: above the first card the user sees there.
+      await api.patch(`/api/leads/${lead.id}/stage`, { stage: to, afterId: board[to].find((l) => l.id !== lead.id)?.id });
       toast(`${lead.name} moved to ${STAGE_META[to].label}.`, "success");
-      onChanged();
     } catch (err) {
       toast(err instanceof Error ? err.message : "Couldn't move lead", "error");
       setBoard(buildBoard(leads));
@@ -346,14 +354,12 @@ export function LeadBoard({
     }
 
     const dest = arrayMove(list, from, index);
-    setBoard({ ...board, [toStage]: dest.map((l, i) => ({ ...l, order: i })) });
+    setBoard({ ...board, [toStage]: dest });
 
     try {
-      await api.patch(`/api/leads/${lead.id}/stage`, { stage: toStage, order: index });
-      if (fromStage !== toStage) {
-        toast(`${lead.name} moved to ${STAGE_META[toStage].label}.`, "success");
-        onChanged();
-      }
+      // The cards it now sits between, as the user sees the lane: the server places it relative to them.
+      await api.patch(`/api/leads/${lead.id}/stage`, { stage: toStage, ...laneNeighbours(dest, lead.id) });
+      if (fromStage !== toStage) toast(`${lead.name} moved to ${STAGE_META[toStage].label}.`, "success");
     } catch (err) {
       toast(err instanceof Error ? err.message : "Couldn't move lead", "error");
       setBoard(buildBoard(leads));
@@ -371,7 +377,7 @@ export function LeadBoard({
     onKey: onCardKey,
     onMove: move,
     onMoreFields: () => onAdd(stage),
-    onCreated: onChanged,
+    onCreated: show,
   });
 
   const columns = PIPELINE_STAGES.map((s) => (collapsed.has(s) ? "56px" : "minmax(0,1fr)")).join(" ");
@@ -457,7 +463,7 @@ export function LeadBoard({
         </DragOverlay>
       </DndContext>
 
-      <LostLeadModal lead={lostLead} onClose={() => setLostLead(null)} onDone={onChanged} />
+      <LostLeadModal lead={lostLead} onClose={() => setLostLead(null)} onDone={() => lostLead && hide(lostLead.id)} />
     </>
   );
 }

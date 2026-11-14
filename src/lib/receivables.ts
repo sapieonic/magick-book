@@ -1,5 +1,5 @@
 import type { InvoiceStatus } from "./constants";
-import { calendarDaysBetween, startOfBusinessMonth } from "./dates";
+import { businessDay, calendarDaysBetween, startOfBusinessMonth } from "./dates";
 import type { AgingBucketDTO, AgingKey, MoneyTotals } from "./types";
 
 /**
@@ -72,10 +72,27 @@ export function agingKey(inv: Pick<InvoiceLike, "status" | "issuedAt" | "dueAt">
   return "d60plus";
 }
 
-/** Outstanding and past due (or marked overdue). The one definition every screen uses. */
+/** Outstanding and past due (or marked overdue). The one definition every screen uses; `overdueExpr` is its database form. */
 export function isOverdue(inv: Pick<InvoiceLike, "status" | "issuedAt" | "dueAt">, now: Date): boolean {
   const key = agingKey(inv, now);
   return key !== null && key !== "current";
+}
+
+/**
+ * `isOverdue` as a MongoDB aggregation expression over invoice documents, for
+ * rollups summed in the database (`accountFinances`). Keep the two in step.
+ * `daysPastDue > 0` means the aging date falls on an earlier IST day than
+ * `now`, i.e. strictly before IST midnight starting `now`'s day
+ * (`businessDay(now)`); an aging date exactly at that midnight is today, so
+ * not yet overdue. `$ifNull` mirrors `agingDate` (`dueAt ?? issuedAt`).
+ */
+export function overdueExpr(now: Date): Record<string, unknown> {
+  return {
+    $and: [
+      { $in: ["$status", [...OUTSTANDING_STATUSES]] },
+      { $or: [{ $eq: ["$status", "overdue"] }, { $lt: [{ $ifNull: ["$dueAt", "$issuedAt"] }, businessDay(now)] }] },
+    ],
+  };
 }
 
 /** Status as screens show it: a sent invoice past its due date reads as overdue. */
@@ -87,6 +104,21 @@ export function displayStatus(inv: Pick<InvoiceLike, "status" | "issuedAt" | "du
 export function paymentDate(inv: Pick<InvoiceLike, "status" | "issuedAt" | "paidAt">): Date | null {
   if (inv.status !== "paid") return null;
   return new Date(inv.paidAt ?? inv.issuedAt);
+}
+
+/**
+ * When a payment counts as collected: its payment date, unless that is still
+ * ahead of `now` (a post-dated receipt), else null. Today's collections and
+ * the Money page's collected-by-month chart both go through this.
+ */
+export function collectedAt(inv: Pick<InvoiceLike, "status" | "issuedAt" | "paidAt">, now: Date): Date | null {
+  const when = paymentDate(inv);
+  return when && when <= now ? when : null;
+}
+
+/** (billed − expenses) / billed: can go negative when expenses outrun billing; 0 until something is billed. */
+export function marginOf(billed: number, expenses: number): number {
+  return billed > 0 ? (billed - expenses) / billed : 0;
 }
 
 /**
@@ -115,8 +147,7 @@ export function rollupMoney(invoices: InvoiceLike[], expenses: { amount: number 
     }
   }
   for (const e of expenses) t.expenses += e.amount;
-  // Can go negative when expenses outrun billing; 0 until something is billed.
-  t.margin = t.billed > 0 ? (t.billed - t.expenses) / t.billed : 0;
+  t.margin = marginOf(t.billed, t.expenses);
   return t;
 }
 
@@ -165,8 +196,8 @@ export function collections<T extends InvoiceLike>(invoices: T[], now: Date): Co
   const prevStart = startOfBusinessMonth(now, 1);
   const result: Collections<T> = { thisMonth: 0, lastMonth: 0, payments: [] };
   for (const inv of invoices) {
-    const when = paymentDate(inv);
-    if (!when || when > now) continue;
+    const when = collectedAt(inv, now);
+    if (!when) continue;
     if (when >= monthStart) {
       result.thisMonth += inv.amount;
       result.payments.push(inv);

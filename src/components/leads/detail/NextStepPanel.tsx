@@ -4,14 +4,14 @@ import { Panel } from "@/components/ui/Panel";
 import { Button, LinkButton } from "@/components/ui/Button";
 import { Field, Input } from "@/components/ui/Field";
 import { useToast } from "@/components/ui/Toast";
-import { DuePresets, toLocalInput } from "@/components/reminders/ReminderModal";
+import { DuePresets, WhenField } from "@/components/reminders/ReminderModal";
 import { api } from "@/lib/client";
 import { ageInWords, cn } from "@/lib/utils";
-import { absoluteTime, businessDay, daysSince, dueWords } from "@/lib/dates";
+import { absoluteTime, businessDay, daysSince, dueWords, fromBusinessInput, toBusinessInput } from "@/lib/dates";
 import type { ReminderDTO } from "@/lib/types";
 
-/** The form's default: tomorrow at 9am. */
-const tomorrowMorning = () => toLocalInput(businessDay(Date.now(), 1, 9));
+/** The form's default: tomorrow at 9am IST. */
+const tomorrowMorning = () => toBusinessInput(businessDay(Date.now(), 1, 9));
 
 /**
  * The lead's next step: the viewer's earliest open reminder on it, or a short
@@ -54,11 +54,20 @@ export function NextStepPanel({
     }
   }
 
+  /** The field's IST wall-clock value as an ISO instant, or a toast when it isn't a valid time. */
+  function dueAt(): string | null {
+    const at = fromBusinessInput(when);
+    if (!at) toast("Pick when it happens.", "error");
+    return at && at.toISOString();
+  }
+
   function create(e: FormEvent) {
     e.preventDefault();
     if (!what.trim()) return toast("Say what happens next.", "error");
+    const due = dueAt();
+    if (!due) return;
     run(async () => {
-      await api.post("/api/reminders", { title: what.trim(), dueAt: new Date(when).toISOString(), leadId });
+      await api.post("/api/reminders", { title: what.trim(), dueAt: due, leadId });
       setWhat("");
       setWhen(tomorrowMorning());
     }, "Next step set.");
@@ -66,8 +75,9 @@ export function NextStepPanel({
 
   function reschedule(e: FormEvent) {
     e.preventDefault();
-    if (!step) return;
-    run(() => api.patch(`/api/reminders/${step.id}`, { action: "snooze", dueAt: new Date(when).toISOString() }), "Next step moved.");
+    const due = step && dueAt();
+    if (!step || !due) return;
+    run(() => api.patch(`/api/reminders/${step.id}`, { action: "snooze", dueAt: due }), "Next step moved.");
   }
 
   // Past its time: "Overdue" today, else "3 days overdue". Otherwise by calendar day: "Due today", "Due tomorrow".
@@ -93,7 +103,7 @@ export function NextStepPanel({
         <>
           <p className="font-medium text-ink-1">{step.title}</p>
           <p className="tnum mt-0.5 text-[13px] text-ink-2">
-            {absoluteTime(step.dueAt)}
+            {absoluteTime(step.dueAt)} IST
             {step.status === "sent" && " · reminder sent"}
             {step.status === "failed" && <span className="text-overdue"> · reminder failed{step.lastError && `: ${step.lastError}`}</span>}
           </p>
@@ -106,7 +116,7 @@ export function NextStepPanel({
               size="sm"
               variant="ghost"
               onClick={() => {
-                setWhen(toLocalInput(new Date(step.dueAt)));
+                setWhen(toBusinessInput(step.dueAt));
                 setRescheduling(true);
               }}
             >
@@ -129,9 +139,7 @@ export function NextStepPanel({
             </>
           )}
           <div className="mt-2.5 flex items-end gap-2">
-            <Field label="When" className="flex-1">
-              <Input type="datetime-local" required value={when} onChange={(e) => setWhen(e.target.value)} />
-            </Field>
+            <WhenField value={when} onChange={setWhen} className="flex-1" />
             <Button type="submit" variant="primary" loading={busy} aria-label="Save next step">
               Save
             </Button>

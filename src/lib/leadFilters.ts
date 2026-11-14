@@ -4,6 +4,25 @@
 import { LEAD_STAGES, PIPELINE_STAGES, isOpenLeadStage, type LeadStage, type PipelineStage } from "./constants";
 import type { LeadDTO } from "./types";
 
+/**
+ * The one order of cards within a lane: `order` ascending, then oldest first,
+ * then id. `LANE_SORT` is the Mongo sort the API reads lanes with;
+ * `byLaneOrder` is the same comparison for the board. Ids are ObjectId hex, so
+ * comparing them as strings matches Mongo's `_id` order.
+ */
+export const LANE_SORT = { order: 1, createdAt: 1, _id: 1 } as const;
+
+export function byLaneOrder(a: Pick<LeadDTO, "id" | "order" | "createdAt">, b: Pick<LeadDTO, "id" | "order" | "createdAt">): number {
+  return a.order - b.order || +new Date(a.createdAt) - +new Date(b.createdAt) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+}
+
+/** Where a card sits in the lane the user sees: the ids directly above and below it, which the stage API places it between. */
+export function laneNeighbours(lane: Pick<LeadDTO, "id">[], id: string): { beforeId?: string; afterId?: string } {
+  const at = lane.findIndex((l) => l.id === id);
+  if (at < 0) return {};
+  return { beforeId: lane[at - 1]?.id, afterId: lane[at + 1]?.id };
+}
+
 export interface OwnerOption {
   id: string;
   name: string;

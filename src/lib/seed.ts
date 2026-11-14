@@ -2,11 +2,13 @@ import { Types } from "mongoose";
 import { connectDBForSeed } from "./db-seed-helper";
 import { Workspace, User, Lead, Account, Contact, Invoice, Expense, Activity } from "./models";
 import { DEFAULT_LEAD_CATEGORIES, type LeadStage } from "./constants";
-import { DAY_MS } from "./dates";
+import { DAY_MS, isoDay } from "./dates";
 
 const HOUR = 3600000;
 const now = () => Date.now();
 const ago = (ms: number) => new Date(now() - ms);
+/** A calendar day `n` days back, stored the way expenses store dates (`expenseDay` in services.ts). */
+const dayAgo = (n: number) => new Date(isoDay(ago(n * DAY_MS)));
 
 /**
  * Seeds the workspace with the sample data from the MagickBook wireframes.
@@ -244,11 +246,11 @@ export async function seedDatabase({ force = false }: { force?: boolean } = {}):
 
   // ---- Expenses (for Acme — mirrors the wireframe expense list) -------
   await Expense.insertMany([
-    { workspaceId: wsId, accountId: acme._id, date: ago(26 * DAY_MS), category: "Telephony", vendor: "Twilio call minutes", amount: 6200, billable: true },
-    { workspaceId: wsId, accountId: acme._id, date: ago(31 * DAY_MS), category: "Travel", vendor: "Onboarding visit", amount: 4000, billable: false },
-    { workspaceId: wsId, accountId: acme._id, date: ago(38 * DAY_MS), category: "Software", vendor: "WhatsApp API", amount: 2800, billable: true },
-    { workspaceId: wsId, accountId: acme._id, date: ago(15 * DAY_MS), category: "Marketing", vendor: "Field campaign", amount: 12000, billable: false },
-    { workspaceId: wsId, accountId: lumen._id, date: ago(10 * DAY_MS), category: "Software", vendor: "Analytics seat", amount: 3500, billable: true },
+    { workspaceId: wsId, accountId: acme._id, date: dayAgo(26), category: "Telephony", vendor: "Twilio call minutes", amount: 6200, billable: true },
+    { workspaceId: wsId, accountId: acme._id, date: dayAgo(31), category: "Travel", vendor: "Onboarding visit", amount: 4000, billable: false },
+    { workspaceId: wsId, accountId: acme._id, date: dayAgo(38), category: "Software", vendor: "WhatsApp API", amount: 2800, billable: true },
+    { workspaceId: wsId, accountId: acme._id, date: dayAgo(15), category: "Marketing", vendor: "Field campaign", amount: 12000, billable: false },
+    { workspaceId: wsId, accountId: lumen._id, date: dayAgo(10), category: "Software", vendor: "Analytics seat", amount: 3500, billable: true },
   ]);
 
   // ---- Leads (board) ---------------------------------------------------

@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
-  absoluteTime, businessDay, calendarDaysBetween, daysSince, dueWords, endOfBusinessDay,
-  isoDay, longDate, monthKey, monthName, shortDate, startOfBusinessMonth,
+  absoluteTime, businessDay, calendarDaysBetween, daysSince, dueWords, endOfBusinessDay, fromBusinessInput,
+  isoDay, longDate, monthKey, monthName, shortDate, startOfBusinessMonth, toBusinessInput,
 } from "@/lib/dates";
+import { ZONES, useTimeZone } from "../helpers/timezones";
 
 // Instants written in IST (+05:30) so the expectations read as an Indian user sees them.
 const ist = (s: string) => new Date(`${s}+05:30`);
@@ -55,5 +56,52 @@ describe("dates (business time zone: IST)", () => {
     expect(dueWords(ist("2026-11-13T23:00:00"), now)).toBe("due today");
     expect(dueWords(ist("2026-11-16T09:00:00"), now)).toBe("due in 3 days");
     expect(dueWords(ist("2026-11-12T09:00:00"), now)).toBe("due 1 day ago");
+  });
+});
+
+// datetime-local fields hold IST wall-clock time, so a browser in London or Los Angeles
+// must fill and submit the same values as one in India.
+describe.each(ZONES)("datetime-local values in IST (browser zone: %s)", (zone) => {
+  useTimeZone(zone);
+
+  it("is really running in that zone", () => {
+    const offset = { "Europe/London": 0, "America/Los_Angeles": 480 }[zone as string];
+    if (offset !== undefined) expect(new Date("2026-11-15T03:30:00Z").getTimezoneOffset()).toBe(offset);
+  });
+
+  it("formats an instant as its IST wall-clock time", () => {
+    expect(toBusinessInput(new Date("2026-11-15T03:30:00Z"))).toBe("2026-11-15T09:00");
+    expect(toBusinessInput("2026-11-14T20:00:59.999Z")).toBe("2026-11-15T01:30");
+  });
+
+  it("fills 'Tomorrow 9am' with 9:00 on the IST tomorrow", () => {
+    // 02:00 IST on the 14th is still the 13th in London and Los Angeles.
+    expect(toBusinessInput(businessDay(ist("2026-11-14T02:00:00"), 1, 9))).toBe("2026-11-15T09:00");
+    expect(toBusinessInput(businessDay(ist("2026-11-13T20:00:00"), 1, 9))).toBe("2026-11-14T09:00");
+  });
+
+  it("reads a submitted value as IST", () => {
+    expect(fromBusinessInput("2026-11-15T09:00")?.toISOString()).toBe("2026-11-15T03:30:00.000Z");
+    expect(fromBusinessInput("2027-01-01T00:15")?.toISOString()).toBe("2026-12-31T18:45:00.000Z");
+  });
+
+  it("rejects malformed or impossible values", () => {
+    for (const bad of ["", "2026-11-15", "2026-11-15 09:00", "2026-11-15T9:00", "2026-11-15T09:00:00", "2026-02-30T09:00", "2026-11-15T24:00", "nope"]) {
+      expect(fromBusinessInput(bad), bad).toBeNull();
+    }
+  });
+
+  it("round-trips any instant to the minute, across DST changes elsewhere", () => {
+    const instants = [
+      "2026-03-29T00:30:00Z", "2026-03-29T01:30:00Z", // London springs forward
+      "2026-03-08T10:30:00Z", "2026-11-01T08:30:00Z", "2026-11-01T09:30:00Z", // Los Angeles
+      "2026-12-31T18:29:59.999Z", "2026-12-31T18:30:00Z", "2028-02-29T12:00:00Z",
+    ].map((s) => new Date(s));
+    // Plus a deterministic spread across a few years.
+    for (let t = Date.UTC(2025, 0, 1, 0, 7, 13); t < Date.UTC(2029, 0, 1); t += 9_876_543_211 / 97) instants.push(new Date(t));
+    for (const d of instants) {
+      const minute = Math.floor(d.getTime() / 60_000) * 60_000;
+      expect(fromBusinessInput(toBusinessInput(d))?.getTime(), d.toISOString()).toBe(minute);
+    }
   });
 });

@@ -85,7 +85,7 @@ describe("reminders CRUD", () => {
 
     const activity = await models.Activity.findOne({ leadId: lead._id, kind: "reminder" }).lean();
     // The due time reads in IST, whatever the server's locale and zone.
-    expect(activity!.detail).toBe("Send quote · due 1 Jul 2026, 2:30 pm");
+    expect(activity!.detail).toBe("Send quote · due 1 Jul 2026, 2:30 pm IST");
   });
 
   it("rejects linking to a lead the caller cannot see", async () => {

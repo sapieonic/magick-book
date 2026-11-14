@@ -79,7 +79,7 @@ export const POST = route(async (req: NextRequest) => {
       actorId: user._id,
       kind: "reminder",
       title: "Reminder set",
-      detail: `${title} · due ${absoluteTime(dueAt)}`,
+      detail: `${title} · due ${absoluteTime(dueAt)} IST`,
     });
     if (leadId) await Lead.updateOne({ _id: leadId }, { lastActivityAt: new Date() });
     if (accountId) await Account.updateOne({ _id: accountId }, { lastActivityAt: new Date() });

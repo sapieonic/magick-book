@@ -7,6 +7,7 @@ import {
   matchesLedgerFilter,
   monthLabel,
 } from "@/lib/money-charts";
+import { collections } from "@/lib/receivables";
 import type { InvoiceDTO } from "@/lib/types";
 
 function inv(over: Partial<InvoiceDTO> & Pick<InvoiceDTO, "id" | "amount" | "status">): InvoiceDTO {
@@ -65,6 +66,18 @@ describe("buildCollectedByMonth", () => {
     expect(c.months.every((m) => m.total === 0 && m.amounts.length === 0)).toBe(true);
     expect(c.series).toEqual([]);
     expect(c.total).toBe(0);
+  });
+
+  it("skips a future-dated payment, so this month matches Today's collections()", () => {
+    const invoices = [
+      paid("1", 100, "acme", "2026-08-10T00:00:00.000Z"),
+      paid("2", 500, "acme", "2026-08-20T00:00:00.000Z"), // later this month: not collected yet
+      paid("3", 40, "lumen", "2026-08-15T11:59:00.000Z"), // a minute before now
+    ];
+    const c = buildCollectedByMonth(invoices, now, { months: 3 });
+    expect(c.months.at(-1)!.total).toBe(collections(invoices, now).thisMonth);
+    expect(c.months.at(-1)!.total).toBe(140);
+    expect(c.total).toBe(140);
   });
 
   it("stacks the top two accounts plus Other, keyed by account id", () => {

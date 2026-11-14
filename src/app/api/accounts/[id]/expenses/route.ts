@@ -4,7 +4,7 @@ import { connectDB } from "@/lib/db";
 import { Account, Expense, type IExpense } from "@/lib/models";
 import { requireUser } from "@/lib/auth/server";
 import { canEditOwned } from "@/lib/rbac";
-import { logActivity, audit, expenseFields, loadAccount } from "@/lib/services";
+import { logActivity, audit, expenseDay, expenseFields, loadAccount } from "@/lib/services";
 import { EXPENSE_CATEGORIES } from "@/lib/constants";
 import { formatINR } from "@/lib/utils";
 
@@ -29,7 +29,7 @@ export const POST = route(async (req: NextRequest, ctx: Ctx) => {
   if (!canEditOwned(user, acc.ownerId)) return fail("You can only log expenses on your own accounts.", 403);
 
   const b = await req.json().catch(() => ({}));
-  const { amount, vendor = "", billable = false, date = new Date() } = expenseFields(b);
+  const { amount, vendor = "", billable = false, date = expenseDay() } = expenseFields(b);
   if (amount === undefined) return fail("A positive amount is required");
   const category = EXPENSE_CATEGORIES.includes(b.category) ? b.category : "Other";
 

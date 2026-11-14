@@ -121,7 +121,7 @@ async function post(message: SlackMessage): Promise<void> {
 function actorContext(actorName: string): SlackBlock {
   return {
     type: "context",
-    elements: [{ type: "mrkdwn", text: `By ${esc(actorName) || "someone"} · ${absoluteTime(new Date())}` }],
+    elements: [{ type: "mrkdwn", text: `By ${esc(actorName) || "someone"} · ${absoluteTime(new Date())} IST` }],
   };
 }
 

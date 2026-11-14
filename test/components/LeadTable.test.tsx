@@ -43,15 +43,13 @@ function lead(over: Partial<LeadDTO>): LeadDTO {
 }
 
 function renderTable(leads: LeadDTO[], variant?: "active" | "lost") {
-  const onChanged = vi.fn();
   render(
     <ToastProvider>
       <ConfirmProvider>
-        <LeadTable leads={leads} variant={variant} onChanged={onChanged} />
+        <LeadTable leads={leads} variant={variant} />
       </ConfirmProvider>
     </ToastProvider>,
   );
-  return { onChanged };
 }
 
 const names = () => screen.getAllByRole("link").map((a) => a.textContent);
@@ -98,7 +96,7 @@ describe("LeadTable", () => {
   it("archives the selected rows after confirming", async () => {
     const user = userEvent.setup();
     del.mockResolvedValue({});
-    const { onChanged } = renderTable([lead({ id: "a", name: "Amit" }), lead({ id: "b", name: "Bela" })]);
+    renderTable([lead({ id: "a", name: "Amit" }), lead({ id: "b", name: "Bela" })]);
 
     await user.click(screen.getByRole("checkbox", { name: "Select Amit" }));
     const bar = screen.getByRole("region", { name: "Selection" });
@@ -106,7 +104,7 @@ describe("LeadTable", () => {
     await user.click(within(bar).getByRole("button", { name: "Archive" }));
     await user.click(within(screen.getByRole("dialog", { name: "Archive 1 lead?" })).getByRole("button", { name: "Archive" }));
 
-    await waitFor(() => expect(onChanged).toHaveBeenCalled());
+    await waitFor(() => expect(screen.getByText("1 lead archived.")).toBeInTheDocument());
     expect(del).toHaveBeenCalledWith("/api/leads/a");
     expect(del).toHaveBeenCalledTimes(1);
   });

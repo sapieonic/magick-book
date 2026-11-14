@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { LeadDTO } from "@/lib/types";
 
@@ -34,20 +34,28 @@ vi.mock("@/components/layout/SessionContext", () => ({
   }),
 }));
 
-vi.mock("@/lib/client", () => ({
-  useApi: (url: string | null) => {
-    if (url == null) return { data: null, setData: vi.fn(), error: null, loading: false, refresh: vi.fn() };
-    const archived = url.includes("archived=1");
-    return {
-      data: { leads: archived ? H.archived : H.leads },
-      setData: vi.fn(),
-      error: null,
-      loading: false,
-      refresh: archived ? H.refreshArchived : H.refreshLeads,
-    };
-  },
-  api: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), put: vi.fn(), delete: vi.fn() },
-}));
+vi.mock("@/lib/client", async () => {
+  const { DATA_CHANGED } = await import("@/lib/dataChanged");
+  // Like the real `api`: a successful mutation announces a data change.
+  const mutate = vi.fn(async () => {
+    window.dispatchEvent(new Event(DATA_CHANGED));
+    return {};
+  });
+  return {
+    useApi: (url: string | null) => {
+      if (url == null) return { data: null, setData: vi.fn(), error: null, loading: false, refresh: vi.fn() };
+      const archived = url.includes("archived=1");
+      return {
+        data: { leads: archived ? H.archived : H.leads },
+        setData: vi.fn(),
+        error: null,
+        loading: false,
+        refresh: archived ? H.refreshArchived : H.refreshLeads,
+      };
+    },
+    api: { get: vi.fn(), post: mutate, patch: mutate, put: mutate, delete: mutate },
+  };
+});
 
 // Stub the heavy children; expose the leads and props they receive so we can assert filtering.
 vi.mock("@/components/leads/LeadBoard", () => ({
@@ -280,8 +288,11 @@ describe("Leads page — filter applies across views", () => {
     renderPage();
     await user.click(screen.getByRole("radio", { name: "Archived" }));
     await user.click(screen.getByRole("button", { name: "Restore Archived-A" }));
-    expect(H.refreshArchived).toHaveBeenCalled();
-    expect(H.refreshLeads).toHaveBeenCalled();
+    // The archive reloads explicitly (it doesn't subscribe); the board through the change event. Once each.
+    await waitFor(() => expect(H.refreshLeads).toHaveBeenCalled());
+    await act(() => new Promise((r) => setTimeout(r, 250)));
+    expect(H.refreshArchived).toHaveBeenCalledTimes(1);
+    expect(H.refreshLeads).toHaveBeenCalledTimes(1);
   });
 
   it("shows a Clear filters action in the archived empty state when a filter hides everything", async () => {

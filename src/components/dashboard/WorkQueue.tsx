@@ -22,14 +22,15 @@ import type { WorkItem } from "@/lib/types";
 /** Rows the phone list shows before "Show N more". */
 const PHONE_LIMIT = 4;
 
-/** Follow-ups, due reminders and overdue invoices, oldest first, each with its next step. */
-export function WorkQueue({ items, now, onChanged }: { items: WorkItem[]; now: Date; onChanged: () => void }) {
+/**
+ * Follow-ups, due reminders and overdue invoices, oldest first, each with its
+ * next step. Every action goes through `api`, whose change event reloads Today.
+ */
+export function WorkQueue({ items, now }: { items: WorkItem[]; now: Date }) {
   const [logging, setLogging] = useState<{ id: string; label: string } | null>(null);
   const [showAll, setShowAll] = useState(false);
-  const invoices = useInvoiceActions(onChanged);
-  const actions = (item: WorkItem, phone?: boolean) => (
-    <RowActions item={item} now={now} phone={phone} invoices={invoices} onChanged={onChanged} onLog={setLogging} />
-  );
+  const invoices = useInvoiceActions();
+  const actions = (item: WorkItem, phone?: boolean) => <RowActions item={item} now={now} phone={phone} invoices={invoices} onLog={setLogging} />;
   const phoneItems = showAll ? items : items.slice(0, PHONE_LIMIT);
   const hidden = items.length - phoneItems.length;
 
@@ -103,13 +104,13 @@ export function WorkQueue({ items, now, onChanged }: { items: WorkItem[]; now: D
           )}
         </>
       )}
-      <LogActivityModal lead={logging} onClose={() => setLogging(null)} onLogged={onChanged} />
+      <LogActivityModal lead={logging} onClose={() => setLogging(null)} />
     </Panel>
   );
 }
 
 /** Log a reach-out on a lead's timeline straight from the queue, with the lead page's composer. */
-function LogActivityModal({ lead, onClose, onLogged }: { lead: { id: string; label: string } | null; onClose: () => void; onLogged: () => void }) {
+function LogActivityModal({ lead, onClose }: { lead: { id: string; label: string } | null; onClose: () => void }) {
   const { toast } = useToast();
   return (
     <Modal open={!!lead} onClose={onClose} title="Log activity" subtitle={lead?.label} size="sm">
@@ -121,7 +122,6 @@ function LogActivityModal({ lead, onClose, onLogged }: { lead: { id: string; lab
           onAdded={() => {
             toast(`Logged for ${lead.label}.`, "success");
             onClose();
-            onLogged();
           }}
         />
       )}
@@ -183,14 +183,12 @@ function RowActions({
   now,
   phone,
   invoices,
-  onChanged,
   onLog,
 }: {
   item: WorkItem;
   now: Date;
   phone?: boolean;
   invoices: ReturnType<typeof useInvoiceActions>;
-  onChanged: () => void;
   onLog: (lead: { id: string; label: string }) => void;
 }) {
   const { toast } = useToast();
@@ -234,7 +232,7 @@ function RowActions({
       },
     );
   } else if (item.kind === "invoice" && item.invoiceId && item.invoiceNumber != null) {
-    // The shared hook confirms, toasts and refreshes on its own.
+    // The shared hook confirms and toasts on its own.
     const invoice = { id: item.invoiceId, number: item.invoiceNumber, amount: item.value };
     list.push(
       { key: "remind", label: "Send reminder", aria: `Send reminder for invoice #${invoice.number}`, run: () => invoices.remind(invoice) },
@@ -246,10 +244,7 @@ function RowActions({
     setBusy(action.key);
     try {
       const message = await action.run();
-      if (message) {
-        toast(message, "success");
-        onChanged();
-      }
+      if (message) toast(message, "success");
     } catch (err) {
       toast(err instanceof Error ? err.message : "Something went wrong", "error");
     } finally {

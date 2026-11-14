@@ -3,19 +3,13 @@ import { ok, fail, route, serializeLead, serializeActivity, serializeReminder, H
 import { connectDB } from "@/lib/db";
 import { Lead, Activity, Reminder, type ILead, type IActivity, type IReminder } from "@/lib/models";
 import { requireUser } from "@/lib/auth/server";
-import { leadScope, reminderScope, canEditOwned } from "@/lib/rbac";
-import { ownerNameMap, audit, diffChanges, leadStageSpans } from "@/lib/services";
+import { reminderScope, canEditOwned } from "@/lib/rbac";
+import { ownerNameMap, audit, diffChanges, leadStageSpans, loadLead } from "@/lib/services";
 import type { LeadDetail } from "@/lib/types";
-import { LEAD_SOURCES, LEAD_STAGES } from "@/lib/constants";
+import { LEAD_SOURCES, LEAD_STAGES, OPEN_REMINDER_STATUSES } from "@/lib/constants";
 import { resolveLeadCategory } from "@/lib/lead-categories";
 
 type Ctx = { params: Promise<{ id: string }> };
-
-async function loadLead(userScope: Record<string, unknown>, id: string) {
-  const lead = await Lead.findOne({ _id: id, ...userScope }).lean<ILead>();
-  if (!lead) throw new HttpError("Lead not found", 404);
-  return lead;
-}
 
 /** Re-read a lead after a write, with its owner's name (not the editor's). */
 async function freshLead(id: ILead["_id"]) {
@@ -30,14 +24,12 @@ export const GET = route(async (_req: NextRequest, ctx: Ctx) => {
   const user = await requireUser();
   await connectDB();
   const { id } = await ctx.params;
-  const lead =
-    (await Lead.findOne({ _id: id, ...leadScope(user) }).lean<ILead>()) ??
-    (await loadLead(leadScope(user, { archived: true }), id));
+  const lead = await loadLead(user, id, "read");
 
   const [activities, stages, nextStep] = await Promise.all([
     Activity.find({ leadId: lead._id }).sort({ createdAt: -1 }).lean<IActivity[]>(),
     leadStageSpans(lead),
-    Reminder.findOne({ ...reminderScope(user), leadId: lead._id, status: { $in: ["scheduled", "sent", "failed"] } })
+    Reminder.findOne({ ...reminderScope(user), leadId: lead._id, status: { $in: OPEN_REMINDER_STATUSES } })
       .sort({ dueAt: 1 })
       .lean<IReminder>(),
   ]);
@@ -58,16 +50,17 @@ export const PATCH = route(async (req: NextRequest, ctx: Ctx) => {
   const { id } = await ctx.params;
   const b = await req.json().catch(() => ({}));
 
-  // Restore path loads from the ARCHIVED scope (the live scope hides it).
+  // Restore resolves archived leads too, and only acts on one that is archived.
   if (b.action === "restore") {
-    const lead = await loadLead(leadScope(user, { archived: true }), id);
+    const lead = await loadLead(user, id, "read");
+    if (!lead.deletedAt) throw new HttpError("Lead not found", 404);
     if (!canEditOwned(user, lead.ownerId)) return fail("You can only restore your own leads.", 403);
     await Lead.updateOne({ _id: lead._id }, { $unset: { deletedAt: "", deletedBy: "" } });
     await audit({ entity: "lead", entityId: lead._id, entityLabel: lead.name, action: "restore", actor: user, leadId: lead._id });
     return ok({ lead: await freshLead(lead._id) });
   }
 
-  const lead = await loadLead(leadScope(user), id);
+  const lead = await loadLead(user, id, "write");
   if (!canEditOwned(user, lead.ownerId)) return fail("You can only edit your own leads.", 403);
 
   const patch: Record<string, unknown> = {};
@@ -101,7 +94,7 @@ export const DELETE = route(async (_req: NextRequest, ctx: Ctx) => {
   const user = await requireUser();
   await connectDB();
   const { id } = await ctx.params;
-  const lead = await loadLead(leadScope(user), id);
+  const lead = await loadLead(user, id, "write");
   if (!canEditOwned(user, lead.ownerId)) return fail("You can only delete your own leads.", 403);
   await Lead.updateOne({ _id: lead._id }, { deletedAt: new Date(), deletedBy: user._id });
   await audit({ entity: "lead", entityId: lead._id, entityLabel: lead.name, action: "delete", actor: user, leadId: lead._id });

@@ -1,11 +1,12 @@
 import "server-only";
 import { Types } from "mongoose";
-import { Account, Activity, AuditLog, Invoice, Expense, User, type IAccount, type IAuditLog, type IExpense, type IInvoice, type ILead, type IUser } from "./models";
+import { Account, Activity, AuditLog, Invoice, Expense, Lead, User, type IAccount, type IAuditLog, type IExpense, type ILead, type IUser } from "./models";
 import { LEAD_STAGES, type ActivityKind, type AuditAction, type AuditEntity, type LeadStage } from "./constants";
 import type { AccountFinance, AuditChange, LeadStageSpan } from "./types";
 import { HttpError } from "./api";
-import { accountScope } from "./rbac";
-import { rollupMoney } from "./receivables";
+import { accountScope, leadScope } from "./rbac";
+import { OUTSTANDING_STATUSES, marginOf, overdueExpr } from "./receivables";
+import { isoDay } from "./dates";
 
 /**
  * Resolve an account the user can see, or throw a 404. `"read"` also resolves
@@ -19,6 +20,24 @@ export async function loadAccount(user: IUser, id: string | Types.ObjectId, acce
     : null;
   if (!acc) throw new HttpError("Account not found", 404);
   return acc;
+}
+
+/** Lead counterpart of `loadAccount`: `"read"` also finds an archived lead, `"write"` only a live one. */
+export async function loadLead(user: IUser, id: string | Types.ObjectId, access: "read" | "write"): Promise<ILead> {
+  const lead = Types.ObjectId.isValid(id)
+    ? await Lead.findOne({ _id: id, ...leadScope(user, { archived: access === "read" ? "any" : false }) }).lean<ILead>()
+    : null;
+  if (!lead) throw new HttpError("Lead not found", 404);
+  return lead;
+}
+
+/**
+ * An expense date is a calendar day, not a moment. It is stored at UTC
+ * midnight of its IST day, the instant a date-only string like "2026-11-14"
+ * parses to (05:30 IST that same day), so `isoDay()` round-trips it.
+ */
+export function expenseDay(d: Date | string = new Date()): Date {
+  return new Date(isoDay(d));
 }
 
 const EXPENSE_VENDOR_MAX = 200;
@@ -44,7 +63,7 @@ export function expenseFields(b: Record<string, unknown>): Partial<Pick<IExpense
   if (b.date !== undefined) {
     const date = typeof b.date === "string" ? new Date(b.date) : null;
     if (!date || Number.isNaN(date.getTime())) throw new HttpError("A valid date is required");
-    out.date = date;
+    out.date = expenseDay(date);
   }
   return out;
 }
@@ -125,42 +144,49 @@ export async function ownerNameMap(ids: (Types.ObjectId | string)[]): Promise<Ma
   return new Map(users.map((u) => [String(u._id), u.name]));
 }
 
+export const NO_FINANCE: AccountFinance = { billed: 0, paid: 0, outstanding: 0, overdue: 0, expenses: 0, margin: 0 };
+
 /**
- * Money rollup for many accounts at once (list views): one projected invoice
- * read and one expense aggregation, folded per account by `rollupMoney` so
- * "overdue" means the same here as on Today and Money. Accounts with no money
- * rows are absent from the map.
+ * Money rollup for many accounts at once (list views): one `$group` over
+ * invoices and one over expenses, summed in the database. "Overdue" is
+ * `overdueExpr`, the database form of `isOverdue` in receivables.ts, so it
+ * means the same here as on Today and Money. Accounts with no money rows are
+ * absent from the map.
  */
-export async function accountFinances(accountIds: Types.ObjectId[]): Promise<Map<string, AccountFinance>> {
+export async function accountFinances(accountIds: Types.ObjectId[], now = new Date()): Promise<Map<string, AccountFinance>> {
   if (!accountIds.length) return new Map();
   const match = { accountId: { $in: accountIds }, deletedAt: null };
-  const [invoices, expenseAgg] = await Promise.all([
-    Invoice.find(match).select("accountId amount status issuedAt dueAt").lean<Pick<IInvoice, "accountId" | "amount" | "status" | "issuedAt" | "dueAt">[]>(),
+  const sumIf = (cond: unknown) => ({ $sum: { $cond: [cond, "$amount", 0] } });
+  const [invoiceAgg, expenseAgg] = await Promise.all([
+    Invoice.aggregate<{ _id: Types.ObjectId; billed: number; paid: number; outstanding: number; overdue: number }>([
+      { $match: { ...match, status: { $ne: "draft" } } },
+      {
+        $group: {
+          _id: "$accountId",
+          billed: { $sum: "$amount" },
+          paid: sumIf({ $eq: ["$status", "paid"] }),
+          outstanding: sumIf({ $in: ["$status", [...OUTSTANDING_STATUSES]] }),
+          overdue: sumIf(overdueExpr(now)),
+        },
+      },
+    ]),
     Expense.aggregate<{ _id: Types.ObjectId; total: number }>([
       { $match: match },
       { $group: { _id: "$accountId", total: { $sum: "$amount" } } },
     ]),
   ]);
 
-  const byAccount = new Map<string, typeof invoices>();
-  for (const inv of invoices) {
-    const key = String(inv.accountId);
-    const rows = byAccount.get(key);
-    if (rows) rows.push(inv);
-    else byAccount.set(key, [inv]);
-  }
-  const expenseTotals = new Map(expenseAgg.map((r) => [String(r._id), r.total]));
-
-  const now = new Date();
   const out = new Map<string, AccountFinance>();
-  for (const key of new Set([...byAccount.keys(), ...expenseTotals.keys()])) {
-    const { billed, paid, outstanding, overdue, expenses, margin } = rollupMoney(byAccount.get(key) ?? [], [{ amount: expenseTotals.get(key) ?? 0 }], now);
-    out.set(key, { billed, paid, outstanding, overdue, expenses, margin });
+  for (const { _id, billed, paid, outstanding, overdue } of invoiceAgg) {
+    out.set(String(_id), { billed, paid, outstanding, overdue, expenses: 0, margin: 0 });
   }
+  for (const { _id, total } of expenseAgg) {
+    const key = String(_id);
+    out.set(key, { ...(out.get(key) ?? NO_FINANCE), expenses: total });
+  }
+  for (const f of out.values()) f.margin = marginOf(f.billed, f.expenses);
   return out;
 }
-
-export const NO_FINANCE: AccountFinance = { billed: 0, paid: 0, outstanding: 0, overdue: 0, expenses: 0, margin: 0 };
 
 /** One account's money rollup (see `accountFinances`). */
 export async function accountFinance(accountId: Types.ObjectId | string): Promise<AccountFinance> {

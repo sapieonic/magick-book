@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ConfirmProvider } from "@/components/ui/ConfirmDialog";
+import { DATA_CHANGED } from "@/lib/dataChanged";
 import type { DashboardData, WorkItem } from "@/lib/types";
 
 const H = vi.hoisted(() => ({
@@ -75,8 +76,17 @@ function renderPage() {
 beforeEach(() => {
   H.data = sample();
   H.refresh.mockReset();
-  Object.values(H.api).forEach((f) => f.mockReset().mockResolvedValue({}));
+  // Like the real `api`: every successful mutation announces a data change.
+  Object.values(H.api).forEach((f) =>
+    f.mockReset().mockImplementation(async () => {
+      if (f !== H.api.get) window.dispatchEvent(new Event(DATA_CHANGED));
+      return {};
+    }),
+  );
 });
+
+/** Wait out the change-event debounce, so a second (redundant) refresh would have landed. */
+const settle = () => act(() => new Promise((r) => setTimeout(r, 250)));
 
 describe("format helpers", () => {
   it("writes the summary sentence from live figures", () => {
@@ -137,8 +147,11 @@ describe("Today page", () => {
     renderPage();
     await user.click(screen.getAllByRole("button", { name: "Done with reminder: Send revised quote" })[0]);
     expect(H.api.patch).toHaveBeenCalledWith("/api/reminders/r1", { action: "complete" });
+    await settle();
+    expect(H.refresh).toHaveBeenCalledTimes(1); // once per action: the change event, no extra explicit reload
     await user.click(screen.getAllByRole("button", { name: "Snooze reminder until tomorrow: Send revised quote" })[0]);
     expect(H.api.patch).toHaveBeenCalledWith("/api/reminders/r1", { action: "snooze", dueAt: new Date("2026-11-14T09:00:00+05:30").toISOString() });
+    await settle();
     expect(H.refresh).toHaveBeenCalledTimes(2);
   });
 
@@ -147,9 +160,13 @@ describe("Today page", () => {
     renderPage();
     await user.click(screen.getAllByRole("button", { name: "Send reminder for invoice #1016" })[0]);
     expect(H.api.patch).toHaveBeenCalledWith("/api/invoices/i1", { action: "remind" });
+    await settle();
+    expect(H.refresh).toHaveBeenCalledTimes(1);
     await user.click(screen.getAllByRole("button", { name: "Mark paid: invoice #1016" })[0]);
     await user.click(await screen.findByRole("button", { name: "Mark paid" }));
     expect(H.api.patch).toHaveBeenCalledWith("/api/invoices/i1", { status: "paid" });
+    await settle();
+    expect(H.refresh).toHaveBeenCalledTimes(2); // one reload per action
   });
 
   it("logs a call on a follow-up from the modal", async () => {
@@ -160,7 +177,9 @@ describe("Today page", () => {
     await user.type(within(dialog).getByLabelText("Call notes"), "Asked for a revised quote");
     await user.click(within(dialog).getByRole("button", { name: "Log call" }));
     expect(H.api.post).toHaveBeenCalledWith("/api/leads/l1/activities", { kind: "call", detail: "Asked for a revised quote" });
-    expect(H.refresh).toHaveBeenCalled();
+    await waitFor(() => expect(H.refresh).toHaveBeenCalled());
+    await settle();
+    expect(H.refresh).toHaveBeenCalledTimes(1);
   });
 
   it("collapses the phone queue to the first four rows", async () => {

@@ -1,9 +1,9 @@
 import { type NextRequest } from "next/server";
-import { ok, fail, route, serializeActivity, HttpError } from "@/lib/api";
+import { ok, fail, route, serializeActivity } from "@/lib/api";
 import { connectDB } from "@/lib/db";
-import { Lead, Activity, type ILead, type IActivity } from "@/lib/models";
+import { Lead, Activity, type IActivity } from "@/lib/models";
 import { requireUser } from "@/lib/auth/server";
-import { leadScope } from "@/lib/rbac";
+import { loadLead } from "@/lib/services";
 import { notifyLeadComment } from "@/lib/slack";
 import { CONTACT_METHODS, ACTIVITY_KINDS, MEETING_TITLE } from "@/lib/constants";
 
@@ -24,8 +24,7 @@ export const POST = route(async (req: NextRequest, ctx: Ctx) => {
   const user = await requireUser();
   await connectDB();
   const { id } = await ctx.params;
-  const lead = await Lead.findOne({ _id: id, ...leadScope(user) }).lean<ILead>();
-  if (!lead) throw new HttpError("Lead not found", 404);
+  const lead = await loadLead(user, id, "write");
 
   const b = await req.json().catch(() => ({}));
   const kind = b.kind;

@@ -21,9 +21,10 @@ import type { LeadDTO } from "@/lib/types";
  * Leads as a sortable ledger (the Table and Lost views). Rows open the lead;
  * checkboxes select rows for bulk archive. On phones the row folds into two
  * lines: name over company, stage and value. `variant="lost"` swaps Source for
- * the lost reason.
+ * the lost reason. Archiving goes through `api`, whose change event reloads the
+ * page's leads.
  */
-export function LeadTable({ leads, onChanged, variant = "active" }: { leads: LeadDTO[]; onChanged?: () => void; variant?: "active" | "lost" }) {
+export function LeadTable({ leads, variant = "active" }: { leads: LeadDTO[]; variant?: "active" | "lost" }) {
   const router = useRouter();
   const { toast } = useToast();
   const confirm = useConfirm();
@@ -114,9 +115,7 @@ export function LeadTable({ leads, onChanged, variant = "active" }: { leads: Lea
       if (done > 0) toast(`${done} ${done === 1 ? "lead" : "leads"} archived.`, "success");
       if (failed > 0) toast(`${failed} couldn't be archived. Try again.`, "error");
     } finally {
-      // Always reconcile so the UI matches the server on every path.
       setSelected(new Set());
-      onChanged?.();
       setArchiving(false);
     }
   }

@@ -14,6 +14,7 @@ import type { DashboardData } from "@/lib/types";
 
 export default function DashboardPage() {
   const { data, loading, error, refresh } = useApi<DashboardData>("/api/dashboard");
+  // The queue's actions all go through `api`, so this one subscription reloads Today once per change.
   useDataChanged(refresh);
 
   return (
@@ -26,20 +27,20 @@ export default function DashboardPage() {
       ) : loading || !data ? (
         <TodaySkeleton />
       ) : (
-        <Today data={data} refresh={refresh} />
+        <Today data={data} />
       )}
     </Page>
   );
 }
 
-function Today({ data, refresh }: { data: DashboardData; refresh: () => void }) {
+function Today({ data }: { data: DashboardData }) {
   const now = new Date(data.asOf);
   return (
     <>
       <TodayHeader data={data} />
       <PipelineRibbon data={data} />
       <PageSplit railLabel="Receivables" rail={<ReceivablesRail receivables={data.receivables} upcoming={data.upcoming} now={now} />}>
-        <WorkQueue items={data.queue} now={now} onChanged={refresh} />
+        <WorkQueue items={data.queue} now={now} />
         <StageTable pipeline={data.pipeline} now={now} />
       </PageSplit>
     </>
