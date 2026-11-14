@@ -25,13 +25,13 @@ describe("EmptyState / ErrorState / Skeleton / Logo / KbdHint", () => {
     expect(container.firstChild).toHaveAttribute("aria-hidden", "true");
   });
 
-  it("Logo is a decorative token-coloured mark beside the wordmark, with no bitmap", () => {
+  it("Logo shows the robot mark at its own proportions beside the wordmark", () => {
     const { container } = render(<Logo />);
     expect(container).toHaveTextContent("MagickBook");
-    expect(container.querySelector("img")).toBeNull();
-    const mark = container.querySelector("svg");
-    expect(mark).toHaveAttribute("aria-hidden", "true");
-    expect(mark).toHaveClass("text-accent");
+    const img = container.querySelector("img")!;
+    expect(img.getAttribute("src")).toContain("logo.png");
+    expect(img).toHaveAttribute("alt", "");
+    expect(Number(img.getAttribute("width")) / Number(img.getAttribute("height"))).toBeCloseTo(901 / 1024, 1);
   });
 
   it("KbdHint renders a kbd element", () => {

@@ -1,22 +1,13 @@
+import Image from "next/image";
 import { type CSSProperties, type ReactNode } from "react";
 import { Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-/**
- * The Daybook mark (an accent ledger page; `src/app/icon.svg` is the favicon
- * twin) beside the wordmark, set like the sidebar's.
- */
+/** The MagickBook robot mark (`public/logo.png`, drawn at its own 901×1024 proportions) beside the wordmark. */
 export function Logo() {
   return (
     <span className="inline-flex items-center gap-2.5 text-[17px] font-semibold tracking-[-0.01em] text-ink-1">
-      <svg viewBox="0 0 32 32" className="size-[30px] shrink-0 text-accent" aria-hidden>
-        <rect width="32" height="32" rx="9" fill="currentColor" />
-        <g className="fill-on-ink">
-          <rect x="8" y="9" width="16" height="2.5" rx="1.25" />
-          <rect x="8" y="14.75" width="16" height="2.5" rx="1.25" />
-          <rect x="8" y="20.5" width="9" height="2.5" rx="1.25" />
-        </g>
-      </svg>
+      <Image src="/logo.png" alt="" width={28} height={32} priority className="h-8 w-auto shrink-0 select-none" />
       MagickBook
     </span>
   );
